@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="[https://raw.githubusercontent.com/fairdataihub/poster2json/main/logo.svg](https://raw.githubusercontent.com/fairdataihub/poster2json/main/logo.svg)" alt="logo" width="200" height="auto" />
+<img src="https://raw.githubusercontent.com/fairdataihub/poster2json/main/logo.svg" alt="logo" width="200" height="auto" />
 
 <br />
 
@@ -16,27 +16,27 @@ Python package for the Poster to JSON converter for Posters.science
 
 <p>
 
-  <a href="[https://github.com/fairdataihub/poster2json/graphs/contributors](https://github.com/fairdataihub/poster2json/graphs/contributors)">
+  <a href="https://github.com/fairdataihub/poster2json/graphs/contributors">
 
-    <img src="[https://img.shields.io/github/contributors/fairdataihub/poster2json.svg?style=flat-square](https://img.shields.io/github/contributors/fairdataihub/poster2json.svg?style=flat-square)" alt="contributors" />
-
-  </a>
-
-  <a href="[https://github.com/fairdataihub/poster2json/stargazers](https://github.com/fairdataihub/poster2json/stargazers)">
-
-    <img src="[https://img.shields.io/github/stars/fairdataihub/poster2json.svg?style=flat-square](https://img.shields.io/github/stars/fairdataihub/poster2json.svg?style=flat-square)" alt="stars" />
+    <img src="https://img.shields.io/github/contributors/fairdataihub/poster2json.svg?style=flat-square" alt="contributors" />
 
   </a>
 
-  <a href="[https://github.com/fairdataihub/poster2json/issues/](https://github.com/fairdataihub/poster2json/issues/)">
+  <a href="https://github.com/fairdataihub/poster2json/stargazers">
 
-    <img src="[https://img.shields.io/github/issues/fairdataihub/poster2json.svg?style=flat-square](https://img.shields.io/github/issues/fairdataihub/poster2json.svg?style=flat-square)" alt="open issues" />
+    <img src="https://img.shields.io/github/stars/fairdataihub/poster2json.svg?style=flat-square" alt="stars" />
 
   </a>
 
-  <a href="[https://github.com/fairdataihub/poster2json/blob/main/LICENSE](https://github.com/fairdataihub/poster2json/blob/main/LICENSE)">
+  <a href="https://github.com/fairdataihub/poster2json/issues/">
 
-    <img src="[https://img.shields.io/github/license/fairdataihub/poster2json.svg?style=flat-square](https://img.shields.io/github/license/fairdataihub/poster2json.svg?style=flat-square)" alt="license" />
+    <img src="https://img.shields.io/github/issues/fairdataihub/poster2json.svg?style=flat-square" alt="open issues" />
+
+  </a>
+
+  <a href="https://github.com/fairdataihub/poster2json/blob/main/LICENSE">
+
+    <img src="https://img.shields.io/github/license/fairdataihub/poster2json.svg?style=flat-square" alt="license" />
 
   </a>
 
@@ -44,27 +44,27 @@ Python package for the Poster to JSON converter for Posters.science
 
 <p>
 
-  <a href="[https://github.com/fairdataihub/poster2json/actions](https://github.com/fairdataihub/poster2json/actions)">
+  <a href="https://github.com/fairdataihub/poster2json/actions">
 
-    <img src="[https://img.shields.io/github/actions/workflow/status/fairdataihub/poster2json/main.yml?branch=main&label=linux](https://img.shields.io/github/actions/workflow/status/fairdataihub/poster2json/main.yml?branch=main&label=linux)" alt="Unix Build Status" />
-
-  </a>
-
-  <a href="[https://pypi.org/project/poster2json](https://pypi.org/project/poster2json)">
-
-    <img src="[https://img.shields.io/pypi/l/poster2json.svg](https://img.shields.io/pypi/l/poster2json.svg)" alt="PyPI License" />
+    <img src="https://img.shields.io/github/actions/workflow/status/fairdataihub/poster2json/main.yml?branch=main&label=linux" alt="Unix Build Status" />
 
   </a>
 
-  <a href="[https://pypi.org/project/poster2json](https://pypi.org/project/poster2json)">
+  <a href="https://pypi.org/project/poster2json">
 
-    <img src="[https://img.shields.io/pypi/v/poster2json.svg](https://img.shields.io/pypi/v/poster2json.svg)" alt="PyPI Version" />
+    <img src="https://img.shields.io/pypi/l/poster2json.svg" alt="PyPI License" />
 
   </a>
 
-  <a href="[https://pypistats.org/packages/poster2json](https://pypistats.org/packages/poster2json)">
+  <a href="https://pypi.org/project/poster2json">
 
-    <img src="[https://img.shields.io/pypi/dm/poster2json.svg?color=orange](https://img.shields.io/pypi/dm/poster2json.svg?color=orange)" alt="PyPI Downloads" />
+    <img src="https://img.shields.io/pypi/v/poster2json.svg" alt="PyPI Version" />
+
+  </a>
+
+  <a href="https://pypistats.org/packages/poster2json">
+
+    <img src="https://img.shields.io/pypi/dm/poster2json.svg?color=orange" alt="PyPI Downloads" />
 
   </a>
 
@@ -72,15 +72,15 @@ Python package for the Poster to JSON converter for Posters.science
 
 <h4>
 
-    <a href="[https://fairdataihub.github.io/poster2json/">Documentation</a>](https://fairdataihub.github.io/poster2json/">Documentation</a>)
+    <a href="https://fairdataihub.github.io/poster2json/">Documentation</a>
 
 <span> · </span>
 
-    <a href="[https://fairdataihub.github.io/poster2json/about/changelog/">Changelog</a>](https://fairdataihub.github.io/poster2json/about/changelog/">Changelog</a>)
+    <a href="https://fairdataihub.github.io/poster2json/about/changelog/">Changelog</a>
 
 <span> · </span>
 
-    <a href="[https://github.com/fairdataihub/poster2json/issues/">Report](https://github.com/fairdataihub/poster2json/issues/">Report) Bug</a>
+    <a href="https://github.com/fairdataihub/poster2json/issues/">Report Bug</a>
 
 <span> · </span>
 
