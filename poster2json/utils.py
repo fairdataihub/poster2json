@@ -8,21 +8,19 @@ from typing import Optional
 
 
 def validate_file_path(
-    file_path: str, 
-    preexisting_file: bool = False, 
-    writable: bool = False
+    file_path: str, preexisting_file: bool = False, writable: bool = False
 ) -> bool:
     """
     Validate a file path.
-    
+
     Args:
         file_path: Path to validate
         preexisting_file: If True, check that file exists
         writable: If True, check that directory is writable
-        
+
     Returns:
         True if valid
-        
+
     Raises:
         ValueError: If path is empty or invalid
         FileNotFoundError: If preexisting_file=True and file doesn't exist
@@ -50,10 +48,10 @@ def validate_file_path(
 def is_supported_format(file_path: str) -> bool:
     """
     Check if file format is supported for poster extraction.
-    
+
     Args:
         file_path: Path to poster file
-        
+
     Returns:
         True if PDF, JPG, JPEG, or PNG
     """
@@ -64,10 +62,10 @@ def is_supported_format(file_path: str) -> bool:
 def get_poster_format(file_path: str) -> Optional[str]:
     """
     Get the format type of a poster file.
-    
+
     Args:
         file_path: Path to poster file
-        
+
     Returns:
         "pdf", "image", or None if unsupported
     """
@@ -82,16 +80,16 @@ def get_poster_format(file_path: str) -> Optional[str]:
 def normalize_text(text: str) -> str:
     """
     Normalize text for comparison.
-    
+
     Handles:
     - Unicode normalization (NFKD)
     - Whitespace consolidation
     - Quote unification
     - Dash normalization
-    
+
     Args:
         text: Input text
-        
+
     Returns:
         Normalized text
     """
@@ -102,9 +100,21 @@ def normalize_text(text: str) -> str:
 
     # Whitespace normalization
     space_chars = [
-        "\xa0", "\u2000", "\u2001", "\u2002", "\u2003", "\u2004",
-        "\u2005", "\u2006", "\u2007", "\u2008", "\u2009", "\u200a",
-        "\u202f", "\u205f", "\u3000",
+        "\xa0",
+        "\u2000",
+        "\u2001",
+        "\u2002",
+        "\u2003",
+        "\u2004",
+        "\u2005",
+        "\u2006",
+        "\u2007",
+        "\u2008",
+        "\u2009",
+        "\u200a",
+        "\u202f",
+        "\u205f",
+        "\u3000",
     ]
     for space in space_chars:
         text = text.replace(space, " ")
@@ -114,7 +124,7 @@ def normalize_text(text: str) -> str:
     for quote in single_quotes:
         text = text.replace(quote, "'")
 
-    double_quotes = ['"', '"', "„", "‟", "«", "»", "〝", "〞", "〟", "＂"]
+    double_quotes = ['"', "\u201c", "\u201d", "„", "‟", "«", "»", "〝", "〞", "〟", "＂"]
     for quote in double_quotes:
         text = text.replace(quote, '"')
 
@@ -132,23 +142,30 @@ def normalize_text(text: str) -> str:
 def extract_numbers(text: str) -> set:
     """
     Extract all numeric values from text.
-    
+
     Args:
         text: Input text
-        
+
     Returns:
-        Set of numeric strings found
+        Set of numeric strings found (includes both decimals and their integer parts)
     """
-    return set(re.findall(r"\d+\.?\d*", text))
+    matches = re.findall(r"\d+\.?\d*", text)
+    result = set(matches)
+    for m in matches:
+        if "." in m:
+            int_part = m.split(".")[0]
+            if int_part:
+                result.add(int_part)
+    return result
 
 
 def strip_to_alphanumeric(text: str) -> str:
     """
     Strip text to alphanumeric characters only.
-    
+
     Args:
         text: Input text
-        
+
     Returns:
         Lowercase text with only alphanumeric chars and spaces
     """

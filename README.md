@@ -176,10 +176,10 @@ pip install poetry
 poetry install
 
 # Run tests
-poetry run pytest
+poe test
 
 # Format code
-poetry run poe format
+poe format
 ```
 
 If you are on windows and have multiple python versions, you can use the following commands:

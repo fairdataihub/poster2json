@@ -57,6 +57,7 @@ PYTEST_OPTIONS += --cov=$(PACKAGE)
 endif
 ifdef CI
 PYTEST_OPTIONS += --cov-report=xml
+PYTEST_OPTIONS += -m "not gpu"
 endif
 PYTEST_RERUN_OPTIONS := --last-failed --exitfirst
 

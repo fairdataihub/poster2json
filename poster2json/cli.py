@@ -12,9 +12,10 @@ import click
 from art import tprint
 
 
-@click.group()
-@click.version_option()
-def main():
+@click.group(invoke_without_command=True)
+@click.version_option(prog_name="poster2json")
+@click.pass_context
+def main(ctx):
     """
     poster2json - Convert scientific posters to structured JSON metadata.
     
@@ -36,7 +37,9 @@ def main():
         # Process multiple posters in a directory
         poster2json batch ./posters/ -o ./output/
     """
-    pass
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+        return
 
 
 @main.command()
