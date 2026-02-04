@@ -58,6 +58,7 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 **poster2json** extracts structured metadata from scientific conference posters (PDF or image format) into machine-actionable JSON conforming to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema).
 
 The pipeline uses:
+
 - **Llama 3.1 8B** (fine-tuned) for JSON structuring
 - **Qwen2-VL-7B** for vision-based OCR of image posters
 - **pdfalto** for layout-aware PDF text extraction
@@ -104,49 +105,56 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
 {
   "$schema": "https://posters.science/schema/v0.1/poster_schema.json",
   "creators": [
-    {"name": "Garcia, Sofia", "givenName": "Sofia", "familyName": "Garcia", "affiliation": ["University"]}
+    {
+      "name": "Garcia, Sofia",
+      "givenName": "Sofia",
+      "familyName": "Garcia",
+      "affiliation": ["University"]
+    }
   ],
-  "titles": [{"title": "Machine Learning Approaches to Diabetic Retinopathy Detection"}],
+  "titles": [
+    { "title": "Machine Learning Approaches to Diabetic Retinopathy Detection" }
+  ],
   "posterContent": {
     "sections": [
-      {"sectionTitle": "Abstract", "sectionContent": "..."},
-      {"sectionTitle": "Methods", "sectionContent": "..."},
-      {"sectionTitle": "Results", "sectionContent": "..."}
+      { "sectionTitle": "Abstract", "sectionContent": "..." },
+      { "sectionTitle": "Methods", "sectionContent": "..." },
+      { "sectionTitle": "Results", "sectionContent": "..." }
     ]
   },
-  "imageCaptions": [{"captions": ["Figure 1.", "ROC curves showing..."]}],
-  "tableCaptions": [{"captions": ["Table 1.", "Performance metrics"]}]
+  "imageCaptions": [{ "captions": ["Figure 1.", "ROC curves showing..."] }],
+  "tableCaptions": [{ "captions": ["Table 1.", "Performance metrics"] }]
 }
 ```
 
 ## System Requirements
 
-| Requirement | Specification |
-|-------------|---------------|
-| GPU | NVIDIA CUDA-capable, ≥16GB VRAM |
-| RAM | ≥32GB recommended |
-| Python | 3.10+ |
-| OS | Linux, macOS, Windows (via WSL2) |
+| Requirement | Specification                    |
+| ----------- | -------------------------------- |
+| GPU         | NVIDIA CUDA-capable, ≥16GB VRAM  |
+| RAM         | ≥32GB recommended                |
+| Python      | 3.10+                            |
+| OS          | Linux, macOS, Windows (via WSL2) |
 
 ## Performance
 
 Validated on 10 manually annotated scientific posters:
 
-| Metric | Score | Threshold |
-|--------|-------|-----------|
-| Word Capture | 0.96 | ≥0.75 |
-| ROUGE-L | 0.89 | ≥0.75 |
-| Number Capture | 0.93 | ≥0.75 |
-| Field Proportion | 0.99 | 0.30–2.50 |
+| Metric           | Score | Threshold |
+| ---------------- | ----- | --------- |
+| Word Capture     | 0.96  | ≥0.75     |
+| ROUGE-L          | 0.89  | ≥0.75     |
+| Number Capture   | 0.93  | ≥0.75     |
+| Field Proportion | 0.99  | 0.30–2.50 |
 
 **Pass Rate**: 10/10 (100%)
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
+| Document                             | Description                     |
+| ------------------------------------ | ------------------------------- |
 | [Architecture](docs/architecture.md) | Technical details & methodology |
-| [Evaluation](docs/evaluation.md) | Validation metrics & results |
+| [Evaluation](docs/evaluation.md)     | Validation metrics & results    |
 
 ## Development Setup
 
@@ -155,8 +163,16 @@ Validated on 10 manually annotated scientific posters:
 git clone https://github.com/fairdataihub/poster2json.git
 cd poster2json
 
-# Install with Poetry
+# Create a virtual environment
+python -m venv .venv
+
+# Activate the virtual environment
+source venv/bin/activate # On Windows: .venv\Scripts\activate
+
+# Install poetry
 pip install poetry
+
+# Install dependencies
 poetry install
 
 # Run tests
