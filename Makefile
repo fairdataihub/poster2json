@@ -51,7 +51,7 @@ endif
 RANDOM_SEED ?= $(shell date +%s)
 FAILURES := .cache/pytest/v/cache/lastfailed
 
-PYTEST_OPTIONS := --random --random-seed=$(RANDOM_SEED)
+PYTEST_OPTIONS := --randomly-seed=$(RANDOM_SEED)
 ifndef DISABLE_COVERAGE
 PYTEST_OPTIONS += --cov=$(PACKAGE)
 endif
