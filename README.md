@@ -182,6 +182,14 @@ poetry run pytest
 poetry run poe format
 ```
 
+If you are on windows and have multiple python versions, you can use the following commands:
+
+```bash
+py -0p # list all python versions
+
+py -3.12 -m venv .venv
+```
+
 ## License
 
 MIT License - see [LICENSE](LICENSE.md) for details.
