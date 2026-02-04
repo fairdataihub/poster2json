@@ -1,0 +1,13 @@
+name: deploy-schemas
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: curl
+        uses: wei/curl@v1
+        with:
+          args: ${{ secrets.VERCEL_DEPLOY_HOOK }}

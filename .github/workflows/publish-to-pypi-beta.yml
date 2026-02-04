@@ -1,0 +1,45 @@
+name: Publish to PyPI - beta tags
+
+on:
+  release:
+    types: [published]
+  push:
+    branches:
+      - staging
+  pull_request:
+    types: [closed]
+    branches:
+      - staging
+  workflow_dispatch:
+
+jobs:
+  release:
+    if: (!(github.event.action == 'closed' && github.event.pull_request.merged != true))
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Setup Poetry
+        uses: Gr1N/setup-poetry@v8
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Setup poetry config
+        run: poetry config pypi-token.pypi "${{ secrets.PYPI_API_TOKEN }}"
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish package
+        run: poetry publish

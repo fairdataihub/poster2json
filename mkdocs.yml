@@ -1,0 +1,22 @@
+site_name: poster2json
+site_description: poster2json - Poster to JSON converter for Posters.science
+site_author: "FAIR Data Innovations Hub"
+
+repo_url: "https://github.com/fairdataihub/poster2json"
+edit_uri: "https://github.com/fairdataihub/poster2json/edit/main"
+
+dev_addr: 127.0.0.1:3000
+theme: readthedocs
+
+markdown_extensions:
+  - codehilite
+  - admonition
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - About:
+      - Release Notes: about/changelog.md
+      - Contributor Guide: about/contributing.md
+      - License: about/license.md

@@ -1,0 +1,53 @@
+name: Publish to Test PyPI
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+    branches:
+      - staging
+  pull_request:
+    types: [closed]
+    branches:
+      - staging
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Setup Poetry
+        uses: Gr1N/setup-poetry@v8
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Setup poetry config
+        run: poetry config repositories.testpypi https://test.pypi.org/legacy/
+
+      - run: poetry config pypi-token.testpypi ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+      - name: Wait for CI to pass
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: staging
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          check-name: "ci"
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish package
+        run: poetry publish -r testpypi

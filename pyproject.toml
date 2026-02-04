@@ -1,0 +1,84 @@
+[tool.poetry]
+
+name = "poster2json"
+version = "0.1.0"
+description = "poster2json - Poster to JSON converter for Posters.science"
+
+packages = [{ include = "poster2json" }]
+
+license = "MIT"
+authors = []
+
+readme = "README.md"
+homepage = "https://github.com/fairdataihub/poster2json"
+documentation = "https://fairdataihub.github.io/poster2json"
+repository = "https://github.com/fairdataihub/poster2json"
+
+keywords = []
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+]
+
+[tool.poetry.dependencies]
+
+python = "^3.8"
+click = "*"
+
+[tool.poetry.group.dev.dependencies]
+
+black = "^22.1"
+tomli = "*"
+isort = "^5.10"
+mypy = "^1.0"
+pydocstyle = "^6.1"
+pylint = "~2.15"
+wrapt = "*"
+pytest = "^7.1"
+pytest-describe = "^2.0"
+pytest-cov = "^3.0"
+mkdocs = "~1.3"
+pygments = "^2.11.1"
+poethepoet = "^0.20.0"
+
+[tool.poetry.scripts]
+
+poster2json = "poster2json.cli:main"
+
+[tool.poe.tasks]
+
+docs = "mkdocs serve"
+format_with_isort = "isort poster2json tests"
+format_with_black = "black poster2json tests"
+format = ["format_with_isort", "format_with_black"]
+typecheck = "mypy poster2json tests"
+pylint = "pylint poster2json tests --rcfile=.pylint.ini"
+precommit = ["format", "typecheck", "pylint"]
+test = "pytest -rx -W ignore::DeprecationWarning"
+
+[tool.black]
+quiet = true
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+ignore_missing_imports = true
+no_implicit_optional = true
+check_untyped_defs = true
+cache_dir = ".cache/mypy/"
+
+[tool.pytest.ini_options]
+addopts = "-r sxX --show-capture=log --cov=poster2json --cov-report=term-missing:skip-covered --no-cov-on-fail"
+cache_dir = ".cache/pytest/"
+markers = []
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
