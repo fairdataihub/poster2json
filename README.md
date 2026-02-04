@@ -4,90 +4,49 @@
 
 <br />
 
-<h1>pyfairdatatools</h1>
+<h1>poster2json</h1>
 
 <p>
-
-Python package for the Poster to JSON converter for Posters.science
-
+Python package for the FAIR tools of fairhub.io
 </p>
 
 <br />
 
 <p>
-
   <a href="https://github.com/fairdataihub/poster2json/graphs/contributors">
-
     <img src="https://img.shields.io/github/contributors/fairdataihub/poster2json.svg?style=flat-square" alt="contributors" />
-
   </a>
-
   <a href="https://github.com/fairdataihub/poster2json/stargazers">
-
     <img src="https://img.shields.io/github/stars/fairdataihub/poster2json.svg?style=flat-square" alt="stars" />
-
   </a>
-
   <a href="https://github.com/fairdataihub/poster2json/issues/">
-
     <img src="https://img.shields.io/github/issues/fairdataihub/poster2json.svg?style=flat-square" alt="open issues" />
-
   </a>
-
   <a href="https://github.com/fairdataihub/poster2json/blob/main/LICENSE">
-
     <img src="https://img.shields.io/github/license/fairdataihub/poster2json.svg?style=flat-square" alt="license" />
-
   </a>
-
 </p>
-
 <p>
-
-  <a href="https://github.com/fairdataihub/poster2json/actions">
-
-    <img src="https://img.shields.io/github/actions/workflow/status/fairdataihub/poster2json/main.yml?branch=main&label=linux" alt="Unix Build Status" />
-
-  </a>
-
   <a href="https://pypi.org/project/poster2json">
-
     <img src="https://img.shields.io/pypi/l/poster2json.svg" alt="PyPI License" />
-
   </a>
-
   <a href="https://pypi.org/project/poster2json">
-
     <img src="https://img.shields.io/pypi/v/poster2json.svg" alt="PyPI Version" />
-
   </a>
-
   <a href="https://pypistats.org/packages/poster2json">
-
     <img src="https://img.shields.io/pypi/dm/poster2json.svg?color=orange" alt="PyPI Downloads" />
-
   </a>
-
 </p>
 
 <h4>
-
     <a href="https://fairdataihub.github.io/poster2json/">Documentation</a>
-
-<span> · </span>
-
+  <span> · </span>
     <a href="https://fairdataihub.github.io/poster2json/about/changelog/">Changelog</a>
-
-<span> · </span>
-
+  <span> · </span>
     <a href="https://github.com/fairdataihub/poster2json/issues/">Report Bug</a>
-
-<span> · </span>
-
+  <span> · </span>
     <a href="#">Request Feature</a>
-
   </h4>
-
 </div>
 
 <br />
@@ -154,7 +113,7 @@ xxx
 
 <a href="[https://github.com/fairdataihub/poster2json/graphs/contributors](https://github.com/fairdataihub/poster2json/graphs/contributors)">
 
-  <img src="[https://contrib.rocks/image?repo=fairdataihub/poster2json](https://contrib.rocks/image?repo=fairdataihub/poster2json)" />
+  <img src="[https://contrib.rocks/image?repo=fairdataihub/poster2json](https://contrib.rocks/image?repo=fairdataihub/poster2json)" alt="Contributors" />
 
 </a>
 
