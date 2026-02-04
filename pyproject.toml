@@ -2,49 +2,104 @@
 
 name = "poster2json"
 version = "0.1.0"
-description = "poster2json - Poster to JSON converter for Posters.science"
+description = "Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models"
 
 packages = [{ include = "poster2json" }]
 
 license = "MIT"
-authors = []
+authors = [
+    "FAIR Data Innovations Hub <contact@fairdataihub.org>",
+    "James O'Neill <joneill@calmi2.org>",
+    "Sanjay Soundarajan <ssoundarajan@calmi2.org>",
+    "Bhavesh Patel <bpatel@calmi2.org>",
+]
 
 readme = "README.md"
 homepage = "https://github.com/fairdataihub/poster2json"
 documentation = "https://fairdataihub.github.io/poster2json"
 repository = "https://github.com/fairdataihub/poster2json"
 
-keywords = []
+keywords = [
+    "poster",
+    "json",
+    "metadata",
+    "extraction",
+    "llm",
+    "scientific",
+    "pdf",
+    "ocr",
+    "machine-learning",
+    "datacite",
+    "fair-data",
+]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing",
 ]
 
 [tool.poetry.dependencies]
 
-python = "^3.8"
-click = "*"
+python = "^3.10"
+click = "^8.0"
+
+# ML/AI dependencies
+torch = ">=2.0.0"
+transformers = ">=4.40.0"
+accelerate = ">=0.20.0"
+bitsandbytes = ">=0.41.0"
+safetensors = "*"
+sentencepiece = "*"
+
+# PDF/Image processing
+pymupdf = ">=1.22.0"
+Pillow = ">=9.0.0"
+
+# Validation
+jsonschema = ">=4.17.0"
+rouge-score = "*"
+numpy = "*"
+
+# CLI/Utilities
+art = "^6.0"
+
+[tool.poetry.extras]
+# Vision OCR for image posters (optional, requires more GPU memory)
+vision = ["qwen-vl-utils"]
 
 [tool.poetry.group.dev.dependencies]
 
+# Formatters
 black = "^22.1"
 tomli = "*"
 isort = "^5.10"
+
+# Linters
 mypy = "^1.0"
 pydocstyle = "^6.1"
 pylint = "~2.15"
 wrapt = "*"
+
+# Testing
 pytest = "^7.1"
 pytest-describe = "^2.0"
 pytest-cov = "^3.0"
+
+# Documentation
 mkdocs = "~1.3"
 pygments = "^2.11.1"
+
+# Tooling
 poethepoet = "^0.20.0"
 
 [tool.poetry.scripts]
@@ -64,9 +119,11 @@ test = "pytest -rx -W ignore::DeprecationWarning"
 
 [tool.black]
 quiet = true
+line-length = 100
 
 [tool.isort]
 profile = "black"
+line_length = 100
 
 [tool.mypy]
 ignore_missing_imports = true

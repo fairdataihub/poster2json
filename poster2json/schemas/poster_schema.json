@@ -1,0 +1,1181 @@
+{
+  "$id": "https://posters.science/schema/v0.1/poster_schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Machine Actionable Scientific Poster Schema",
+  "description": "JSON Schema for machine actionable scientific posters. It is based on the DataCite schema v4.6 but extended for poster-specific metadata that were not available in the DataCite schema. Mandatory (M) properties must be provided; Optional (O) properties provide richer description.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "doi": {
+      "$comment": "Optional field. This system generates its own in-house unique identifiers via postersscienceIdentifier, but DOI can be provided if available.",
+      "type": "string",
+      "description": "The Digital Object Identifier of the item.",
+      "minLength": 1,
+      "examples": ["10.5072/envision.54", "10.5281/zenodo.12345678"]
+    },
+    "prefix": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The prefix of the Digital Object Identifier of the item.",
+      "examples": ["10.5072", "10.5281"]
+    },
+    "suffix": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The suffix of the Digital Object Identifier of the item.",
+      "examples": ["envision.54", "zenodo.12345678"]
+    },
+    "identifiers": {
+      "type": "array",
+      "description": "Identifiers for the poster. May include DOI, institutional IDs, or other persistent identifiers.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "The identifier value.",
+            "minLength": 1,
+            "examples": ["10.5072/posters.2025.001234", "arXiv:2501.12345", "Local-ID-789"]
+          },
+          "identifierType": {
+            "type": "string",
+            "description": "The type of identifier. Use 'DOI' for Digital Object Identifiers, or other standard identifier types.",
+            "minLength": 1,
+            "examples": ["DOI", "arXiv", "Local accession number", "Institutional ID", "file"]
+          }
+        },
+        "required": ["identifier", "identifierType"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "alternateIdentifiers": {
+      "type": "array",
+      "description": "The alternate identifiers of the item.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "alternateIdentifier": {
+            "type": "string",
+            "description": "The alternate identifier of the item.",
+            "minLength": 1,
+            "examples": ["PS-2025-001234"]
+          },
+          "alternateIdentifierType": {
+            "type": "string",
+            "$comment": "Any text value is allowed.",
+            "description": "The type of alternate identifier of the item.",
+            "minLength": 1,
+            "examples": ["psID"]
+          }
+        },
+        "required": ["alternateIdentifier", "alternateIdentifierType"],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "creators": {
+      "type": "array",
+      "description": "The authors of the poster, in priority order. The DataCite schema refers to authors as creators so we will use creator in the descriptions below.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The full name of the creator (personal name or organization name). Personal name format should be: family, given.",
+            "minLength": 1,
+            "examples": ["Garcia, Sofia", "Smith, John", "AI Research Laboratory"]
+          },
+          "givenName": {
+            "type": "string",
+            "description": "The given (first) name of the creator. Use only for personal names, not organizational names.",
+            "minLength": 1,
+            "examples": ["Sofia", "John", "Marie"]
+          },
+          "familyName": {
+            "type": "string",
+            "description": "The family (last) name of the creator. Use only for personal names, not organizational names.",
+            "minLength": 1,
+            "examples": ["Garcia", "Smith", "Curie"]
+          },
+          "nameType": {
+            "type": "string",
+            "description": "The type of name of the creator.",
+            "minLength": 1,
+            "enum": ["Personal", "Organizational"]
+          },
+          "nameIdentifiers": {
+            "type": "array",
+            "description": "The name identifiers of the creator.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "nameIdentifier": {
+                  "type": "string",
+                  "description": "The name identifier of the creator.",
+                  "minLength": 1,
+                  "examples": [
+                    "https://orcid.org/0000-0000-0000-0000",
+                    "https://ror.org/000000000"
+                  ]
+                },
+                "nameIdentifierScheme": {
+                  "type": "string",
+                  "description": "The scheme of the name identifier of the creator.",
+                  "minLength": 1,
+                  "examples": ["ORCID", "ISNI", "ROR"]
+                },
+                "schemeURI": {
+                  "type": "string",
+                  "description": "The URI of the name identifier scheme of the creator.",
+                  "minLength": 1,
+                  "examples": [
+                    "https://orcid.org",
+                    "https://isni.org",
+                    "https://ror.org"
+                  ]
+                }
+              },
+              "required": ["nameIdentifier"],
+              "additionalProperties": false
+            },
+            "uniqueItems": true
+          },
+          "affiliation": {
+            "type": "array",
+            "description": "The affiliation(s) of the creator. Can be simple strings or objects with identifier information.",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Simple affiliation name string.",
+                  "minLength": 1,
+                  "examples": [
+                    "University of California, Los Angeles",
+                    "German National Library of Science and Technology"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "description": "Affiliation with optional identifier information.",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "The name of the affiliated organization.",
+                      "minLength": 1,
+                      "examples": [
+                        "University of California, Los Angeles",
+                        "German National Library of Science and Technology",
+                        "DataCite"
+                      ]
+                    },
+                    "affiliationIdentifier": {
+                      "type": "string",
+                      "description": "The identifier of the affiliation.",
+                      "minLength": 1,
+                      "examples": [
+                        "https://ror.org/000000000",
+                        "https://isni.org/0000000000000000"
+                      ]
+                    },
+                    "affiliationIdentifierScheme": {
+                      "type": "string",
+                      "description": "The scheme of the affiliation identifier. If affiliationIdentifier is used, affiliationIdentifierScheme is mandatory.",
+                      "minLength": 1,
+                      "examples": ["ROR", "ISNI"]
+                    },
+                    "schemeURI": {
+                      "type": "string",
+                      "description": "The URI of the affiliation identifier scheme.",
+                      "minLength": 1,
+                      "examples": ["https://ror.org", "https://isni.org"]
+                    }
+                  },
+                  "required": ["name"],
+                  "additionalProperties": false,
+                  "if": {
+                    "properties": {
+                      "affiliationIdentifier": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["affiliationIdentifier"]
+                  },
+                  "then": {
+                    "required": ["affiliationIdentifierScheme"]
+                  }
+                }
+              ]
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "titles": {
+      "type": "array",
+      "description": "The titles of the poster. Include main title and any alternative titles, subtitles, or translations.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The title of the poster.",
+            "minLength": 1,
+            "examples": ["Machine Learning Approaches to Diabetic Retinopathy Detection", "AI-Ready Clinical Datasets for Type 2 Diabetes Research"]
+          },
+          "titleType": {
+            "type": "string",
+            "description": "The type of title of the item. The titleType subproperty is used when more than a single title is provided. Unless otherwise indicated by titleType, a title is considered to be the main title.",
+            "minLength": 1,
+            "enum": ["AlternativeTitle", "Subtitle", "TranslatedTitle", "Other"]
+          }
+        },
+        "required": ["title"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "publisher": {
+      "type": "object",
+      "description": "The entity that hosts, archives, or distributes the poster. This could be a repository (e.g., Zenodo, institutional repository), conference website, or publishing platform where the poster is or will be publicly available.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the publisher.",
+          "minLength": 1,
+          "examples": ["Zenodo", "IEEE Conference Publications", "ACM Digital Library", "Institutional Repository"]
+        },
+        "publisherIdentifier": {
+          "type": "string",
+          "description": "The identifier of the publisher of the item.",
+          "minLength": 1,
+          "examples": [
+            "https://ror.org/000000000",
+            "https://isni.org/0000000000000000",
+            "https://re3data.org/000000000"
+          ]
+        },
+        "publisherIdentifierScheme": {
+          "type": "string",
+          "description": "The scheme of the publisher identifier of the item.",
+          "minLength": 1,
+          "examples": ["ROR", "re3data", "ISNI"]
+        },
+        "schemeURI": {
+          "type": "string",
+          "description": "The URI of the publisher identifier scheme of the item.",
+          "minLength": 1,
+          "examples": [
+            "https://ror.org",
+            "https://isni.org",
+            "https://re3data.org"
+          ]
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "publisherIdentifier": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["publisherIdentifier"],
+        "additionalProperties": false
+      },
+      "then": {
+        "properties": {
+          "publisherIdentifierScheme": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["publisherIdentifierScheme"]
+      }
+    },
+    "publicationYear": {
+      "type": "integer",
+      "description": "The year when the poster was or will be made publicly available. Format: YYYY",
+      "minimum": 1000,
+      "maximum": 9999,
+      "examples": [2025]
+    },
+    "subjects": {
+      "type": "array",
+      "description": "Keywords, subject terms, or classification codes describing the research topic of the poster.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Subject, keyword, classification code, or key phrase describing the poster content.",
+            "minLength": 1,
+            "examples": ["Machine Learning", "Type 2 Diabetes", "Retinal Imaging", "Clinical Data Standards"]
+          },
+          "schemeUri": {
+            "type": "string",
+            "description": "The URI of the subject identifier scheme.",
+            "minLength": 1,
+            "examples": ["https://www.nlm.nih.gov/mesh/", "https://id.loc.gov/authorities/subjects.html"]
+          },
+          "valueUri": {
+            "type": "string",
+            "description": "The URI of the subject identifier.",
+            "minLength": 1,
+            "examples": ["https://www.nlm.nih.gov/mesh/D000001", "https://id.loc.gov/authorities/subjects/sh85118622.html"]
+          },
+          "subjectScheme": {
+            "type": "string",
+            "description": "The name of the subject scheme or classification code or authority if one is used.",
+            "minLength": 1,
+            "examples": ["NLM", "LCSH", "ANZSRC"]
+          },
+          "classificationCode": {
+            "type": "string",
+            "description": "The classification code of the subject of the item. The classificationCode sub-property may be used for subject schemes, like ANZSRC, which do not have valueURIs for each subject term.",
+            "minLength": 1,
+            "examples": ["310607"]
+          }
+        },
+        "required": ["subject"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "dates": {
+      "type": "array",
+      "description": "Important dates for the poster, such as when it was created, presented at a conference, or made publicly available.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Date in W3CDTF format: YYYY, YYYY-MM-DD, or YYYY-MM-DDThh:mm:ssTZD. Can also specify date ranges.",
+            "examples": [
+              "2025",
+              "2025-10-15",
+              "2025-10-15T09:00:00Z",
+              "2025-10-15/2025-10-17"
+            ],
+            "minLength": 1
+          },
+          "dateType": {
+            "type": "string",
+            "description": "The type of date of the item.",
+            "minLength": 1,
+            "oneOf": [
+              {
+                "const": "Accepted",
+                "description": "The date that the publisher accepted the resource into their system."
+              },
+              {
+                "const": "Available",
+                "description": "The date the resource is made publicly available. May be a range."
+              },
+              {
+                "const": "Copyrighted",
+                "description": "The specific, documented date at which the resource receives a copyrighted status, if applicable."
+              },
+              {
+                "const": "Collected",
+                "description": "The date or date range in which the resource content was collected."
+              },
+              {
+                "const": "Coverage",
+                "description": "The date or date range during which the resource is available."
+              },
+              {
+                "const": "Created",
+                "description": "The date the resource itself was put together; this could refer to a timeframe in ancient history, a date range, or a single date for a final component, e.g., the finalised file with all the data."
+              },
+              {
+                "const": "Issued",
+                "description": "The date that the resource is published or distributed, e.g., to a data centre"
+              },
+              {
+                "const": "Submitted",
+                "description": "The date the creator submits the resource to the publisher. This could be different from Accepted if the publisher then applies a selection process."
+              },
+              {
+                "const": "Updated",
+                "description": "The date of the last update to the resource, when the resource is being added to. May be a range."
+              },
+              {
+                "const": "Valid",
+                "description": "The date or date range during which the dataset or resource is accurate."
+              },
+              {
+                "const": "Withdrawn",
+                "description": "The date the resource is removed."
+              },
+              {
+                "const": "Presented",
+                "description": "The date the resource was presented, such as at a conference."
+              },
+              {
+                "const": "Other",
+                "description": "Date type not defined elsewhere."
+              }
+            ]
+          },
+          "dateInformation": {
+            "type": ["string", "null"],
+            "description": "Additional information about the date of the item.",
+            "examples": ["2025-01-01", "55 BCE"]
+          }
+        },
+        "required": ["date", "dateType"],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "language": {
+      "type": "string",
+      "minLength": 2,
+      "description": "Primary language of the poster content. ISO 639-1 language code (e.g., 'en', 'es', 'de', 'fr', 'zh').",
+      "examples": ["en", "es", "zh", "fr", "de", "ja", "pt"]
+    },
+    "types": {
+      "type": "object",
+      "properties": {
+        "resourceType": {
+          "type": "string",
+          "description": "Free text. The recommended content is a single term of some detail so that a pair can be formed with the resourceTypeGeneral sub-property. For example, a resourceType of 'Census Data' paired with a resourceTypeGeneral of 'Dataset' yields 'Dataset/Census Data'.",
+          "minLength": 1
+        },
+        "resourceTypeGeneral": {
+          "description": "The general type of a resource.",
+          "$ref": "#/definitions/resourceType",
+          "default": "Other"
+        }
+      },
+      "required": ["resourceType"],
+      "additionalProperties": true
+    },
+    "relatedIdentifiers": {
+      "type": "array",
+      "description": "Identifiers of related resources. These must be globally unique identifiers.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "relatedIdentifier": {
+            "type": "string",
+            "description": "The related identifier of the item.",
+            "minLength": 1,
+            "examples": ["10.21384/bar", "https://example.com/"]
+          },
+          "relatedIdentifierType": {
+            "description": "The type of related identifier of the item.",
+            "$ref": "#/definitions/identifierType"
+          },
+          "relationType": {
+            "description": "Description of the relationship of the dataset (A) and the related resource (B). ",
+            "$ref": "#/definitions/relationType"
+          },
+          "relatedMetadataScheme": {
+            "type": "string",
+            "description": "The scheme of the related metadata of the item. Use only if the relationType is HasMetadata or IsMetadataFor.",
+            "minLength": 1,
+            "examples": ["DDI-L"]
+          },
+          "schemeURI": {
+            "type": "string",
+            "description": "The URI of the related metadata scheme of the item. Use only if the relationType is HasMetadata or IsMetadataFor.",
+            "minLength": 1,
+            "examples": [
+              "http://www.ddialliance.org/Specification/DDI-Lifecycle/3.1/XMLSchema/instance.xsd"
+            ]
+          },
+          "schemeType": {
+            "type": "string",
+            "description": "The type of the related metadata scheme of the item. Use only if the relationType is HasMetadata or IsMetadataFor.",
+            "minLength": 1,
+            "examples": ["XSD", "DDT"]
+          },
+          "resourceTypeGeneral": {
+            "description": "The general type of related resource.",
+            "$ref": "#/definitions/resourceType"
+          }
+        },
+        "required": [
+          "relatedIdentifier",
+          "relatedIdentifierType",
+          "relationType"
+        ],
+        "additionalProperties": false
+      },
+      "uniqueItems": true
+    },
+    "sizes": {
+      "type": "array",
+      "description": "Physical dimensions or file size of the poster. Common poster sizes include: 36x48 inches, 48x36 inches, A0 (33.1x46.8 inches), A1, etc. Can also include file size.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A specific dimension or size",
+        "examples": ["36x48 inches portrait", "48x36 inches landscape", "A0 portrait", "90x120 cm", "24 MB PDF"]
+      },
+      "uniqueItems": true
+    },
+    "formats": {
+      "type": "array",
+      "description": "Technical format of the data files in the dataset. Use file extension or MIME type where possible, e.g., PDF, XML, MPG or application/pdf, text/xml, video/mpeg.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "examples": [
+        ["PDF"],
+        ["XML"],
+        ["MPG"],
+        ["application/pdf"],
+        ["text/xml"],
+        ["video/mpeg"]
+      ]
+    },
+    "version": {
+      "type": "string",
+      "description": "The version number of the dataset. Suggested practice: major_version.minor_version. Register a new identifier for a major version change. May be used in conjunction with properties 'alternateIdentifier' and 'relatedIdentifier' to indicate various information updates. May be used in conjunction with property 'description' to indicate the nature and file/record range of version.",
+      "minLength": 1,
+      "examples": ["2.1"]
+    },
+    "rightsList": {
+      "type": "array",
+      "description": "Any rights information for this resource. The property may be repeated to record complex rights characteristics.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "rights": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Use the complete title of a license and include version information if applicable",
+            "examples": ["Creative Commons Attribution 4.0 International", "CC-BY-4.0"]
+          },
+          "rightsUri": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The URI of the license",
+            "examples": ["https://creativecommons.org/licenses/by/4.0/"]
+          },
+          "rightsIdentifier": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A short, standardized version of the license name. A list of identifiers for commonly-used licenses may be found here: (https://spdx.org/licenses/)",
+            "examples": ["CC-BY-4.0"]
+          },
+          "rightsIdentifierScheme": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The name of the scheme",
+            "examples": ["SPDX"]
+          },
+          "schemeUri": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The URI of the rightsIdentifierScheme",
+            "examples": ["https://spdx.org/licenses/"]
+          }
+        },
+        "required": ["rights"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "descriptions": {
+      "type": "array",
+      "description": "Free text descriptions of the poster content. Typically includes an abstract summarizing the research, methods used, or technical details.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A description of the poster content.",
+            "examples": ["This poster presents machine learning methods for automated diabetic retinopathy screening using retinal fundus images from 4,000 participants...", "We describe a novel clinical dataset structure (CDS) for organizing multimodal research data in AI-ready formats..."]
+          },
+          "descriptionType": {
+            "type": "string",
+            "description": "The type of the 'description'. Must be from controlled list.",
+            "oneOf": [
+              {
+                "const": "Abstract",
+                "description": "A brief description of the resource and the context in which the resource was created"
+              },
+              {
+                "const": "Methods",
+                "description": "The methodology employed for the study or research."
+              },
+              {
+                "const": "SeriesInformation",
+                "description": "Information about the series to which the resource belongs."
+              },
+              {
+                "const": "TableOfContents",
+                "description": "A table of contents for the resource."
+              },
+              {
+                "const": "TechnicalInfo",
+                "description": "Detailed information that may be associated with design, implementation, operation, use, and/or maintenance of a process or system."
+              },
+              {
+                "const": "Other",
+                "description": "Other description information that does not fit into an existing category."
+              }
+            ]
+          }
+        },
+        "required": ["descriptionType", "description"]
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "fundingReferences": {
+      "type": "array",
+      "description": "Information about financial support for the research presented in the poster.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "funderName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the funding provider.",
+            "examples": ["National Institutes of Health (NIH)", "National Science Foundation", "European Research Council"]
+          },
+          "funderIdentifier": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Uniquely identifies a funding entity, according to various types.",
+            "examples": ["https://doi.org/10.13039/100000936"]
+          },
+          "funderIdentifierType": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The type of funder identifier used.",
+            "enum": ["Crossref Funder ID", "GRID", "ISNI", "ROR", "Other"]
+          },
+          "schemeUri": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The URI of the funder identifier scheme",
+            "examples": ["https://ror.org", "https://www.crossref.org/services/funder-registry/"]
+          },
+          "awardNumber": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The code assigned by the funder to a sponsored award (grant).",
+            "examples": ["OT2OD032644", "GBMF3859.01"]
+          },
+          "awardUri": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The URI leading to a page provided by the funder for more information about the award (grant).",
+            "examples": [
+              "https://reporter.nih.gov/search/VtCaq87pxkW1uosvSNPjHg/project-details/10858583",
+              "https://www.moore.org/grants/list/GBMF3859.01",
+              "https://doi.org/10.35802/221400"
+            ]
+          },
+          "awardTitle": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The human readable title or name of the award (grant)",
+            "examples": ["The awesome project of XYZ", "Socioenvironmental Monitoring of the Amazon Basin and Xingu"]
+          }
+        },
+        "required": ["funderName"],
+        "if": {
+          "properties": {
+            "funderIdentifier": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["funderIdentifier"],
+          "additionalProperties": false
+        },
+        "then": {
+          "properties": {
+            "funderIdentifierType": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["funderIdentifierType"]
+        }
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "ethicsApprovals": {
+      "type": "array",
+      "description": "Array of ethics committee approvals, IRB protocols, or other ethics-related certifications for the research presented in this poster.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "examples": [["IRB Protocol #2024-001"], ["University Ethics Committee approval", "National Research Ethics Committee approval #2025-042"]]
+    },
+    "conference": {
+      "type": "object",
+      "description": "Comment: there is no standard for conferenceinfo based on the DataCite Field",
+      "properties": {
+        "conferenceName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the conference"
+        },
+        "conferenceLocation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Location of the conference"
+        },
+        "conferenceUri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "URI of the conference"
+        },
+        "conferenceIdentifier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier of the conference"
+        },
+        "conferenceIdentifierType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Type of conference identifier"
+        },
+        "conferenceSchemaUri": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Schema URI for the conference"
+        },
+        "conferenceStartDate": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Start date of the conference",
+          "examples": ["2025-09-15"]
+        },
+        "conferenceEndDate": {
+          "type": "string",
+          "minLength": 1,
+          "description": "End date of the conference",
+          "examples": ["2025-09-17"]
+        },
+        "conferenceAcronym": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Acronym of the conference"
+        },
+        "conferenceSeries": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Conference series information"
+        }
+      },
+      "additionalProperties": false
+    },
+    "posterContent": {
+      "type": "object",
+      "description": "Text content extracted from the poster. The poster's title is stored under separate DataCite schema titles field. Remaining content is organized into sections here with flexible naming (e.g., 'Introduction', 'Methods', 'Approach', 'Results & Conclusions', etc.).",
+      "properties": {
+        "sections": {
+          "type": "array",
+          "description": "Array of content sections extracted from the poster. Each section represents a distinct part of the poster with its title and content.",
+          "items": {
+            "type": "object",
+            "description": "A single section of the poster with its title and content",
+            "properties": {
+              "sectionTitle": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The title or heading of this section as it appears on the poster. Examples: 'Introduction', 'Background', 'Methods', 'Approach', 'Results', 'Results & Conclusions', 'Discussion', 'Future Work', 'Acknowledgements', 'References', etc.",
+                "examples": ["Introduction", "Methods", "Results & Discussion", "Conclusions", "References"]
+              },
+              "sectionContent": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The text content of this section extracted from the poster.",
+                "examples": ["Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."]
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "unstructuredContent": {
+          "type": "string",
+          "description": "Optional field for poster content that cannot be organized into clear sections. Use this when the poster layout is highly unstructured or when section boundaries cannot be reliably identified.",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "tableCaptions": {
+      "type": "array",
+      "description": "Array of table caption objects. Each object represents one table and contains its caption text segments.",
+      "items": {
+        "type": "object",
+        "description": "Caption information for a single table. Structure allows for future extension with properties like tableId or tableNumber.",
+        "properties": {
+          "captions": {
+            "type": "array",
+            "description": "Array of caption text segments for this table. Can include table label, title, description, etc.",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "examples": [
+              ["Table 1. Summary of Results", "Comparison of model performance across datasets"]
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "imageCaptions": {
+      "type": "array",
+      "description": "Array of image caption objects. Each object represents one image/figure and contains its caption text segments.",
+      "items": {
+        "type": "object",
+        "description": "Caption information for a single image. Structure allows for future extension with properties like imageId or figureNumber.",
+        "properties": {
+          "captions": {
+            "type": "array",
+            "description": "Array of caption text segments for this image. Can include figure label, title, description, etc.",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "examples": [
+              ["Figure 1. Overview of the Task Force", "Shows approximately 12 active members from various locations..."]
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "domain": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Primary domain or field of study for the research presented in the poster",
+      "examples": ["Machine Learning", "Clinical Medicine", "Bioinformatics", "Public Health", "Neuroscience"]
+    }
+  },
+  "required": [
+    "identifiers",
+    "creators",
+    "titles",
+    "publisher",
+    "publicationYear",
+    "subjects",
+    "dates",
+    "language",
+    "types",
+    "formats",
+    "rightsList",
+    "descriptions",
+    "fundingReferences",
+    "conference"
+  ],
+  "definitions": {
+    "resourceType": {
+      "type": "string",
+      "description": "The type of a resource.",
+      "enum": [
+        "Audiovisual",
+        "Award",
+        "Book",
+        "BookChapter",
+        "Collection",
+        "ComputationalNotebook",
+        "ConferencePaper",
+        "ConferenceProceeding",
+        "DataPaper",
+        "Dataset",
+        "Dissertation",
+        "Event",
+        "Image",
+        "InteractiveResource",
+        "Journal",
+        "JournalArticle",
+        "Model",
+        "OutputManagementPlan",
+        "PeerReview",
+        "PhysicalObject",
+        "Preprint",
+        "Project",
+        "Report",
+        "Software",
+        "Sound",
+        "Standard",
+        "StudyRegistration",
+        "Text",
+        "Workflow",
+        "Other"
+      ]
+    },
+    "relationType": {
+      "type": "string",
+      "description": "The type of relation between the related identifier and the item.",
+      "oneOf": [
+        {
+          "const": "IsCitedBy",
+          "description": "Indicates that B includes A in a citation"
+        },
+        {
+          "const": "Cites",
+          "description": "Indicates that A includes B in a citation"
+        },
+        {
+          "const": "IsSupplementTo",
+          "description": "Indicates that A is a supplement to B"
+        },
+        {
+          "const": "IsSupplementedBy",
+          "description": "Indicates that B is a supplement to A"
+        },
+        {
+          "const": "IsContinuedBy",
+          "description": "Indicates A is continued by the work B"
+        },
+        {
+          "const": "Continues",
+          "description": "Indicates A is a continuation of the work B"
+        },
+        {
+          "const": "IsDescribedBy",
+          "description": "Indicates A is described by B"
+        },
+        {
+          "const": "Describes",
+          "description": "Indicates A describes B"
+        },
+        {
+          "const": "HasMetadata",
+          "description": "Indicates resource A has additional metadata B"
+        },
+        {
+          "const": "IsMetadataFor",
+          "description": "Indicates additional metadata A for a resource B"
+        },
+        {
+          "const": "HasVersion",
+          "description": "Indicates A has a version (B)"
+        },
+        {
+          "const": "IsVersionOf",
+          "description": "Indicates A is a version of B"
+        },
+        {
+          "const": "IsNewVersionOf",
+          "description": "Indicates A is a new edition of B, where the new edition has been modified or updated"
+        },
+        {
+          "const": "IsPreviousVersionOf",
+          "description": "Indicates A is a previous edition of B"
+        },
+        {
+          "const": "IsPartOf",
+          "description": "Indicates A is a portion of B; may be used for elements of a series"
+        },
+        {
+          "const": "HasPart",
+          "description": "Indicates A includes the part B"
+        },
+        {
+          "const": "IsPublishedIn",
+          "description": "Indicates A is published inside B, but is independent of other things published inside of B"
+        },
+        {
+          "const": "IsReferencedBy",
+          "description": "Indicates A is used as a source of information by B"
+        },
+        {
+          "const": "References",
+          "description": "Indicates B is used as a source of information for A"
+        },
+        {
+          "const": "IsDocumentedBy",
+          "description": "Indicates B is documentation about/ explaining A; e.g. points to software documentation"
+        },
+        {
+          "const": "Documents",
+          "description": "Indicates A is documentation about B; e.g. points to software documentation"
+        },
+        {
+          "const": "IsCompiledBy",
+          "description": "Indicates B is used to compile or create A"
+        },
+        {
+          "const": "Compiles",
+          "description": "Indicates B is the result of a compile or creation event using A"
+        },
+        {
+          "const": "IsVariantFormOf",
+          "description": "Indicates A is a variant or different form of B"
+        },
+        {
+          "const": "IsOriginalFormOf",
+          "description": "Indicates A is the original form of B"
+        },
+        {
+          "const": "IsIdenticalTo",
+          "description": "Indicates that A is identical to B, for use when there is a need to register two separate instances of the same resource"
+        },
+        {
+          "const": "IsReviewedBy",
+          "description": "Indicates that A is reviewed by B"
+        },
+        {
+          "const": "Reviews",
+          "description": "Indicates that A is a review of B"
+        },
+        {
+          "const": "IsDerivedFrom",
+          "description": "Indicates B is a source upon which A is based"
+        },
+        {
+          "const": "IsSourceOf",
+          "description": "Indicates A is a source upon which B is based"
+        },
+        {
+          "const": "IsRequiredBy",
+          "description": "Indicates A is required by B"
+        },
+        {
+          "const": "Requires",
+          "description": "Indicates A requires B"
+        },
+        {
+          "const": "IsObsoletedBy",
+          "description": "Indicates A is replaced by B"
+        },
+        {
+          "const": "Obsoletes",
+          "description": "Indicates A replaces B"
+        },
+        {
+          "const": "IsCollectedBy",
+          "description": "Indicates A is collected by B"
+        },
+        {
+          "const": "Collects",
+          "description": "Indicates A collects B"
+        },
+        {
+          "const": "IsTranslationOf",
+          "description": "Indicates A is a translation of B"
+        },
+        {
+          "const": "HasTranslation",
+          "description": "Indicates A has a translation B"
+        }
+      ]
+    },
+    "identifierType": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "ARK",
+          "description": "Archival Resource Key: a URI designed to support long-term access to information objects. In general, ARK syntax is of the form (brackets, []. indicate optional elements): [http://NMA/]ark:/NAAN/Name [Qualifier]]"
+        },
+        {
+          "const": "arXiv",
+          "description": "arXiv identifier: arXiv.org is a repository of preprints of scientific papers in the fields of mathematics, physics, astronomy, computer science, quantitative biology, statistics, and quantitative finance."
+        },
+        {
+          "const": "bibcode",
+          "description": "Astrophysics Data System bibliographic codes: a standardized 19-character identifier according to the syntax yyyyjjjjjvvvvmppppa. See http://info-uri.info/registry/OAIHandler?verb=GetRecord&metadataPrefix=reg&identifier=info:bibcode/"
+        },
+        {
+          "const": "DOI",
+          "description": "Digital Object Identifier: a character string used to uniquely identify an object. A DOI name is divided into two parts, a prefix and a suffix, separated by a slash."
+        },
+        {
+          "const": "EAN13",
+          "description": "European Article Number, now renamed International Article Number, but retaining the original acronym, is a 13-digit barcoding standard that is a superset of the original 12-digit Universal Product Code (UPC) system"
+        },
+        {
+          "const": "EISSN",
+          "description": "Electronic International Standard Serial Number: ISSN used to identify periodicals in electronic form (eISSN or e ISSN)."
+        },
+        {
+          "const": "Handle",
+          "description": "This refers specifically to an ID in the Handle system operated by the Corporation for National Research Initiatives (CNRI)"
+        },
+        {
+          "const": "IGSN",
+          "description": "International Geo Sample Number: a 9-digit alphanumeric code that uniquely identifies samples from our natural environment and related sampling features."
+        },
+        {
+          "const": "ISBN",
+          "description": "International Standard Book Number: a unique numeric book identifier. There are 2 formats: a 10-digit ISBN format and a 13- digit ISBN."
+        },
+        {
+          "const": "ISSN",
+          "description": "International Standard Serial Number: a unique 8-digit number used to identify a print or electronic periodical publication."
+        },
+        {
+          "const": "ISTC",
+          "description": "International Standard Text Code: a unique `number` assigned to a textual work. An ISTC consists of 16 numbers and/or letters."
+        },
+        {
+          "const": "LISSN",
+          "description": "The linking ISSN or ISSN-L enables collocation or linking among different media versions of a continuing resource."
+        },
+        {
+          "const": "LSID",
+          "description": "Life Science Identifiers: a unique identifier for data in the Life Science domain. Format: urn:lsid:authority:namespace:identifier:revision"
+        },
+        {
+          "const": "PMID",
+          "description": "PubMed Identifier: a unique identifier assigned to each PubMed record."
+        },
+        {
+          "const": "PURL",
+          "description": "Persistent Uniform Resource Locator. A PURL has three parts: (1) a protocol, (2) a resolver address, and (3) a name."
+        },
+        {
+          "const": "UPC",
+          "description": "Universal Product Code is a barcode symbology used for tracking trade items in stores. Its most common form, the UPC-A, consists of 12 numerical digits."
+        },
+        {
+          "const": "URL",
+          "description": "Uniform Resource Locator, also known as web address, is a specific character string that constitutes a reference to a resource. The syntax is: scheme://domain:port/path?qu ery_string#fragment_id"
+        },
+        {
+          "const": "URN",
+          "description": "Uniform Resource Name: a unique and persistent identifier of an electronic document. The syntax is: urn:< NID>: The leading urn: sequence is case-insensitive, is the namespace identifier, is the namespace-specific string."
+        },
+        {
+          "const": "w3id",
+          "description": "Permanent identifier for Web applications. Mostly used to publish vocabularies and ontologies. The letters `w3` stand for `World Wide Web`."
+        },
+        {
+          "const": "Other",
+          "description": "None of the listed identifier types."
+        }
+      ]
+    }
+  }
+}
