@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/fairdataihub/poster2json/main/logo.svg" alt="logo" width="200" height="auto" />
+<img src="https://cdn.posters.science/logos/poster-fairy.png" alt="logo" width="200" height="auto" />
 
 <br />
 
