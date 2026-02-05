@@ -167,7 +167,8 @@ cd poster2json
 python -m venv .venv
 
 # Activate the virtual environment
-source venv/bin/activate # On Windows: .venv\Scripts\activate
+source venv/bin/activate
+.venv\Scripts\activate # On Windows
 
 # Install poetry
 pip install poetry
