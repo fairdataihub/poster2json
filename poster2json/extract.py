@@ -109,7 +109,7 @@ def free_gpu():
 def get_best_gpu(min_memory_gb: int = 16) -> str:
     """
     Get the GPU with most available memory.
-    
+
     Returns device string like 'cuda:0' or 'cpu' if no GPU available.
     """
     if not torch.cuda.is_available():
@@ -332,12 +332,12 @@ def get_raw_text(
 ) -> Tuple[str, str]:
     """
     Get raw text from a poster file.
-    
+
     Args:
         poster_path: Path to poster file (PDF, JPG, PNG)
         poster_id: Optional ID for caching
         output_dir: Optional directory for cached results
-        
+
     Returns:
         Tuple of (text, source) where source indicates extraction method
     """
@@ -480,7 +480,9 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
         )
     elapsed = time.time() - t0
     tokens_generated = outputs.shape[1] - inputs["input_ids"].shape[1]
-    log(f"   Generated {tokens_generated} tokens in {elapsed:.2f}s ({tokens_generated/elapsed:.1f} tok/s)")
+    log(
+        f"   Generated {tokens_generated} tokens in {elapsed:.2f}s ({tokens_generated/elapsed:.1f} tok/s)"
+    )
 
     return tokenizer.decode(outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
 
@@ -739,9 +741,22 @@ def _clean_unicode_artifacts(text: str) -> str:
         return text
 
     bidi_chars = [
-        "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
-        "\u2066", "\u2067", "\u2068", "\u2069", "\u200b", "\u200c", "\u200d",
-        "\ufeff", "\u00ad",
+        "\u200e",
+        "\u200f",
+        "\u202a",
+        "\u202b",
+        "\u202c",
+        "\u202d",
+        "\u202e",
+        "\u2066",
+        "\u2067",
+        "\u2068",
+        "\u2069",
+        "\u200b",
+        "\u200c",
+        "\u200d",
+        "\ufeff",
+        "\u00ad",
     ]
     for char in bidi_chars:
         text = text.replace(char, "")
@@ -811,7 +826,9 @@ def _postprocess_json(data: dict) -> dict:
                 content = section.get("sectionContent", "")
                 if isinstance(content, list):
                     content = " ".join(str(c) for c in content)
-                content = _clean_unicode_artifacts(content.strip() if isinstance(content, str) else "")
+                content = _clean_unicode_artifacts(
+                    content.strip() if isinstance(content, str) else ""
+                )
                 if content and len(content) > 10:
                     cleaned_sections.append({"sectionTitle": title, "sectionContent": content})
             result["posterContent"]["sections"] = cleaned_sections
@@ -839,7 +856,7 @@ def _postprocess_json(data: dict) -> dict:
 def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
     """
     Send raw poster text to the LLM and robustly parse the JSON response.
-    
+
     This function:
       1. Calls the model with a full prompt
       2. Retries with more tokens if truncation is detected
@@ -876,16 +893,16 @@ def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
 def extract_poster(poster_path: str) -> dict:
     """
     Extract structured JSON metadata from a scientific poster.
-    
+
     This is the main entry point for poster extraction.
-    
+
     Args:
         poster_path: Path to the poster file (PDF, JPG, or PNG)
-        
+
     Returns:
         Dictionary containing structured poster metadata conforming to
         the poster-json-schema.
-        
+
     Example:
         >>> result = extract_poster("poster.pdf")
         >>> print(result["titles"][0]["title"])
@@ -930,4 +947,3 @@ def extract_poster(poster_path: str) -> dict:
         traceback.print_exc()
         unload_json_model()
         return {"error": str(e)}
-
