@@ -58,7 +58,7 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 **poster2json** extracts structured metadata from scientific conference posters (PDF or image format) into machine-actionable JSON conforming to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema).
 
 The pipeline uses:
-- **Llama 3.1 8B** (fine-tuned) for JSON structuring
+- [**Llama-3.1-8B-Poster-Extraction**](https://huggingface.co/jimnoneill/Llama-3.1-8B-Poster-Extraction) for JSON structuring
 - **Qwen2-VL-7B** for vision-based OCR of image posters
 - **pdfalto** for layout-aware PDF text extraction
 

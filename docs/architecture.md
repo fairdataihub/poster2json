@@ -169,7 +169,6 @@ poster2json/
 |----------|-------------|
 | `PDFALTO_PATH` | Path to pdfalto binary |
 | `CUDA_VISIBLE_DEVICES` | GPU device(s) to use |
-| `HF_TOKEN` | HuggingFace API token |
 
 ### Model Configuration
 
