@@ -11,7 +11,7 @@ The pipeline is validated using four complementary metrics:
 | **Word Capture (w)** | Proportion of reference vocabulary in extracted text | ≥0.75 | Measures lexical completeness |
 | **ROUGE-L (r)** | Longest common subsequence similarity | ≥0.75 | Captures sequential text preservation |
 | **Number Capture (n)** | Proportion of numeric values preserved | ≥0.75 | Validates quantitative data integrity |
-| **Field Proportion (f)** | Ratio of extracted to reference JSON elements | 0.30–2.50 | Accommodates layout variability |
+| **Field Proportion (f)** | Ratio of extracted to reference JSON elements | 0.50–2.00 | Accommodates layout variability |
 
 ### Pass Criteria
 
@@ -19,7 +19,7 @@ A poster passes validation if ALL conditions are met:
 - Word Capture ≥ 0.75
 - ROUGE-L ≥ 0.75
 - Number Capture ≥ 0.75
-- Field Proportion between 0.30 and 2.50
+- Field Proportion between 0.50 and 2.00
 
 ## Metric Implementation
 
@@ -72,7 +72,7 @@ reference_fields = count_json_fields(reference_json)
 field_proportion = extracted_fields / reference_fields
 ```
 
-The extended range (0.30–2.50) accommodates:
+The extended range (0.50–2.00) accommodates:
 - Nested vs flat section structures
 - Variable poster layouts
 - Optional metadata fields

@@ -145,7 +145,7 @@ Validated on 10 manually annotated scientific posters:
 | Word Capture     | 0.96  | ≥0.75     |
 | ROUGE-L          | 0.89  | ≥0.75     |
 | Number Capture   | 0.93  | ≥0.75     |
-| Field Proportion | 0.99  | 0.30–2.50 |
+| Field Proportion | 0.99  | 0.50–2.00 |
 
 **Pass Rate**: 10/10 (100%)
 
