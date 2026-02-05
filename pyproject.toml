@@ -1,7 +1,7 @@
 [tool.poetry]
 
 name = "poster2json"
-version = "0.1.0"
+version = "0.1.1"
 description = "Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models"
 
 packages = [{ include = "poster2json" }]
@@ -57,7 +57,7 @@ click = "^8.0"
 torch = ">=2.0.0"
 transformers = ">=4.40.0"
 accelerate = ">=0.20.0"
-bitsandbytes = ">=0.41.0"
+bitsandbytes = ">=0.44.0"
 safetensors = "*"
 sentencepiece = "*"
 
@@ -134,7 +134,7 @@ cache_dir = ".cache/mypy/"
 [tool.pytest.ini_options]
 addopts = "-r sxX --show-capture=log --cov=poster2json --cov-report=term-missing:skip-covered --no-cov-on-fail"
 cache_dir = ".cache/pytest/"
-markers = []
+markers = ["gpu: mark test as requiring a GPU (skip in CI with -m 'not gpu')"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

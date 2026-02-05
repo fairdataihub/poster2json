@@ -30,9 +30,6 @@ jobs:
       - name: Install dependencies
         run: make install
 
-      - name: Revert the changes to bin folder
-        run: chmod 644 ./bin/*
-
       # - name: Check code
       #   run: make check
 
