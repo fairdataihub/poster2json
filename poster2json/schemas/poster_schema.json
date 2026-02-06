@@ -6,25 +6,6 @@
   "type": "object",
   "additionalProperties": true,
   "properties": {
-    "doi": {
-      "$comment": "Optional field. This system generates its own in-house unique identifiers via postersscienceIdentifier, but DOI can be provided if available.",
-      "type": "string",
-      "description": "The Digital Object Identifier of the item.",
-      "minLength": 1,
-      "examples": ["10.5072/envision.54", "10.5281/zenodo.12345678"]
-    },
-    "prefix": {
-      "type": "string",
-      "minLength": 1,
-      "description": "The prefix of the Digital Object Identifier of the item.",
-      "examples": ["10.5072", "10.5281"]
-    },
-    "suffix": {
-      "type": "string",
-      "minLength": 1,
-      "description": "The suffix of the Digital Object Identifier of the item.",
-      "examples": ["envision.54", "zenodo.12345678"]
-    },
     "identifiers": {
       "type": "array",
       "description": "Identifiers for the poster. May include DOI, institutional IDs, or other persistent identifiers.",
@@ -48,32 +29,6 @@
         "additionalProperties": false
       },
       "minItems": 1,
-      "uniqueItems": true
-    },
-    "alternateIdentifiers": {
-      "type": "array",
-      "description": "The alternate identifiers of the item.",
-      "items": {
-        "type": "object",
-        "properties": {
-          "alternateIdentifier": {
-            "type": "string",
-            "description": "The alternate identifier of the item.",
-            "minLength": 1,
-            "examples": ["PS-2025-001234"]
-          },
-          "alternateIdentifierType": {
-            "type": "string",
-            "$comment": "Any text value is allowed.",
-            "description": "The type of alternate identifier of the item.",
-            "minLength": 1,
-            "examples": ["psID"]
-          }
-        },
-        "required": ["alternateIdentifier", "alternateIdentifierType"],
-        "additionalProperties": false
-      },
-      "minItems": 0,
       "uniqueItems": true
     },
     "creators": {
@@ -245,8 +200,9 @@
       "uniqueItems": true
     },
     "publisher": {
+      "$comment": "Optional. Leave blank unless the poster has been formally published elsewhere with a DOI. Do not auto-populate with the hosting platform name.",
       "type": "object",
-      "description": "The entity that hosts, archives, or distributes the poster. This could be a repository (e.g., Zenodo, institutional repository), conference website, or publishing platform where the poster is or will be publicly available.",
+      "description": "The entity that formally publishes the poster with a DOI. Only use when the poster has been published through a repository (e.g., Zenodo) or publisher that assigns a DOI. Leave empty for posters hosted without formal DOI registration.",
       "properties": {
         "name": {
           "type": "string",
@@ -421,7 +377,7 @@
               },
               {
                 "const": "Presented",
-                "description": "The date the resource was presented, such as at a conference."
+                "description": "POSTER-SPECIFIC EXTENSION: The date the resource was presented, such as at a conference. NOTE: For DataCite Metadata Schema compatibility, consider using 'Issued' instead with the dateInformation sub-property to provide context (e.g., 'Presented at [Conference Name]'). This ensures consistent dateTypes across different resource types."
               },
               {
                 "const": "Other",
@@ -431,14 +387,13 @@
           },
           "dateInformation": {
             "type": ["string", "null"],
-            "description": "Additional information about the date of the item.",
-            "examples": ["2025-01-01", "55 BCE"]
+            "description": "Additional information about the date. Can be used to provide context, e.g., 'Presented at US-RSE 2025 Conference' when using dateType 'Issued' for poster presentation dates.",
+            "examples": ["Presented at US-RSE 2025 Conference", "2025-01-01", "55 BCE"]
           }
         },
         "required": ["date", "dateType"],
         "additionalProperties": false
       },
-      "minItems": 1,
       "uniqueItems": true
     },
     "language": {
@@ -531,7 +486,7 @@
     },
     "formats": {
       "type": "array",
-      "description": "Technical format of the data files in the dataset. Use file extension or MIME type where possible, e.g., PDF, XML, MPG or application/pdf, text/xml, video/mpeg.",
+      "description": "Technical format of the poster file. Use file extension or MIME type where possible, e.g., PDF, PNG, JPEG or application/pdf, image/png, image/jpeg.",
       "items": {
         "type": "string",
         "minLength": 1
@@ -555,7 +510,7 @@
     },
     "rightsList": {
       "type": "array",
-      "description": "Any rights information for this resource. The property may be repeated to record complex rights characteristics.",
+      "description": "Rights and license information for this resource. Required for FAIR compliance and enabling reuse based on metadata.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -563,7 +518,7 @@
           "rights": {
             "type": "string",
             "minLength": 1,
-            "description": "Use the complete title of a license and include version information if applicable",
+            "description": "Use the complete title of a license and include version information if applicable.",
             "examples": ["Creative Commons Attribution 4.0 International", "CC-BY-4.0"]
           },
           "rightsUri": {
@@ -720,7 +675,6 @@
           "required": ["funderIdentifierType"]
         }
       },
-      "minItems": 1,
       "uniqueItems": true
     },
     "ethicsApprovals": {
@@ -735,7 +689,8 @@
     },
     "conference": {
       "type": "object",
-      "description": "Comment: there is no standard for conferenceinfo based on the DataCite Field",
+      "$comment": "POSTER-SPECIFIC EXTENSION: DataCite feedback (Jan 2026) indicates conference information should be handled through RelatedIdentifier and/or RelatedItem fields for DataCite Metadata Schema compatibility. See example: https://github.com/datacite/schema/blob/schema-4.7-draft/source/meta/kernel-4.7/example/datacite-example-poster-v4.xml (prepared for DataCite Schema 4.7 release with resourceTypeGeneral 'Poster'). This property is retained for poster-specific use cases where richer conference metadata is needed.",
+      "description": "Conference information for the poster presentation. NOTE: For DataCite Metadata Schema compatibility, consider using RelatedIdentifier/RelatedItem fields instead. This property is a poster-specific extension for capturing detailed conference metadata.",
       "properties": {
         "conferenceName": {
           "type": "string",
@@ -792,9 +747,9 @@
       },
       "additionalProperties": false
     },
-    "posterContent": {
+    "content": {
       "type": "object",
-      "description": "Text content extracted from the poster. The poster's title is stored under separate DataCite schema titles field. Remaining content is organized into sections here with flexible naming (e.g., 'Introduction', 'Methods', 'Approach', 'Results & Conclusions', etc.).",
+      "description": "Text content extracted from the resource. For posters, the title is stored under the separate DataCite schema titles field. Remaining content is organized into sections here with flexible naming (e.g., 'Introduction', 'Methods', 'Approach', 'Results & Conclusions', etc.). This field is intentionally generic to support other visual resource types (presentations, infographics, one-pagers).",
       "properties": {
         "sections": {
           "type": "array",
@@ -830,72 +785,68 @@
     },
     "tableCaptions": {
       "type": "array",
-      "description": "Array of table caption objects. Each object represents one table and contains its caption text segments.",
+      "description": "Array of table caption objects. Each object represents one table with its caption and optional identifier for cross-referencing.",
       "items": {
         "type": "object",
-        "description": "Caption information for a single table. Structure allows for future extension with properties like tableId or tableNumber.",
+        "description": "Caption information for a single table.",
         "properties": {
-          "captions": {
-            "type": "array",
-            "description": "Array of caption text segments for this table. Can include table label, title, description, etc.",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "minItems": 1,
-            "examples": [
-              ["Table 1. Summary of Results", "Comparison of model performance across datasets"]
-            ]
+          "id": {
+            "type": "string",
+            "description": "Optional identifier for cross-referencing this table (e.g., 'table1', 'tbl-results'). Useful when table data and captions are extracted separately.",
+            "examples": ["table1", "tbl-results", "T1"]
+          },
+          "caption": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The full caption text for this table.",
+            "examples": ["Table 1. Summary of Results", "Table 2. Comparison of model performance across datasets"]
           }
         },
+        "required": ["caption"],
         "additionalProperties": false
-      }
+      },
+      "uniqueItems": true
     },
     "imageCaptions": {
       "type": "array",
-      "description": "Array of image caption objects. Each object represents one image/figure and contains its caption text segments.",
+      "description": "Array of image/figure caption objects. Each object represents one figure with its caption and optional identifier for cross-referencing.",
       "items": {
         "type": "object",
-        "description": "Caption information for a single image. Structure allows for future extension with properties like imageId or figureNumber.",
+        "description": "Caption information for a single image/figure.",
         "properties": {
-          "captions": {
-            "type": "array",
-            "description": "Array of caption text segments for this image. Can include figure label, title, description, etc.",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "minItems": 1,
-            "examples": [
-              ["Figure 1. Overview of the Task Force", "Shows approximately 12 active members from various locations..."]
-            ]
+          "id": {
+            "type": "string",
+            "description": "Optional identifier for cross-referencing this figure (e.g., 'fig1', 'figure-workflow'). Useful when images and captions are extracted separately.",
+            "examples": ["fig1", "figure-workflow", "F1"]
+          },
+          "caption": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The full caption text for this image/figure.",
+            "examples": ["Figure 1. Overview of the Task Force", "Figure 2. Distribution of participants by region"]
           }
         },
+        "required": ["caption"],
         "additionalProperties": false
-      }
+      },
+      "uniqueItems": true
     },
-    "domain": {
+    "researchField": {
       "type": "string",
       "minLength": 1,
-      "description": "Primary domain or field of study for the research presented in the poster",
+      "description": "Primary research field or discipline area for the research presented. Renamed from 'domain' to avoid confusion with biological taxonomy (where domain is the highest rank above kingdom/species).",
       "examples": ["Machine Learning", "Clinical Medicine", "Bioinformatics", "Public Health", "Neuroscience"]
     }
   },
   "required": [
-    "identifiers",
     "creators",
     "titles",
-    "publisher",
     "publicationYear",
     "subjects",
-    "dates",
-    "language",
-    "types",
-    "formats",
-    "rightsList",
     "descriptions",
-    "fundingReferences",
-    "conference"
+    "conference",
+    "rightsList",
+    "formats"
   ],
   "definitions": {
     "resourceType": {

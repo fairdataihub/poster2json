@@ -493,60 +493,75 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
-CRITICAL RULES FOR SECTIONS:
-1. Create a SEPARATE section for EACH distinct topic/header found in the poster
-2. Common section headers include:
-   - Abstract, Introduction, Background
-   - Methods, Methodology, Materials and Methods
-   - Results, Key Findings, Findings (SEPARATE sections if both exist!)
-   - Discussion, Conclusions, Discussion/Conclusions
-   - References (MUST contain numbered citations like "1. Author..." NOT findings!)
-   - Acknowledgements, Contact, Funding
-3. Each section must have its OWN "sectionTitle" and "sectionContent"
-4. Do NOT merge multiple topics into one section
+CRITICAL RULES:
+1. Extract ALL required fields: creators, titles, publicationYear, subjects (keywords), descriptions (abstract), conference
+2. Create SEPARATE sections for EACH distinct topic/header found in the poster
+3. Common section headers: Abstract, Introduction, Background, Methods, Results, Key Findings, Discussion, Conclusions, References, Acknowledgements, Contact
+4. Each section must have its OWN "sectionTitle" and "sectionContent"
 5. Copy ALL text EXACTLY - do not paraphrase or summarize
-6. IMPORTANT: "Key Findings" and "References" are DIFFERENT sections:
-   - Key Findings = bullet points about discoveries/results
-   - References = numbered bibliography citations with author names and years
+6. "Key Findings" ≠ "References": Key Findings = discoveries/results; References = numbered citations with authors/years
 
-JSON SCHEMA:
+JSON SCHEMA (all top-level fields are REQUIRED):
 {{
   "creators": [
     {{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution Name"]}}
   ],
   "titles": [{{"title": "Main Poster Title"}}],
-  "posterContent": {{
+  "publicationYear": 2025,
+  "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
+  "descriptions": [{{"description": "The abstract text from the poster...", "descriptionType": "Abstract"}}],  // descriptionType is REQUIRED
+  "conference": {{
+    "conferenceName": "Name of Conference",
+    "conferenceLocation": "City, Country",
+    "conferenceStartDate": "YYYY-MM-DD",
+    "conferenceEndDate": "YYYY-MM-DD"
+  }},
+  "rightsList": [{{"rights": "Creative Commons Attribution 4.0 International", "rightsIdentifier": "CC-BY-4.0"}}],
+  "formats": ["PDF"],
+  "content": {{
     "sections": [
-      {{"sectionTitle": "First Section Header", "sectionContent": "Complete verbatim text of first section"}},
-      {{"sectionTitle": "Second Section Header", "sectionContent": "Complete verbatim text of second section"}},
-      {{"sectionTitle": "Third Section Header", "sectionContent": "Complete verbatim text..."}},
-      ...continue for ALL sections found in the poster...
+      {{"sectionTitle": "Introduction", "sectionContent": "Complete verbatim text..."}},
+      {{"sectionTitle": "Methods", "sectionContent": "Complete verbatim text..."}},
+      {{"sectionTitle": "Results", "sectionContent": "Complete verbatim text..."}}
     ]
   }},
-  "imageCaptions": [{{"captions": ["Figure 1 title", "Description text"]}}],
-  "tableCaptions": [{{"captions": ["Table 1 title", "Description text"]}}]
+  "imageCaptions": [{{"id": "fig1", "caption": "Figure 1. Caption text"}}, {{"id": "fig2", "caption": "Figure 2. Caption text"}}],
+  "tableCaptions": [{{"id": "table1", "caption": "Table 1. Caption text"}}]
 }}
 
-EXAMPLE - A poster with 8 sections (Abstract, Intro, Methods, Results, Key Findings, Discussion, References, Contact) should produce 8 section objects, not fewer.
+EXTRACTION NOTES:
+- publicationYear: Extract from poster or conference date, use current year if not found
+- subjects: Extract 3-5 keywords from poster content
+- descriptions: Use the Abstract section content
+- conference: Extract from poster header/footer if present
+- rightsList: Look for license/copyright info, default to CC-BY-4.0 if not found
+- formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
+- imageCaptions/tableCaptions: Use "id" field (e.g., "fig1") for cross-referencing if needed
 
 POSTER TEXT TO CONVERT:
 {raw_text}
 
 OUTPUT VALID JSON ONLY:"""
 
-FALLBACK_PROMPT = """Convert poster text to JSON. RULES:
-1. SEPARATE section for EACH header (Abstract, Intro, Methods, Results, Key Findings, Discussion, Conclusions, References, Contact)
-2. Key Findings ≠ References. References = numbered citations with authors/years
+FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
+1. creators, titles, publicationYear, subjects, descriptions, conference, rightsList, formats, content
+2. SEPARATE section for EACH header (Abstract, Intro, Methods, Results, Discussion, Conclusions, References)
 3. Copy ALL text EXACTLY verbatim
 
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
   "titles": [{{"title": "Poster Title"}}],
-  "posterContent": {{
+  "publicationYear": 2025,
+  "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
+  "descriptions": [{{"description": "Abstract text", "descriptionType": "Abstract"}}],
+  "conference": {{"conferenceName": "Conference Name", "conferenceLocation": "Location"}},
+  "rightsList": [{{"rights": "CC-BY-4.0"}}],
+  "formats": ["PDF"],
+  "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
   }},
-  "imageCaptions": [{{"captions": ["Figure caption"]}}],
-  "tableCaptions": [{{"captions": ["Table caption"]}}]
+  "imageCaptions": [{{"caption": "Figure 1. Caption"}}],
+  "tableCaptions": [{{"caption": "Table 1. Caption"}}]
 }}
 
 TEXT:
@@ -767,30 +782,49 @@ def _clean_unicode_artifacts(text: str) -> str:
 
 
 def _normalize_captions(captions_input) -> list:
-    """Normalize captions to new schema format."""
-    if isinstance(captions_input, dict):
-        captions_list = captions_input.get("captions", [])
-    elif isinstance(captions_input, list):
-        captions_list = captions_input
-    else:
-        return []
-
+    """Normalize captions to object format with id and caption fields."""
     normalized = []
     seen_texts = set()
-    for caption in captions_list:
-        if not isinstance(caption, dict):
-            continue
-        parts = caption.get("captions", caption.get("captionParts", []))
-        if not parts or not isinstance(parts, list):
-            continue
-        clean_parts = [p.strip() for p in parts if isinstance(p, str) and p.strip()]
-        if not clean_parts:
-            continue
-        key = clean_parts[0].lower()[:100]
-        if key in seen_texts:
-            continue
-        seen_texts.add(key)
-        normalized.append({"captions": clean_parts})
+
+    # Handle various input formats
+    if isinstance(captions_input, str):
+        return [{"caption": captions_input}] if captions_input.strip() else []
+
+    if not isinstance(captions_input, list):
+        return []
+
+    for idx, item in enumerate(captions_input):
+        caption_obj = None
+
+        if isinstance(item, str):
+            # String format - convert to object
+            if item.strip():
+                caption_obj = {"caption": item.strip()}
+        elif isinstance(item, dict):
+            # Check for new format: {"id": "...", "caption": "..."}
+            if "caption" in item:
+                caption_obj = {
+                    "caption": item["caption"].strip() if isinstance(item["caption"], str) else str(item["caption"])
+                }
+                if "id" in item and item["id"]:
+                    caption_obj["id"] = str(item["id"]).strip()
+            # Old format: {"captions": ["text1", "text2"]} - join into single caption
+            elif "captions" in item or "captionParts" in item:
+                parts = item.get("captions", item.get("captionParts", []))
+                if isinstance(parts, list) and parts:
+                    caption_text = " ".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+                    if caption_text:
+                        caption_obj = {"caption": caption_text}
+                elif isinstance(parts, str) and parts.strip():
+                    caption_obj = {"caption": parts.strip()}
+
+        if caption_obj and caption_obj.get("caption"):
+            # Deduplicate by first 100 chars of caption
+            key = caption_obj["caption"].lower()[:100]
+            if key not in seen_texts:
+                seen_texts.add(key)
+                normalized.append(caption_obj)
+
     return normalized
 
 
@@ -802,7 +836,16 @@ def _postprocess_json(data: dict) -> dict:
     if "$schema" not in result:
         result["$schema"] = SCHEMA_URL
 
-    # Ensure caption fields exist
+    # Migrate old field names to new schema
+    # posterContent -> content
+    if "posterContent" in result and "content" not in result:
+        result["content"] = result.pop("posterContent")
+
+    # domain -> researchField
+    if "domain" in result and "researchField" not in result:
+        result["researchField"] = result.pop("domain")
+
+    # Ensure caption fields exist and normalize to string arrays
     for key in ["imageCaptions", "tableCaptions"]:
         if key not in result:
             result[key] = []
@@ -810,13 +853,13 @@ def _postprocess_json(data: dict) -> dict:
             result[key] = _normalize_captions(result[key])
 
     # Clean Unicode from string fields
-    for key in ["posterTitle", "domain"]:
+    for key in ["researchField"]:
         if key in result and isinstance(result[key], str):
             result[key] = _clean_unicode_artifacts(result[key])
 
-    # Clean posterContent
-    if "posterContent" in result and isinstance(result["posterContent"], dict):
-        sections = result["posterContent"].get("sections", [])
+    # Clean content sections
+    if "content" in result and isinstance(result["content"], dict):
+        sections = result["content"].get("sections", [])
         if isinstance(sections, list):
             cleaned_sections = []
             for section in sections:
@@ -831,7 +874,7 @@ def _postprocess_json(data: dict) -> dict:
                 )
                 if content and len(content) > 10:
                     cleaned_sections.append({"sectionTitle": title, "sectionContent": content})
-            result["posterContent"]["sections"] = cleaned_sections
+            result["content"]["sections"] = cleaned_sections
 
     # Clean creators
     if "creators" in result and isinstance(result["creators"], list):
