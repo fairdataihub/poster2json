@@ -38,7 +38,7 @@ from transformers import (
 )
 
 # Model configuration
-JSON_MODEL_ID = "jimnoneill/Llama-3.1-8B-Poster-Extraction"
+JSON_MODEL_ID = "fairdataihub/Llama-3.1-8B-Poster-Extraction"
 VISION_MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
 
 # Token limits

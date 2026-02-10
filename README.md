@@ -59,7 +59,7 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 
 The pipeline uses:
 
-- [**Llama-3.1-8B-Poster-Extraction**](https://huggingface.co/jimnoneill/Llama-3.1-8B-Poster-Extraction) for JSON structuring
+- [**Llama-3.1-8B-Poster-Extraction**](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) for JSON structuring
 - **Qwen2-VL-7B** for vision-based OCR of image posters
 - **pdfalto** for layout-aware PDF text extraction
 

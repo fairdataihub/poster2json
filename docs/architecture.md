@@ -22,7 +22,7 @@ Technical architecture and methodology for poster2json.
 
 ### Llama 3.1 8B Poster Extraction
 
-**Model**: [jimnoneill/Llama-3.1-8B-Poster-Extraction](https://huggingface.co/jimnoneill/Llama-3.1-8B-Poster-Extraction)
+**Model**: [fairdataihub/Llama-3.1-8B-Poster-Extraction](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction)
 
 Fine-tuned version of Meta's Llama 3.1 8B Instruct for scientific poster metadata extraction:
 
@@ -173,7 +173,7 @@ poster2json/
 ### Model Configuration
 
 ```python
-JSON_MODEL_ID = "jimnoneill/Llama-3.1-8B-Poster-Extraction"
+JSON_MODEL_ID = "fairdataihub/Llama-3.1-8B-Poster-Extraction"
 VISION_MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
 MAX_JSON_TOKENS = 18000
 MAX_RETRY_TOKENS = 24000
