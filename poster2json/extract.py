@@ -494,7 +494,7 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
-1. Extract ALL required fields: creators, titles, publicationYear, subjects (keywords), descriptions (abstract), conference
+1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Common section headers: Abstract, Introduction, Background, Methods, Results, Key Findings, Discussion, Conclusions, References, Acknowledgements, Contact
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
@@ -509,14 +509,15 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "titles": [{{"title": "Main Poster Title"}}],
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
-  "descriptions": [{{"description": "The abstract text from the poster...", "descriptionType": "Abstract"}}],  // descriptionType is REQUIRED
+  "descriptions": [{{"description": "The abstract text from the poster...", "descriptionType": "Abstract"}}],
+  "publisher": {{"name": "Conference Organizer or Institution Name"}},
   "conference": {{
     "conferenceName": "Name of Conference",
+    "conferenceYear": 2025,
     "conferenceLocation": "City, Country",
     "conferenceStartDate": "YYYY-MM-DD",
     "conferenceEndDate": "YYYY-MM-DD"
   }},
-  "rightsList": [{{"rights": "Creative Commons Attribution 4.0 International", "rightsIdentifier": "CC-BY-4.0"}}],
   "formats": ["PDF"],
   "content": {{
     "sections": [
@@ -532,11 +533,12 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 EXTRACTION NOTES:
 - publicationYear: Extract from poster or conference date, use current year if not found
 - subjects: Extract 3-5 keywords from poster content
-- descriptions: Use the Abstract section content
-- conference: Extract from poster header/footer if present
-- rightsList: Look for license/copyright info, default to CC-BY-4.0 if not found
+- descriptions: Use the Abstract section content, descriptionType is REQUIRED
+- publisher: Use conference organizer, hosting institution, or repository name
+- conference: conferenceName and conferenceYear are REQUIRED; extract from poster header/footer
 - formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
 - imageCaptions/tableCaptions: Use "id" field (e.g., "fig1") for cross-referencing if needed
+- rightsList: OPTIONAL - include if license/copyright info found on poster
 
 POSTER TEXT TO CONVERT:
 {raw_text}
@@ -544,7 +546,7 @@ POSTER TEXT TO CONVERT:
 OUTPUT VALID JSON ONLY:"""
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
-1. creators, titles, publicationYear, subjects, descriptions, conference, rightsList, formats, content
+1. creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats, content
 2. SEPARATE section for EACH header (Abstract, Intro, Methods, Results, Discussion, Conclusions, References)
 3. Copy ALL text EXACTLY verbatim
 
@@ -554,14 +556,14 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
   "descriptions": [{{"description": "Abstract text", "descriptionType": "Abstract"}}],
-  "conference": {{"conferenceName": "Conference Name", "conferenceLocation": "Location"}},
-  "rightsList": [{{"rights": "CC-BY-4.0"}}],
+  "publisher": {{"name": "Conference or Institution"}},
+  "conference": {{"conferenceName": "Conference Name", "conferenceYear": 2025, "conferenceLocation": "Location"}},
   "formats": ["PDF"],
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
   }},
-  "imageCaptions": [{{"caption": "Figure 1. Caption"}}],
-  "tableCaptions": [{{"caption": "Table 1. Caption"}}]
+  "imageCaptions": [{{"id": "fig1", "caption": "Figure 1. Caption"}}],
+  "tableCaptions": [{{"id": "table1", "caption": "Table 1. Caption"}}]
 }}
 
 TEXT:

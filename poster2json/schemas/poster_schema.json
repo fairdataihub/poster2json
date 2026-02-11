@@ -200,9 +200,8 @@
       "uniqueItems": true
     },
     "publisher": {
-      "$comment": "Optional. Leave blank unless the poster has been formally published elsewhere with a DOI. Do not auto-populate with the hosting platform name.",
       "type": "object",
-      "description": "The entity that formally publishes the poster with a DOI. Only use when the poster has been published through a repository (e.g., Zenodo) or publisher that assigns a DOI. Leave empty for posters hosted without formal DOI registration.",
+      "description": "The entity that hosts, archives, publishes, prints, distributes, releases, issues, or produces the resource. This property will be used to formulate the citation, so consider the prominence of the role.",
       "properties": {
         "name": {
           "type": "string",
@@ -677,16 +676,6 @@
       },
       "uniqueItems": true
     },
-    "ethicsApprovals": {
-      "type": "array",
-      "description": "Array of ethics committee approvals, IRB protocols, or other ethics-related certifications for the research presented in this poster.",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "uniqueItems": true,
-      "examples": [["IRB Protocol #2024-001"], ["University Ethics Committee approval", "National Research Ethics Committee approval #2025-042"]]
-    },
     "conference": {
       "type": "object",
       "$comment": "POSTER-SPECIFIC EXTENSION: DataCite feedback (Jan 2026) indicates conference information should be handled through RelatedIdentifier and/or RelatedItem fields for DataCite Metadata Schema compatibility. See example: https://github.com/datacite/schema/blob/schema-4.7-draft/source/meta/kernel-4.7/example/datacite-example-poster-v4.xml (prepared for DataCite Schema 4.7 release with resourceTypeGeneral 'Poster'). This property is retained for poster-specific use cases where richer conference metadata is needed.",
@@ -743,8 +732,16 @@
           "type": "string",
           "minLength": 1,
           "description": "Conference series information"
+        },
+        "conferenceYear": {
+          "type": "integer",
+          "description": "The year of the conference. Format: YYYY",
+          "minimum": 1900,
+          "maximum": 2100,
+          "examples": [2025, 2026]
         }
       },
+      "required": ["conferenceName", "conferenceYear"],
       "additionalProperties": false
     },
     "content": {
@@ -844,8 +841,8 @@
     "publicationYear",
     "subjects",
     "descriptions",
+    "publisher",
     "conference",
-    "rightsList",
     "formats"
   ],
   "definitions": {
