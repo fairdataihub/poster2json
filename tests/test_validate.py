@@ -21,7 +21,7 @@ VALID_MINIMAL_POSTER = {
     "rightsList": [{"rights": "CC-BY-4.0"}],
     "descriptions": [{"descriptionType": "Abstract", "description": "A test abstract."}],
     "fundingReferences": [{"funderName": "Test Funder"}],
-    "conference": {},
+    "conference": {"conferenceName": "Test Conference", "conferenceYear": 2025},
 }
 
 
@@ -78,6 +78,6 @@ def test_validate_comprehensive_checks_creators_format():
     assert any("Family, Given" in str(i) for i in result["field_issues"])
 
 
-def test_validate_comprehensive_warns_missing_poster_content():
+def test_validate_comprehensive_warns_missing_content():
     result = validate_comprehensive(VALID_MINIMAL_POSTER)
-    assert any("posterContent" in str(w) for w in result["warnings"])
+    assert any("content" in str(w) for w in result["warnings"])

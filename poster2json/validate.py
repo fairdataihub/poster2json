@@ -203,10 +203,10 @@ def validate_titles(titles: list) -> Tuple[bool, List[str]]:
 
 def validate_poster_content(poster_content: dict) -> Tuple[bool, List[str]]:
     """
-    Validate the posterContent structure.
+    Validate the content structure.
     
     Args:
-        poster_content: The posterContent object
+        poster_content: The content object
         
     Returns:
         Tuple of (is_valid, list_of_issues)
@@ -214,22 +214,22 @@ def validate_poster_content(poster_content: dict) -> Tuple[bool, List[str]]:
     issues = []
     
     if not isinstance(poster_content, dict):
-        return False, ["posterContent must be an object"]
+        return False, ["content must be an object"]
     
     sections = poster_content.get("sections", [])
     if not isinstance(sections, list):
-        issues.append("posterContent.sections must be an array")
+        issues.append("content.sections must be an array")
     elif len(sections) == 0:
-        issues.append("posterContent.sections should have at least one section")
+        issues.append("content.sections should have at least one section")
     else:
         for i, section in enumerate(sections):
             if not isinstance(section, dict):
-                issues.append(f"posterContent.sections[{i}] must be an object")
+                issues.append(f"content.sections[{i}] must be an object")
                 continue
             if "sectionTitle" not in section:
-                issues.append(f"posterContent.sections[{i}] missing 'sectionTitle'")
+                issues.append(f"content.sections[{i}] missing 'sectionTitle'")
             if "sectionContent" not in section:
-                issues.append(f"posterContent.sections[{i}] missing 'sectionContent'")
+                issues.append(f"content.sections[{i}] missing 'sectionContent'")
     
     return len(issues) == 0, issues
 
@@ -316,12 +316,12 @@ def validate_comprehensive(data: dict) -> Dict[str, Union[bool, List[str]]]:
             result["field_issues"].extend(issues)
     
     # Poster content validation
-    if "posterContent" in data:
-        valid, issues = validate_poster_content(data["posterContent"])
+    if "content" in data:
+        valid, issues = validate_poster_content(data["content"])
         if not valid:
             result["field_issues"].extend(issues)
     else:
-        result["warnings"].append("posterContent is missing - no sections extracted")
+        result["warnings"].append("content is missing - no sections extracted")
     
     # Caption validation
     if "imageCaptions" in data:
