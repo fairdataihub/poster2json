@@ -21,7 +21,7 @@ VALID_POSTER_JSON = {
     "rightsList": [{"rights": "CC-BY-4.0"}],
     "descriptions": [{"descriptionType": "Abstract", "description": "Test."}],
     "fundingReferences": [{"funderName": "Test Funder"}],
-    "conference": {},
+    "conference": {"conferenceName": "Test Conference", "conferenceYear": 2025},
 }
 
 
