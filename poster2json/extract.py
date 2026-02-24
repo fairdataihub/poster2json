@@ -783,14 +783,17 @@ def _clean_unicode_artifacts(text: str) -> str:
     return text.strip()
 
 
-def _normalize_captions(captions_input) -> list:
-    """Normalize captions to object format with id and caption fields."""
+def _normalize_captions(captions_input, caption_type: str = "fig") -> list:
+    """Normalize captions to object format with id and caption fields.
+
+    Auto-generates missing IDs as {caption_type}1, {caption_type}2, etc.
+    """
     normalized = []
     seen_texts = set()
 
     # Handle various input formats
     if isinstance(captions_input, str):
-        return [{"caption": captions_input}] if captions_input.strip() else []
+        return [{"id": f"{caption_type}1", "caption": captions_input}] if captions_input.strip() else []
 
     if not isinstance(captions_input, list):
         return []
@@ -827,10 +830,15 @@ def _normalize_captions(captions_input) -> list:
                 seen_texts.add(key)
                 normalized.append(caption_obj)
 
+    # Auto-generate missing IDs
+    for i, cap in enumerate(normalized, start=1):
+        if "id" not in cap:
+            cap["id"] = f"{caption_type}{i}"
+
     return normalized
 
 
-def _postprocess_json(data: dict) -> dict:
+def _postprocess_json(data: dict, raw_text: str = "") -> dict:
     """Comprehensive post-processing for extracted JSON."""
     result = data.copy()
 
@@ -847,12 +855,12 @@ def _postprocess_json(data: dict) -> dict:
     if "domain" in result and "researchField" not in result:
         result["researchField"] = result.pop("domain")
 
-    # Ensure caption fields exist and normalize to string arrays
-    for key in ["imageCaptions", "tableCaptions"]:
+    # Ensure caption fields exist and normalize with auto-generated IDs
+    for key, ctype in [("imageCaptions", "fig"), ("tableCaptions", "table")]:
         if key not in result:
             result[key] = []
         elif isinstance(result[key], (dict, list)):
-            result[key] = _normalize_captions(result[key])
+            result[key] = _normalize_captions(result[key], caption_type=ctype)
 
     # Clean Unicode from string fields
     for key in ["researchField"]:
@@ -889,6 +897,12 @@ def _postprocess_json(data: dict) -> dict:
         for title_obj in result["titles"]:
             if isinstance(title_obj, dict) and "title" in title_obj:
                 title_obj["title"] = _clean_unicode_artifacts(title_obj.get("title", ""))
+
+    # Enrich with identifiers from raw text
+    if raw_text:
+        from .identifiers import enrich_json_with_identifiers
+
+        result = enrich_json_with_identifiers(result, raw_text)
 
     return result
 
@@ -931,7 +945,7 @@ def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
         response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
         result = _robust_json_parse(response)
 
-    result = _postprocess_json(result)
+    result = _postprocess_json(result, raw_text=raw_text)
     return result
 
 
