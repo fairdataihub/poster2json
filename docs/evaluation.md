@@ -89,44 +89,63 @@ Before comparison, text is normalized:
 
 ## Validation Results
 
-### Current Performance
+### Current Performance (v0.1.5)
 
-**Overall**: 10/10 (100%) passing
+**Overall**: 19/20 (95%) passing
 
 | Poster ID | Word | ROUGE-L | Numbers | Fields | Source | Status |
 |-----------|------|---------|---------|--------|--------|--------|
-| 10890106 | 0.98 | 0.85 | 1.00 | 0.89 | pdfalto | ✅ |
-| 15963941 | 0.98 | 0.93 | 1.00 | 0.84 | pdfalto | ✅ |
-| 16083265 | 0.90 | 0.90 | 0.82 | 0.92 | pdfalto | ✅ |
-| 17268692 | 1.00 | 0.83 | 1.00 | 1.70 | pdfalto | ✅ |
-| 42 | 0.99 | 0.88 | 1.00 | 0.85 | pdfalto | ✅ |
-| 4737132 | 0.94 | 0.79 | 0.96 | 1.22 | qwen_vision | ✅ |
-| 5128504 | 0.99 | 1.00 | 1.00 | 1.04 | pdfalto | ✅ |
-| 6724771 | 0.89 | 0.95 | 0.85 | 0.96 | pdfalto | ✅ |
-| 8228476 | 0.94 | 0.87 | 0.89 | 0.91 | pdfalto | ✅ |
-| 8228568 | 0.99 | 0.91 | 0.82 | 0.79 | pdfalto | ✅ |
+| 10890106 | 0.94 | 0.75 | 1.00 | 0.80 | pdfalto | ✅ |
+| 15963941 | 0.95 | 0.91 | 0.97 | 0.76 | pdfalto | ✅ |
+| 16083265 | 0.90 | 0.87 | 0.96 | 0.71 | pdfalto | ✅ |
+| 17268692 | 0.97 | 0.99 | 0.91 | 0.83 | pdfalto | ✅ |
+| 42 | 0.97 | 0.87 | 0.97 | 0.77 | pdfalto | ✅ |
+| 4446908 | 0.95 | 0.91 | 0.90 | 0.98 | pdfalto | ✅ |
+| 4448680 | 0.79 | 0.81 | 0.69 | 0.97 | pdfalto | ❌ |
+| 4519718 | 0.98 | 0.99 | 0.89 | 0.78 | pdfalto | ✅ |
+| 4552067 | 0.94 | 0.92 | 1.00 | 0.75 | pdfalto | ✅ |
+| 4560930 | 0.96 | 0.91 | 0.96 | 0.92 | pdfalto | ✅ |
+| 4564017 | 0.94 | 0.97 | 0.85 | 0.83 | pdfalto | ✅ |
+| 4607450 | 0.95 | 0.93 | 0.93 | 0.89 | pdfalto | ✅ |
+| 4737132 | 0.91 | 0.81 | 0.93 | 0.83 | qwen_vision | ✅ |
+| 5128504 | 0.97 | 0.99 | 0.92 | 0.88 | pdfalto | ✅ |
+| 6724771 | 0.93 | 0.95 | 0.82 | 0.91 | pdfalto | ✅ |
+| 8228476 | 0.94 | 0.88 | 0.90 | 0.75 | pdfalto | ✅ |
+| 8228568 | 0.97 | 0.82 | 0.92 | 0.68 | pdfalto | ✅ |
+| AISec2025-poster | 0.92 | 0.80 | 0.89 | 1.98 | pdfalto | ✅ |
+| aysaekanger | 0.95 | 0.85 | 0.80 | 1.09 | pdfalto | ✅ |
+| isporeu2023ee359130949 | 0.96 | 0.79 | 0.98 | 1.45 | pdfalto | ✅ |
 
 ### Aggregate Metrics
 
 | Metric | Average Score |
 |--------|---------------|
-| Word Capture | 0.96 |
+| Word Capture | 0.94 |
 | ROUGE-L | 0.89 |
-| Number Capture | 0.93 |
-| Field Proportion | 0.99 |
+| Number Capture | 0.91 |
+| Field Proportion | 0.93 |
+
+### Failure Analysis
+
+| Poster ID | Failing Metric | Score | Root Cause |
+|-----------|----------------|-------|------------|
+| 4448680 | Number Capture | 0.69 | Model misses numeric data from the Systems subsection of this multi-component SOFC poster |
 
 ## Test Set
 
-The validation set includes 10 manually annotated scientific posters:
+The validation set includes 20 manually annotated scientific posters:
 
-- **9 PDF posters**: Processed via pdfalto
+- **19 PDF posters**: Processed via pdfalto
 - **1 image poster**: Processed via Qwen2-VL
 
-Posters cover diverse formats:
+Posters cover diverse domains and formats:
+- Biomedical informatics, astronomy, astrophysics, bioinformatics, genetics
+- Altmetrics, research data management, research infrastructure, cybersecurity
+- Oncology, health economics, fuel cell manufacturing
 - Single and multi-column layouts
 - Various font sizes and styles
 - Tables, figures, and charts
-- Multiple languages
+- Multiple languages (English, German)
 
 ## Running Validation
 
