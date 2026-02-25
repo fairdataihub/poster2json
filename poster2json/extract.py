@@ -618,13 +618,22 @@ def _extract_first_json_object(s: str) -> str:
 
 
 def _repair_unescaped_quotes(s: str) -> str:
-    """Fix quotes that appear after / which are not properly escaped."""
+    """Fix unescaped double-quotes inside JSON string values.
+
+    Handles two patterns:
+    1. Quotes after units: e.g. ``16.7 pc/"`` → ``16.7 pc/\\"``
+    2. Inline scare-quotes: e.g. ``M dwarf "twin" binaries``
+       → ``M dwarf 'twin' binaries``
+    """
+    # Unit-slash pattern (original)
     s = re.sub(
         r'(\d+\s*(?:pc|km|m|cm|mm|Hz|kHz|MHz|GHz|s|ms|ns|arcsec|arcmin|deg))/"',
         r'\1/\\"',
         s,
     )
     s = re.sub(r'\((\d+\.?\d*\s*\w+)/"\)', r'(\1/\\")', s)
+    # Inline scare-quotes: word "quoted word(s)" word → single quotes
+    s = re.sub(r'(?<=\w)\s*"\s*(\w+(?:\s+\w+)*)\s*"\s*(?=\w)', r" '\1' ", s)
     return s
 
 
@@ -912,16 +921,48 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
 # ============================
 
 
+def _normalize_raw_text_for_model(text: str) -> str:
+    """Normalize Unicode in raw OCR text before feeding to the model.
+
+    NFKD decomposition converts superscripts (¹²³⁺), subscripts (ₛ),
+    and other compatibility characters to their ASCII equivalents,
+    reducing token count and improving model JSON generation.
+
+    Smart/curly quotes are replaced with single quotes to prevent the
+    model from outputting unescaped straight double-quotes inside JSON
+    string values (e.g. OCR ``\u201ctwin\u201d`` → model ``"twin"`` →
+    broken JSON).
+    """
+    # NFKD: ¹→1, ²→2, ³→3, ⁺→+, ₛ→s, etc.
+    text = unicodedata.normalize("NFKD", text)
+    # Remove combining marks left over from decomposition
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # Replace smart/curly quotes with straight single quotes
+    text = text.replace("\u201c", "'").replace("\u201d", "'")  # " " → '
+    text = text.replace("\u2018", "'").replace("\u2019", "'")  # ' ' → '
+    text = text.replace("\u00ab", "'").replace("\u00bb", "'")  # « » → '
+    # Fix mixed-pair leftovers: curly open (now ') + straight close (")
+    # e.g. 'twin" → 'twin'
+    text = re.sub(r"'(\w+(?:\s+\w+)*)\"", r"'\1'", text)
+    # Fix remaining inline scare-quotes: word "quoted" word → word 'quoted' word
+    text = re.sub(
+        r'(?<=\w)\s"(\w+(?:\s+\w+)*)"\s(?=\w)', r" '\1' ", text
+    )
+    return text
+
+
 def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
     """
     Send raw poster text to the LLM and robustly parse the JSON response.
 
     This function:
-      1. Calls the model with a full prompt
-      2. Retries with more tokens if truncation is detected
-      3. Falls back to a shorter prompt if needed
-      4. Runs repair passes to make the JSON parseable
+      1. Normalizes Unicode in the raw text
+      2. Calls the model with a full prompt
+      3. Retries with more tokens if truncation is detected
+      4. Falls back to a shorter prompt if needed
+      5. Runs repair passes to make the JSON parseable
     """
+    raw_text = _normalize_raw_text_for_model(raw_text)
     prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
 
     log("Starting primary JSON extraction with full prompt")
