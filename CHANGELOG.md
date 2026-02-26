@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-02-26
+
+### Changed
+
+- ALTO XML reading order: replace column-major sort with row-band grouping via vertical-overlap merging
+- Split row-bands at full-width block boundaries (>60% page width) to preserve section ordering in mixed layouts
+- Header detection: limit to blocks ≤150 chars and ≤3 lines to prevent bold body paragraphs from being marked as headers
+- Skip contact-like text (emails, URLs, phone numbers) from header detection
+
 ## [0.1.5] - 2026-02-25
 
 ### Fixed

@@ -289,26 +289,316 @@ def extract_text_with_pdfalto(pdf_path: str) -> Optional[str]:
         raise RuntimeError(f"pdfalto error: {e}")
 
 
+def _parse_text_styles(root, ns: str) -> dict:
+    """Parse <TextStyle> definitions from ALTO <Styles> section.
+
+    Returns dict keyed by style ID with fontsize (float), bold (bool),
+    italic (bool) fields.
+    """
+    styles = {}
+    for ts in root.findall(f".//{ns}TextStyle"):
+        sid = ts.get("ID", "")
+        if not sid:
+            continue
+        fontsize = 0.0
+        try:
+            fontsize = float(ts.get("FONTSIZE", "0"))
+        except (ValueError, TypeError):
+            pass
+        fontstyle = (ts.get("FONTSTYLE") or "").lower()
+        styles[sid] = {
+            "fontsize": fontsize,
+            "bold": "bold" in fontstyle,
+            "italic": "italic" in fontstyle,
+        }
+    # Try without namespace if nothing found
+    if not styles:
+        for ts in root.findall(".//TextStyle"):
+            sid = ts.get("ID", "")
+            if not sid:
+                continue
+            fontsize = 0.0
+            try:
+                fontsize = float(ts.get("FONTSIZE", "0"))
+            except (ValueError, TypeError):
+                pass
+            fontstyle = (ts.get("FONTSTYLE") or "").lower()
+            styles[sid] = {
+                "fontsize": fontsize,
+                "bold": "bold" in fontstyle,
+                "italic": "italic" in fontstyle,
+            }
+    return styles
+
+
+def _detect_column_boundaries(cx_values: list, page_w: float) -> list:
+    """Detect column boundaries from block center-x gap analysis.
+
+    Returns sorted list of x-positions where column boundaries occur.
+    A boundary is a gap between consecutive cx values > 5% of page width.
+    Requires min 3 blocks per column to be valid.
+    """
+    from bisect import bisect_right
+
+    if len(cx_values) < 2:
+        return []
+
+    sorted_cx = sorted(cx_values)
+    min_gap = page_w * 0.05
+
+    # Find gaps between consecutive cx values
+    gaps = []
+    for i in range(1, len(sorted_cx)):
+        gap = sorted_cx[i] - sorted_cx[i - 1]
+        if gap > min_gap:
+            boundary = (sorted_cx[i - 1] + sorted_cx[i]) / 2
+            gaps.append((gap, boundary))
+
+    # Sort by gap size descending, take up to 6 boundaries (7 columns max)
+    gaps.sort(reverse=True)
+    boundaries = sorted(b for _, b in gaps[:6])
+
+    # Remove boundaries that create columns with too few blocks
+    min_blocks = 3
+    valid = []
+    for b in boundaries:
+        test_bounds = sorted(valid + [b])
+        counts = [0] * (len(test_bounds) + 1)
+        for cx in cx_values:
+            idx = bisect_right(test_bounds, cx)
+            counts[idx] += 1
+        if all(c >= min_blocks for c in counts):
+            valid.append(b)
+
+    return sorted(valid)
+
+
 def _parse_alto_xml(xml_path: str) -> Optional[str]:
-    """Parse ALTO XML output from pdfalto."""
+    """Parse ALTO XML output from pdfalto with spatial awareness.
+
+    Extracts text blocks with position info, deduplicates lines and blocks,
+    detects columns for column-major reading order, inserts gap markers
+    between sections, and prefixes detected headers with '## '.
+    """
+    from bisect import bisect_right
     from xml.etree import ElementTree as ET
 
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        text_blocks = root.findall(".//{http://www.loc.gov/standards/alto/ns-v3#}TextBlock")
-        if not text_blocks:
-            text_blocks = root.findall(".//TextBlock")
 
-        lines = []
-        for block in text_blocks:
-            strings = block.findall(".//{http://www.loc.gov/standards/alto/ns-v3#}String")
-            if not strings:
-                strings = block.findall(".//String")
-            words = [s.get("CONTENT", "") for s in strings if s.get("CONTENT")]
-            if words:
-                lines.append(" ".join(words))
-        return "\n".join(lines)
+        # Detect namespace
+        ns = "{http://www.loc.gov/standards/alto/ns-v3#}"
+        if not root.findall(f".//{ns}TextBlock"):
+            ns = ""
+
+        # Parse text styles for header detection
+        styles = _parse_text_styles(root, ns)
+
+        # Get page dimensions
+        page = root.find(f".//{ns}Page")
+        page_w = float(page.get("WIDTH", "1")) if page is not None else 1.0
+        page_h = float(page.get("HEIGHT", "1")) if page is not None else 1.0
+
+        # Extract blocks with spatial info
+        blocks = []
+        for tb in root.findall(f".//{ns}TextBlock"):
+            hpos = float(tb.get("HPOS", "0"))
+            vpos = float(tb.get("VPOS", "0"))
+            bw = float(tb.get("WIDTH", "0"))
+            bh = float(tb.get("HEIGHT", "0"))
+
+            # Collect TextLines, deduplicating within the block
+            seen_lines = []  # list of (vpos, words_set, text)
+            for tl in tb.findall(f".//{ns}TextLine"):
+                line_vpos = float(tl.get("VPOS", "0"))
+                strings = tl.findall(f".//{ns}String")
+                words = [s.get("CONTENT", "") for s in strings if s.get("CONTENT")]
+                if not words:
+                    continue
+                line_text = " ".join(words)
+                word_set = set(words)
+
+                # Skip duplicate lines: same VPOS and >80% word overlap
+                is_dup = False
+                for sv, sw, st in seen_lines:
+                    if abs(sv - line_vpos) < 2:  # same vertical position
+                        if len(word_set) > 0 and len(sw) > 0:
+                            overlap = len(word_set & sw) / max(len(word_set), len(sw))
+                            if overlap > 0.8:
+                                is_dup = True
+                                break
+                if not is_dup:
+                    seen_lines.append((line_vpos, word_set, line_text))
+
+            if not seen_lines:
+                continue
+
+            block_text = "\n".join(text for _, _, text in seen_lines)
+
+            # Collect style refs for header detection
+            style_refs = set()
+            for s in tb.findall(f".//{ns}String"):
+                sr = s.get("STYLEREFS", "")
+                if sr:
+                    style_refs.update(sr.split())
+
+            cx = hpos + bw / 2
+            blocks.append({
+                "hpos": hpos,
+                "vpos": vpos,
+                "width": bw,
+                "height": bh,
+                "cx": cx,
+                "text": block_text,
+                "style_refs": style_refs,
+            })
+
+        if not blocks:
+            return None
+
+        # Deduplicate blocks: skip blocks at similar VPOS with >80% text overlap
+        deduped = []
+        for blk in blocks:
+            is_dup = False
+            blk_words = set(blk["text"].split())
+            for i, existing in enumerate(deduped):
+                if abs(existing["vpos"] - blk["vpos"]) < page_h * 0.005:
+                    ex_words = set(existing["text"].split())
+                    if len(blk_words) > 0 and len(ex_words) > 0:
+                        overlap = len(blk_words & ex_words) / max(len(blk_words), len(ex_words))
+                        if overlap > 0.8:
+                            # Keep the longer one
+                            if len(blk["text"]) > len(existing["text"]):
+                                deduped[i] = blk
+                            is_dup = True
+                            break
+            if not is_dup:
+                deduped.append(blk)
+        blocks = deduped
+
+        # Determine median body font size for header detection
+        body_sizes = []
+        for blk in blocks:
+            for sr in blk["style_refs"]:
+                if sr in styles and styles[sr]["fontsize"] > 0:
+                    body_sizes.append(styles[sr]["fontsize"])
+        median_fontsize = sorted(body_sizes)[len(body_sizes) // 2] if body_sizes else 0
+
+        # Detect column boundaries
+        cx_values = [b["cx"] for b in blocks]
+        col_boundaries = _detect_column_boundaries(cx_values, page_w)
+
+        # Assign column index to each block
+        for blk in blocks:
+            blk["col_idx"] = bisect_right(col_boundaries, blk["cx"])
+
+        # Row-band grouping: handles both row-based and column-based posters
+        # 1. Form row bands by greedy vertical-overlap merging
+        blocks.sort(key=lambda b: b["vpos"])
+        band_gap = page_h * 0.03
+        bands = []  # list of lists of blocks
+        for blk in blocks:
+            if not bands:
+                bands.append([blk])
+                continue
+            # Check if block overlaps vertically with current band
+            last_band = bands[-1]
+            band_bottom = max(b["vpos"] + b["height"] for b in last_band)
+            if blk["vpos"] <= band_bottom + band_gap:
+                last_band.append(blk)
+            else:
+                bands.append([blk])
+
+        # 2. Post-process: split bands at full-width block boundaries.
+        #    When a band contains both full-width (>60% page_w) and narrower
+        #    blocks, the full-width blocks act as natural section dividers.
+        #    This prevents column-major sort from interleaving content across
+        #    visually distinct poster regions separated by full-width elements.
+        fw_threshold = page_w * 0.60
+        split_bands = []
+        for band in bands:
+            has_fw = any(b["width"] > fw_threshold for b in band)
+            has_non_fw = any(b["width"] <= fw_threshold for b in band)
+            if has_fw and has_non_fw and len(band) > 1:
+                band.sort(key=lambda b: b["vpos"])
+                current_sub = []
+                for blk in band:
+                    if blk["width"] > fw_threshold:
+                        if current_sub:
+                            split_bands.append(current_sub)
+                            current_sub = []
+                        split_bands.append([blk])
+                    else:
+                        current_sub.append(blk)
+                if current_sub:
+                    split_bands.append(current_sub)
+            else:
+                split_bands.append(band)
+        bands = split_bands
+
+        # 3. Within each band, sort by (col_idx, vpos) for column-major reading
+        sorted_blocks = []
+        for band in bands:
+            band.sort(key=lambda b: (b["col_idx"], b["vpos"]))
+            sorted_blocks.extend(band)
+        blocks = sorted_blocks
+
+        # Tag each block with its band index for blank-line insertion
+        for band_idx, band in enumerate(bands):
+            for blk in band:
+                blk["band_idx"] = band_idx
+
+        # Build output with gap markers and header prefixes
+        gap_threshold = page_h * 0.03
+        output_lines = []
+        prev_band = None
+        prev_vpos = None
+
+        for blk in blocks:
+            # Insert blank line between bands
+            if prev_band is not None and blk["band_idx"] != prev_band:
+                output_lines.append("")
+
+            # Insert blank line at large vertical gap within same band
+            elif prev_vpos is not None and (blk["vpos"] - prev_vpos) > gap_threshold:
+                output_lines.append("")
+
+            # Detect header: bold font >= median body size, or any font > 1.3x median
+            # Only short blocks qualify (≤150 chars and ≤3 lines) to avoid marking
+            # bold body paragraphs as headers.
+            # Skip contact-like text (emails, phones, URLs) — never section headers.
+            is_header = False
+            _t = blk["text"]
+            block_line_count = _t.count("\n") + 1
+            _is_contact = bool(
+                re.search(r'@\S+\.\S+', _t)       # email
+                or re.search(r'\+\d[\d\s]{6,}', _t)  # phone
+                or re.search(r'www\.', _t, re.I)    # URL
+                or re.search(r'https?://', _t, re.I)
+            )
+            if median_fontsize > 0 and len(_t) <= 150 and block_line_count <= 3 and not _is_contact:
+                for sr in blk["style_refs"]:
+                    st = styles.get(sr, {})
+                    fs = st.get("fontsize", 0)
+                    if st.get("bold") and fs >= median_fontsize:
+                        is_header = True
+                        break
+                    if fs > median_fontsize * 1.3:
+                        is_header = True
+                        break
+
+            text = blk["text"]
+            if is_header:
+                # Prefix each line of the header block
+                header_lines = text.split("\n")
+                text = "\n".join(f"## {line}" for line in header_lines)
+
+            output_lines.append(text)
+            prev_band = blk["band_idx"]
+            prev_vpos = blk["vpos"] + blk["height"]
+
+        return "\n".join(output_lines)
     except Exception:
         return None
 
@@ -496,10 +786,12 @@ EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 CRITICAL RULES:
 1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
-3. Common section headers: Abstract, Introduction, Background, Methods, Results, Key Findings, Discussion, Conclusions, References, Acknowledgements, Contact
+3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
 5. Copy ALL text EXACTLY - do not paraphrase or summarize
 6. "Key Findings" ≠ "References": Key Findings = discoveries/results; References = numbered citations with authors/years
+7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent
+8. Text without a clear header (e.g. contact info, URLs, footer text) is still a section — use "sectionTitle": "" with the verbatim text as "sectionContent". Do NOT skip any poster text.
 
 JSON SCHEMA (all top-level fields are REQUIRED):
 {{
@@ -547,7 +839,7 @@ OUTPUT VALID JSON ONLY:"""
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 1. creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats, content
-2. SEPARATE section for EACH header (Abstract, Intro, Methods, Results, Discussion, Conclusions, References)
+2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim
 
 {{
@@ -893,6 +1185,48 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                 )
                 if content and len(content) > 10:
                     cleaned_sections.append({"sectionTitle": title, "sectionContent": content})
+            # Recover uncaptured raw text as untitled section(s).
+            # The LLM sometimes drops footer content (contact info, URLs).
+            # Compare raw text lines against section content and reclaim
+            # any contiguous block of missing lines.
+            if raw_text and cleaned_sections:
+                # Collect all captured text (sections + captions)
+                captured = set()
+                for sec in cleaned_sections:
+                    for w in sec["sectionContent"].lower().split():
+                        captured.add(w)
+                for cap in result.get("imageCaptions", []):
+                    if isinstance(cap, dict):
+                        for v in cap.values():
+                            if isinstance(v, str):
+                                for w in v.lower().split():
+                                    captured.add(w)
+
+                # Strip ## prefixes and find uncaptured lines
+                raw_lines = [
+                    ln.lstrip("# ").strip() if ln.startswith("## ") else ln.strip()
+                    for ln in raw_text.split("\n")
+                ]
+                uncaptured = []
+                for ln in raw_lines:
+                    if not ln:
+                        continue
+                    words = ln.lower().split()
+                    if not words:
+                        continue
+                    hit = sum(1 for w in words if w in captured)
+                    if hit / len(words) < 0.5:
+                        uncaptured.append(ln)
+                    else:
+                        # Reset — only keep trailing uncaptured block
+                        uncaptured = []
+
+                if uncaptured and len(" ".join(uncaptured)) > 10:
+                    cleaned_sections.append({
+                        "sectionTitle": "",
+                        "sectionContent": "\n".join(uncaptured),
+                    })
+
             result["content"]["sections"] = cleaned_sections
 
     # Clean creators
