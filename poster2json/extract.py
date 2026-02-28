@@ -1184,7 +1184,10 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                     content.strip() if isinstance(content, str) else ""
                 )
                 if content and len(content) > 10:
-                    cleaned_sections.append({"sectionTitle": title, "sectionContent": content})
+                    entry = {"sectionContent": content}
+                    if title:
+                        entry["sectionTitle"] = title
+                    cleaned_sections.append(entry)
             # Recover uncaptured raw text as untitled section(s).
             # The LLM sometimes drops footer content (contact info, URLs).
             # Compare raw text lines against section content and reclaim
@@ -1223,7 +1226,6 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
 
                 if uncaptured and len(" ".join(uncaptured)) > 10:
                     cleaned_sections.append({
-                        "sectionTitle": "",
                         "sectionContent": "\n".join(uncaptured),
                     })
 
@@ -1246,6 +1248,19 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         from .identifiers import enrich_json_with_identifiers
 
         result = enrich_json_with_identifiers(result, raw_text)
+
+    # Strip "Unknown" placeholder values the LLM likes to hallucinate.
+    # These violate metadata quality expectations — better to omit than guess.
+    _UNKNOWN_RE = re.compile(r"^unknown\b", re.IGNORECASE)
+    if "conference" in result and isinstance(result["conference"], dict):
+        for key in list(result["conference"]):
+            val = result["conference"][key]
+            if isinstance(val, str) and _UNKNOWN_RE.match(val.strip()):
+                del result["conference"][key]
+    # Top-level optional string fields
+    for key in ("conferenceLocation", "publisher", "researchField"):
+        if key in result and isinstance(result[key], str) and _UNKNOWN_RE.match(result[key].strip()):
+            del result[key]
 
     return result
 
