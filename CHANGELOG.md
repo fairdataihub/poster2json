@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.0 (2026-03-04)
+
+
+### Features
+
+* add tests ([1e04dc0](https://github.com/fairdataihub/poster2json/commit/1e04dc0706b0efafbc24d3a6898b19232a05ad9b))
+* regex identifier extraction and caption ID auto-generation ([a5a3518](https://github.com/fairdataihub/poster2json/commit/a5a3518852b52038c7bcbcc8ad2c811c43f5c741))
+
+
+### Bug Fixes
+
+* fix dependencies ([6c6fc67](https://github.com/fairdataihub/poster2json/commit/6c6fc67e1b9c55332fe48321388fcaf4b9643424))
+* update markdownlint configuration and improve README.md content ([f06e74c](https://github.com/fairdataihub/poster2json/commit/f06e74cc83db1c92cae75561c2a5f25f7c5b5f05))
+* update README.md by removing unnecessary brackets from URLs ([45e12d0](https://github.com/fairdataihub/poster2json/commit/45e12d0e54d2e046da18c85d115aa4aeea9d74a8))
+
 ## [0.1.7] - 2026-02-28
 
 ### Fixed
