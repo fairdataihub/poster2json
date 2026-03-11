@@ -1271,7 +1271,8 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
     def _is_placeholder(val: str) -> bool:
         s = val.strip()
         return (
-            _UNKNOWN_RE.match(s)
+            not s
+            or _UNKNOWN_RE.match(s)
             or s.lower() in _PLACEHOLDER_VALS
             or bool(_PLACEHOLDER_DATE_RE.match(s))
         )
