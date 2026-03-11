@@ -827,7 +827,9 @@ EXTRACTION NOTES:
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Use the Abstract section content, descriptionType is REQUIRED
 - publisher: Use conference organizer, hosting institution, or repository name
-- conference: conferenceName and conferenceYear are REQUIRED; extract from poster header/footer
+- titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
+- conference: conferenceName and conferenceYear are REQUIRED; extract from poster header/footer. If not found on the poster, omit the field entirely — do NOT guess or use placeholders
+- publisher: Extract from poster. If not found, omit — do NOT use placeholder text
 - formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
 - imageCaptions/tableCaptions: Use "id" field (e.g., "fig1") for cross-referencing if needed
 - rightsList: OPTIONAL - include if license/copyright info found on poster
@@ -841,6 +843,8 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 1. creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim
+4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
+5. Omit conference/publisher if not found on the poster — never guess or use placeholders
 
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
