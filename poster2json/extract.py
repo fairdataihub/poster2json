@@ -1084,63 +1084,6 @@ def _clean_unicode_artifacts(text: str) -> str:
     return text.strip()
 
 
-_SMALL_WORDS = frozenset(
-    "a an and as at but by for in nor of on or so the to up vs via with".split()
-)
-def _smart_title_case(title: str) -> str:
-    """Convert an ALL-CAPS title to title case, preserving acronyms.
-
-    Only applies when >50% of alpha characters are uppercase, indicating
-    the poster rendered its title in all-caps for visual emphasis.
-
-    Tokens that look like acronyms are kept uppercase: ≤4 alpha chars,
-    all-caps, and not a common English word.  Hyphenated tokens are handled
-    part-by-part so "SARS-COV-2" → "SARS-COV-2".
-    """
-    if not title or not isinstance(title, str):
-        return title
-
-    alpha = [c for c in title if c.isalpha()]
-    if not alpha or sum(c.isupper() for c in alpha) / len(alpha) <= 0.5:
-        return title  # not all-caps, leave as-is
-
-    # Common short English words that are NOT acronyms even when ≤5 chars
-    _NOT_ACRONYMS = _SMALL_WORDS | frozenset(
-        "also back base been both case come data does done each even from "
-        "gene goes good have here high into just like long made make "
-        "many more most much must need new next once only over part past "
-        "rate role same self side some sub such take than that them then "
-        "this thus time type upon used uses very well were what when will "
-        "work year "
-        "about after based below early every first found great group "
-        "human known large level local model multi never newly novel "
-        "lower major means might occur often open other plant point "
-        "right scale shall since small space state still study their "
-        "these three total under until upper urban using value water "
-        "which while whole world would young".split()
-    )
-
-    def _case_part(part: str) -> str:
-        alpha_only = re.sub(r"[^A-Za-z]", "", part)
-        if (
-            alpha_only.isupper()
-            and 2 <= len(alpha_only) <= 5
-            and alpha_only.lower() not in _NOT_ACRONYMS
-        ):
-            return part  # likely acronym — keep as-is
-        return part.capitalize()
-
-    words = title.split()
-    result = []
-    for i, word in enumerate(words):
-        new_word = "-".join(_case_part(p) for p in word.split("-"))
-        # lowercase small words unless first or last
-        if i != 0 and i != len(words) - 1 and new_word.lower() in _SMALL_WORDS:
-            new_word = new_word.lower()
-        result.append(new_word)
-    return " ".join(result)
-
-
 def _normalize_captions(captions_input, caption_type: str = "fig") -> list:
     """Normalize captions to object format with id and caption fields.
 
@@ -1299,7 +1242,6 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         for title_obj in result["titles"]:
             if isinstance(title_obj, dict) and "title" in title_obj:
                 title_obj["title"] = _clean_unicode_artifacts(title_obj.get("title", ""))
-                title_obj["title"] = _smart_title_case(title_obj["title"])
 
     # Enrich with identifiers from raw text
     if raw_text:
