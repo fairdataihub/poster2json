@@ -1249,17 +1249,40 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
 
         result = enrich_json_with_identifiers(result, raw_text)
 
-    # Strip "Unknown" placeholder values the LLM likes to hallucinate.
+    # Strip "Unknown" and prompt-placeholder values the LLM likes to hallucinate.
     # These violate metadata quality expectations — better to omit than guess.
     _UNKNOWN_RE = re.compile(r"^unknown\b", re.IGNORECASE)
+    # Prompt placeholders that the model echoes back verbatim when it can't
+    # find real conference metadata on the poster.
+    _PLACEHOLDER_VALS = {
+        "name of conference",
+        "conference name",
+        "city, country",
+        "location",
+        "conference organizer or institution name",
+        "conference or institution",
+    }
+    _PLACEHOLDER_DATE_RE = re.compile(r"^[Yy]{4}-[Mm]{2}-[Dd]{2}$")
+
+    def _is_placeholder(val: str) -> bool:
+        s = val.strip()
+        return (
+            _UNKNOWN_RE.match(s)
+            or s.lower() in _PLACEHOLDER_VALS
+            or bool(_PLACEHOLDER_DATE_RE.match(s))
+        )
+
     if "conference" in result and isinstance(result["conference"], dict):
         for key in list(result["conference"]):
             val = result["conference"][key]
-            if isinstance(val, str) and _UNKNOWN_RE.match(val.strip()):
+            if isinstance(val, str) and _is_placeholder(val):
                 del result["conference"][key]
     # Top-level optional string fields
     for key in ("conferenceLocation", "publisher", "researchField"):
-        if key in result and isinstance(result[key], str) and _UNKNOWN_RE.match(result[key].strip()):
+        val = result.get(key)
+        if isinstance(val, str) and _is_placeholder(val):
+            del result[key]
+        elif isinstance(val, dict) and "name" in val and isinstance(val["name"], str) and _is_placeholder(val["name"]):
             del result[key]
 
     return result
