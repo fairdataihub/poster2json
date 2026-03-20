@@ -374,13 +374,12 @@ def _detect_column_boundaries(cx_values: list, page_w: float) -> list:
 
 
 def _parse_alto_xml(xml_path: str) -> Optional[str]:
-    """Parse ALTO XML output from pdfalto with spatial awareness.
+    """Parse ALTO XML output from pdfalto.
 
-    Extracts text blocks with position info, deduplicates lines and blocks,
-    detects columns for column-major reading order, inserts gap markers
-    between sections, and prefixes detected headers with '## '.
+    Preserves pdfalto's native reading order (-readingOrder flag),
+    deduplicates lines within blocks, and prefixes detected headers
+    with '## ' based on font size/style analysis.
     """
-    from bisect import bisect_right
     from xml.etree import ElementTree as ET
 
     try:
@@ -434,7 +433,9 @@ def _parse_alto_xml(xml_path: str) -> Optional[str]:
             if not seen_lines:
                 continue
 
-            block_text = "\n".join(text for _, _, text in seen_lines)
+            # Join all lines into a single line per block (like the old parser).
+            # Preserving PDF line breaks splits sentences and confuses the LLM.
+            block_text = " ".join(text for _, _, text in seen_lines)
 
             # Collect style refs for header detection
             style_refs = set()
@@ -457,25 +458,9 @@ def _parse_alto_xml(xml_path: str) -> Optional[str]:
         if not blocks:
             return None
 
-        # Deduplicate blocks: skip blocks at similar VPOS with >80% text overlap
-        deduped = []
-        for blk in blocks:
-            is_dup = False
-            blk_words = set(blk["text"].split())
-            for i, existing in enumerate(deduped):
-                if abs(existing["vpos"] - blk["vpos"]) < page_h * 0.005:
-                    ex_words = set(existing["text"].split())
-                    if len(blk_words) > 0 and len(ex_words) > 0:
-                        overlap = len(blk_words & ex_words) / max(len(blk_words), len(ex_words))
-                        if overlap > 0.8:
-                            # Keep the longer one
-                            if len(blk["text"]) > len(existing["text"]):
-                                deduped[i] = blk
-                            is_dup = True
-                            break
-            if not is_dup:
-                deduped.append(blk)
-        blocks = deduped
+        # NOTE: Block-level dedup removed — pdfalto with -readingOrder already
+        # handles duplicates. The dedup was dropping legitimate blocks that had
+        # similar text at similar vpos (e.g. "724 words" vs "755 words").
 
         # Determine median body font size for header detection
         body_sizes = []
@@ -485,99 +470,37 @@ def _parse_alto_xml(xml_path: str) -> Optional[str]:
                     body_sizes.append(styles[sr]["fontsize"])
         median_fontsize = sorted(body_sizes)[len(body_sizes) // 2] if body_sizes else 0
 
-        # Detect column boundaries
-        cx_values = [b["cx"] for b in blocks]
-        col_boundaries = _detect_column_boundaries(cx_values, page_w)
+        # Preserve pdfalto's reading order (from -readingOrder flag).
+        # Do NOT sort by vpos — pdfalto already handles column layout
+        # and reading order correctly. Sorting by vpos overrides that
+        # and scrambles multi-column poster content.
 
-        # Assign column index to each block
-        for blk in blocks:
-            blk["col_idx"] = bisect_right(col_boundaries, blk["cx"])
-
-        # Row-band grouping: handles both row-based and column-based posters
-        # 1. Form row bands by greedy vertical-overlap merging
-        blocks.sort(key=lambda b: b["vpos"])
-        band_gap = page_h * 0.03
-        bands = []  # list of lists of blocks
-        for blk in blocks:
-            if not bands:
-                bands.append([blk])
-                continue
-            # Check if block overlaps vertically with current band
-            last_band = bands[-1]
-            band_bottom = max(b["vpos"] + b["height"] for b in last_band)
-            if blk["vpos"] <= band_bottom + band_gap:
-                last_band.append(blk)
-            else:
-                bands.append([blk])
-
-        # 2. Post-process: split bands at full-width block boundaries.
-        #    When a band contains both full-width (>60% page_w) and narrower
-        #    blocks, the full-width blocks act as natural section dividers.
-        #    This prevents column-major sort from interleaving content across
-        #    visually distinct poster regions separated by full-width elements.
-        fw_threshold = page_w * 0.60
-        split_bands = []
-        for band in bands:
-            has_fw = any(b["width"] > fw_threshold for b in band)
-            has_non_fw = any(b["width"] <= fw_threshold for b in band)
-            if has_fw and has_non_fw and len(band) > 1:
-                band.sort(key=lambda b: b["vpos"])
-                current_sub = []
-                for blk in band:
-                    if blk["width"] > fw_threshold:
-                        if current_sub:
-                            split_bands.append(current_sub)
-                            current_sub = []
-                        split_bands.append([blk])
-                    else:
-                        current_sub.append(blk)
-                if current_sub:
-                    split_bands.append(current_sub)
-            else:
-                split_bands.append(band)
-        bands = split_bands
-
-        # 3. Within each band, sort by (col_idx, vpos) for column-major reading
-        sorted_blocks = []
-        for band in bands:
-            band.sort(key=lambda b: (b["col_idx"], b["vpos"]))
-            sorted_blocks.extend(band)
-        blocks = sorted_blocks
-
-        # Tag each block with its band index for blank-line insertion
-        for band_idx, band in enumerate(bands):
-            for blk in band:
-                blk["band_idx"] = band_idx
-
-        # Build output with gap markers and header prefixes
-        gap_threshold = page_h * 0.03
+        # Build output — one line per block, no gap markers.
+        # Gap markers (blank lines) were removed because they change how
+        # the LLM segments content vs the reference annotations.
         output_lines = []
-        prev_band = None
-        prev_vpos = None
 
         for blk in blocks:
-            # Insert blank line between bands
-            if prev_band is not None and blk["band_idx"] != prev_band:
-                output_lines.append("")
-
-            # Insert blank line at large vertical gap within same band
-            elif prev_vpos is not None and (blk["vpos"] - prev_vpos) > gap_threshold:
-                output_lines.append("")
 
             # Detect header: bold font >= median body size, or any font > 1.3x median
-            # Only short blocks qualify (≤150 chars and ≤3 lines) to avoid marking
-            # bold body paragraphs as headers.
-            # Skip contact-like text (emails, phones, URLs) — never section headers.
+            # Conservative filters to avoid false positives:
+            #   - Short blocks only (≤120 chars)
+            #   - Must start with a letter (skip bullets, numbers, symbols)
+            #   - Must contain ≥2 alphabetic words
+            #   - Skip contact-like text (emails, phones, URLs)
             is_header = False
-            _t = blk["text"]
-            block_line_count = _t.count("\n") + 1
+            _t = blk["text"].strip()
+            _alpha_words = re.findall(r'[A-Za-z]{2,}', _t)
+            _starts_with_letter = bool(re.match(r'[A-Za-z]', _t))
             _is_contact = bool(
                 re.search(r'@\S+\.\S+', _t)       # email
                 or re.search(r'\+\d[\d\s]{6,}', _t)  # phone
                 or re.search(r'www\.', _t, re.I)    # URL
                 or re.search(r'https?://', _t, re.I)
             )
-            if median_fontsize > 0 and len(_t) <= 150 and block_line_count <= 3 and not _is_contact:
+            if (median_fontsize > 0 and len(_t) <= 120
+                    and _starts_with_letter and len(_alpha_words) >= 2
+                    and not _is_contact):
                 for sr in blk["style_refs"]:
                     st = styles.get(sr, {})
                     fs = st.get("fontsize", 0)
@@ -590,13 +513,9 @@ def _parse_alto_xml(xml_path: str) -> Optional[str]:
 
             text = blk["text"]
             if is_header:
-                # Prefix each line of the header block
-                header_lines = text.split("\n")
-                text = "\n".join(f"## {line}" for line in header_lines)
+                text = f"## {text}"
 
             output_lines.append(text)
-            prev_band = blk["band_idx"]
-            prev_vpos = blk["vpos"] + blk["height"]
 
         return "\n".join(output_lines)
     except Exception:
