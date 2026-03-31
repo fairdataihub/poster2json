@@ -1,8 +1,8 @@
 {
-  "$id": "https://posters.science/schema/v0.1/poster_schema.json",
+  "$id": "https://posters.science/schema/v0.2/poster_schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Machine Actionable Scientific Poster Schema",
-  "description": "JSON Schema for machine actionable scientific posters. It is based on the DataCite schema v4.6 but extended for poster-specific metadata that were not available in the DataCite schema. Mandatory (M) properties must be provided; Optional (O) properties provide richer description.",
+  "description": "JSON Schema for machine actionable scientific posters. It is based on the DataCite schema v4.7 and extended for poster-specific metadata. Mandatory (M) properties must be provided; Optional (O) properties provide richer description.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -412,7 +412,7 @@
         "resourceTypeGeneral": {
           "description": "The general type of a resource.",
           "$ref": "#/definitions/resourceType",
-          "default": "Other"
+          "default": "Poster"
         }
       },
       "required": ["resourceType"],
@@ -461,6 +461,12 @@
           "resourceTypeGeneral": {
             "description": "The general type of related resource.",
             "$ref": "#/definitions/resourceType"
+          },
+          "relationTypeInformation": {
+            "type": "string",
+            "description": "Additional information about the relation type. Recommended when relationType is 'Other' to provide context about the relationship.",
+            "minLength": 1,
+            "examples": ["Is poster version of", "Was presented alongside"]
           }
         },
         "required": [
@@ -678,7 +684,7 @@
     },
     "conference": {
       "type": "object",
-      "$comment": "POSTER-SPECIFIC EXTENSION: DataCite feedback (Jan 2026) indicates conference information should be handled through RelatedIdentifier and/or RelatedItem fields for DataCite Metadata Schema compatibility. See example: https://github.com/datacite/schema/blob/schema-4.7-draft/source/meta/kernel-4.7/example/datacite-example-poster-v4.xml (prepared for DataCite Schema 4.7 release with resourceTypeGeneral 'Poster'). This property is retained for poster-specific use cases where richer conference metadata is needed.",
+      "$comment": "POSTER-SPECIFIC EXTENSION: DataCite feedback (Jan 2026) indicates conference information should be handled through RelatedIdentifier and/or RelatedItem fields for DataCite Metadata Schema compatibility. See example: https://github.com/datacite/schema/blob/master/source/meta/kernel-4.7/example/datacite-example-poster-v4.xml (DataCite Schema 4.7, which now includes resourceTypeGeneral 'Poster'). This property is retained for poster-specific use cases where richer conference metadata is needed.",
       "description": "Conference information for the poster presentation. NOTE: For DataCite Metadata Schema compatibility, consider using RelatedIdentifier/RelatedItem fields instead. This property is a poster-specific extension for capturing detailed conference metadata.",
       "properties": {
         "conferenceName": {
@@ -870,7 +876,9 @@
         "OutputManagementPlan",
         "PeerReview",
         "PhysicalObject",
+        "Poster",
         "Preprint",
+        "Presentation",
         "Project",
         "Report",
         "Software",
@@ -1037,6 +1045,10 @@
         {
           "const": "HasTranslation",
           "description": "Indicates A has a translation B"
+        },
+        {
+          "const": "Other",
+          "description": "Relationship type not defined elsewhere. Use relationTypeInformation to provide additional context."
         }
       ]
     },
@@ -1100,6 +1112,10 @@
           "description": "PubMed Identifier: a unique identifier assigned to each PubMed record."
         },
         {
+          "const": "RAiD",
+          "description": "Research Activity Identifier: a persistent identifier for research activities (projects, programs, etc.)."
+        },
+        {
           "const": "PURL",
           "description": "Persistent Uniform Resource Locator. A PURL has three parts: (1) a protocol, (2) a resolver address, and (3) a name."
         },
@@ -1110,6 +1126,10 @@
         {
           "const": "URL",
           "description": "Uniform Resource Locator, also known as web address, is a specific character string that constitutes a reference to a resource. The syntax is: scheme://domain:port/path?qu ery_string#fragment_id"
+        },
+        {
+          "const": "SWHID",
+          "description": "Software Heritage Identifier: an intrinsic identifier for digital objects in the Software Heritage archive. Format: swh:1:cnt:<hash>."
         },
         {
           "const": "URN",
