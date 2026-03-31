@@ -130,16 +130,16 @@ Outputs conform to [poster-json-schema](https://github.com/fairdataihub/poster-j
 
 ```json
 {
-  "$schema": "https://posters.science/schema/v0.1/poster_schema.json",
+  "$schema": "https://posters.science/schema/v0.2/poster_schema.json",
   "creators": [...],
   "titles": [...],
-  "posterContent": {
+  "content": {
     "sections": [
       {"sectionTitle": "...", "sectionContent": "..."}
     ]
   },
   "imageCaptions": [
-    {"captions": ["Figure 1.", "Description"]}
+    {"caption": "Figure 1. Description"}
   ],
   "tableCaptions": [
     {"captions": ["Table 1.", "Description"]}

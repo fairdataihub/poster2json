@@ -46,7 +46,7 @@ MAX_JSON_TOKENS = 18000
 MAX_RETRY_TOKENS = 24000
 
 # Schema URL
-SCHEMA_URL = "https://posters.science/schema/v0.1/poster_schema.json"
+SCHEMA_URL = "https://posters.science/schema/v0.2/poster_schema.json"
 
 # Find pdfalto executable
 PDFALTO_PATH = os.environ.get("PDFALTO_PATH")

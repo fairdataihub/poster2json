@@ -99,11 +99,11 @@ is_valid = validate_poster(result)
 
 ## Output Format
 
-Output conforms to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema) (DataCite-based):
+Output conforms to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema) (DataCite 4.7):
 
 ```json
 {
-  "$schema": "https://posters.science/schema/v0.1/poster_schema.json",
+  "$schema": "https://posters.science/schema/v0.2/poster_schema.json",
   "creators": [
     {
       "name": "Garcia, Sofia",
@@ -115,7 +115,7 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
   "titles": [
     { "title": "Machine Learning Approaches to Diabetic Retinopathy Detection" }
   ],
-  "posterContent": {
+  "content": {
     "sections": [
       { "sectionTitle": "Abstract", "sectionContent": "..." },
       { "sectionTitle": "Methods", "sectionContent": "..." },

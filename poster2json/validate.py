@@ -88,43 +88,31 @@ def validate_required_fields(data: dict) -> Tuple[bool, List[str]]:
     """
     Check if all required fields are present in poster JSON.
     
-    The poster-json-schema requires these fields:
-    - identifiers
+    The poster-json-schema v0.2 requires these fields:
     - creators
     - titles
-    - publisher
     - publicationYear
     - subjects
-    - dates
-    - language
-    - types
-    - formats
-    - rightsList
     - descriptions
-    - fundingReferences
+    - publisher
     - conference
-    
+    - formats
+
     Args:
         data: The poster JSON data to check
-        
+
     Returns:
         Tuple of (is_valid, list_of_missing_fields)
     """
     required_fields = [
-        "identifiers",
         "creators",
         "titles",
-        "publisher",
         "publicationYear",
         "subjects",
-        "dates",
-        "language",
-        "types",
-        "formats",
-        "rightsList",
         "descriptions",
-        "fundingReferences",
+        "publisher",
         "conference",
+        "formats",
     ]
     
     missing = [field for field in required_fields if field not in data]
@@ -255,12 +243,9 @@ def validate_captions(captions: list, caption_type: str = "image") -> Tuple[bool
         if not isinstance(caption, dict):
             issues.append(f"{field_name}[{i}] must be an object")
             continue
-        
-        parts = caption.get("captions", [])
-        if not isinstance(parts, list):
-            issues.append(f"{field_name}[{i}].captions must be an array")
-        elif len(parts) == 0:
-            issues.append(f"{field_name}[{i}].captions should have at least one entry")
+
+        if "caption" not in caption:
+            issues.append(f"{field_name}[{i}] missing required 'caption' field")
     
     return len(issues) == 0, issues
 
