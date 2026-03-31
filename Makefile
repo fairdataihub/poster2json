@@ -171,6 +171,12 @@ upload: dist ## Upload the current version to PyPI
 	poetry publish
 	bin/open https://pypi.org/project/$(PROJECT)
 
+# SCHEMA ######################################################################
+
+.PHONY: sync-schema
+sync-schema: ## Fetch latest poster_schema.json from canonical repo
+	python sync_schema.py
+
 # CLEANUP #####################################################################
 
 .PHONY: clean
