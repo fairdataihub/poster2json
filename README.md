@@ -202,17 +202,15 @@ MIT License - see [LICENSE](LICENSE.md) for details.
   title = {poster2json: Scientific Poster to JSON Metadata Extraction},
   author = {O'Neill, James and Soundarajan, Sanjay and Portillo, Dorian and Patel, Bhavesh},
   year = {2026},
+  version = {0.2.1},
   url = {https://github.com/fairdataihub/poster2json},
   doi = {10.5281/zenodo.18320010}
 }
 ```
 
-## Acknowledgements
+## Funding
 
-- [FAIR Data Innovations Hub](https://fairdataihub.org/)
-- Meta AI for Llama 3.1
-- Alibaba Cloud for Qwen2-VL
-- Part of the [posters.science](https://posters.science) platform
+This project is funded by [The Navigation Fund](https://www.navigation.org/) ([10.71707/rk36-9x79](https://doi.org/10.71707/rk36-9x79)).
 
 ## Contributing
 
