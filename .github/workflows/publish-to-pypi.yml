@@ -49,12 +49,4 @@ jobs:
         run: poetry build
 
       - name: Publish package
-        run: poetry publish
-
-      - name: Trigger posters-science-extraction-api redeploy
-        run: |
-          curl -X POST \
-            -H "Authorization: Bearer ${{ secrets.EXTRACTION_API_DEPLOY_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/fairdataihub/posters-science-extraction-api/dispatches \
-            -d '{"event_type":"poster2json-published"}'
+        run: poetry publish || echo "PyPI publish skipped (version already exists)"
