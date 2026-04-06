@@ -722,13 +722,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
   "descriptions": [{{"description": "The abstract text from the poster...", "descriptionType": "Abstract"}}],
   "publisher": {{"name": "Conference Organizer or Institution Name"}},
-  "conference": {{
-    "conferenceName": "Name of Conference",
-    "conferenceYear": 2025,
-    "conferenceLocation": "City, Country",
-    "conferenceStartDate": "YYYY-MM-DD",
-    "conferenceEndDate": "YYYY-MM-DD"
-  }},
+  "conference": null,
   "formats": ["PDF"],
   "content": {{
     "sections": [
@@ -747,8 +741,12 @@ EXTRACTION NOTES:
 - descriptions: Use the Abstract section content, descriptionType is REQUIRED
 - publisher: Use conference organizer, hosting institution, or repository name
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
-- conference: conferenceName and conferenceYear are REQUIRED; extract from poster header/footer. If not found on the poster, omit the field entirely — do NOT guess or use placeholders
-- publisher: Extract from poster. If not found, omit — do NOT use placeholder text
+- conference: Extract ONLY from text clearly visible on the poster (header, footer, logos).
+  * If conference details are NOT visible, set "conference": null — do NOT invent names, locations, dates, URLs, or acronyms.
+  * NEVER output generic values like "Name of Conference", "City, Country", "Conference Name", or made-up URLs.
+  * If only SOME fields are visible (e.g. name and year but not location), include only those: {{"conferenceName": "ACL 2024", "conferenceYear": 2024}}
+  * If no conference information is found at all, output "conference": null
+- publisher: Extract from poster. If not found, set to null — do NOT use placeholder text
 - formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
 - imageCaptions/tableCaptions: Use "id" field (e.g., "fig1") for cross-referencing if needed
 - rightsList: OPTIONAL - include if license/copyright info found on poster
@@ -763,7 +761,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
-5. Omit conference/publisher if not found on the poster — never guess or use placeholders
+5. conference/publisher: extract ONLY if clearly visible on the poster. If not found, set to null. NEVER invent names, locations, dates, URLs, or use generic placeholders.
 
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
@@ -772,7 +770,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
   "descriptions": [{{"description": "Abstract text", "descriptionType": "Abstract"}}],
   "publisher": {{"name": "Conference or Institution"}},
-  "conference": {{"conferenceName": "Conference Name", "conferenceYear": 2025, "conferenceLocation": "Location"}},
+  "conference": null,
   "formats": ["PDF"],
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
@@ -1171,43 +1169,6 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         from .identifiers import enrich_json_with_identifiers
 
         result = enrich_json_with_identifiers(result, raw_text)
-
-    # Strip "Unknown" and prompt-placeholder values the LLM likes to hallucinate.
-    # These violate metadata quality expectations — better to omit than guess.
-    _UNKNOWN_RE = re.compile(r"^unknown\b", re.IGNORECASE)
-    # Prompt placeholders that the model echoes back verbatim when it can't
-    # find real conference metadata on the poster.
-    _PLACEHOLDER_VALS = {
-        "name of conference",
-        "conference name",
-        "city, country",
-        "location",
-        "conference organizer or institution name",
-        "conference or institution",
-    }
-    _PLACEHOLDER_DATE_RE = re.compile(r"^[Yy]{4}-[Mm]{2}-[Dd]{2}$")
-
-    def _is_placeholder(val: str) -> bool:
-        s = val.strip()
-        return (
-            not s
-            or _UNKNOWN_RE.match(s)
-            or s.lower() in _PLACEHOLDER_VALS
-            or bool(_PLACEHOLDER_DATE_RE.match(s))
-        )
-
-    if "conference" in result and isinstance(result["conference"], dict):
-        for key in list(result["conference"]):
-            val = result["conference"][key]
-            if isinstance(val, str) and _is_placeholder(val):
-                del result["conference"][key]
-    # Top-level optional string fields
-    for key in ("conferenceLocation", "publisher", "researchField"):
-        val = result.get(key)
-        if isinstance(val, str) and _is_placeholder(val):
-            del result[key]
-        elif isinstance(val, dict) and "name" in val and isinstance(val["name"], str) and _is_placeholder(val["name"]):
-            del result[key]
 
     return result
 
