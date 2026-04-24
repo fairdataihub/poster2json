@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-04-24
+
+### Security
+
+- Bump `pillow` 12.1.0 → 12.2.0. Clears CVE-2026-40192 (high, FITS GZIP decompression bomb) and CVE-2026-25990 (high, PSD out-of-bounds write).
+- Bump `black` (dev) 22.12.0 → 26.3.1; relaxed constraint from `^22.1` to `^26.3`. Clears CVE-2026-32274 (high, arbitrary file write via cache filename).
+
 ## [0.3.1] - 2026-04-24
 
 ### Security
