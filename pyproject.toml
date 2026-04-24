@@ -1,7 +1,7 @@
 [tool.poetry]
 
 name = "poster2json"
-version = "0.3.0"
+version = "0.3.1"
 description = "Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models"
 
 packages = [{ include = "poster2json" }]
