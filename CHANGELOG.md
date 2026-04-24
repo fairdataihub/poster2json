@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-24
+
+### Added
+
+- **License normalization**: extracted `rightsList` entries are matched against an SPDX license table (CC family, MIT, Apache, BSD, GPL/LGPL, MPL, CC0). Tier 1 is exact match after lowercase + strip-to-alphanumeric; tier 2 is alpha-fuzzy with **integer-exact** (e.g. `CC-BIY-4.0` → `CC-BY-4.0` fixes the typo, but `CC-BY-4.1` is left alone — version numbers are never fuzzy-matched). Matches populate `rightsIdentifier`, `rightsIdentifierScheme="SPDX"`, `schemeUri`, and backfill `rightsUri`. Unknown licenses pass through untouched.
+- **Subject cleanup**: `subjects` entries are NFKC-normalized, whitespace-collapsed, and deduped case-insensitively (first occurrence's casing wins).
+- **ROR enrichment** (always-on, opt out with `POSTER2JSON_ROR=0`): `creators[].affiliation`, `contributors[].affiliation`, and `publisher` are looked up against ROR's `/organizations?affiliation=` matcher. On a confident match (EXACT/PHRASE outright, FUZZY/COMMON-TERMS only at score ≥ 0.95), the original string is replaced with ROR's canonical display name and an identifier is attached. Disk-cached at `~/.cache/poster2json/ror.json`; in-memory dedupe per run; rate-limited to 2 req/sec; 1500ms timeout. ROR auto-disables for the rest of a run after the first network failure.
+
+### Changed
+
+- `_clean_unicode_artifacts` (output path) now applies NFKC composition. Spanish/German/French/Japanese characters in emitted JSON now use single-codepoint composed form (e.g. `é` as one codepoint, not `e + ́`). NFKD remains on the pre-LLM input path because decomposition cuts token count on superscripts.
+- `utils.normalize_text` switched from NFKD to NFKC to match the output convention.
+
 ## [0.3.2] - 2026-04-24
 
 ### Security

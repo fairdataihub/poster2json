@@ -82,7 +82,8 @@ def normalize_text(text: str) -> str:
     Normalize text for comparison.
 
     Handles:
-    - Unicode normalization (NFKD)
+    - Unicode normalization (NFKC — composed form, suitable for emitted
+      JSON and downstream byte-equality comparisons)
     - Whitespace consolidation
     - Quote unification
     - Dash normalization
@@ -134,7 +135,7 @@ def normalize_text(text: str) -> str:
         text = text.replace(dash, "-")
 
     # Unicode normalization
-    text = unicodedata.normalize("NFKD", text)
+    text = unicodedata.normalize("NFKC", text)
 
     return text
 

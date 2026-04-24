@@ -994,7 +994,14 @@ def _robust_json_parse(response: str) -> dict:
 
 
 def _clean_unicode_artifacts(text: str) -> str:
-    """Remove bidirectional Unicode markers and other artifacts."""
+    """Remove bidirectional Unicode markers and other artifacts.
+
+    NFKC composes accented characters back to single codepoints (\u00e9 as one
+    codepoint, not e + combining acute) \u2014 required for downstream consumers
+    that compare strings byte-for-byte (Spanish, German, French posters).
+    NFKD is still used pre-LLM in `_normalize_raw_text_for_model` because
+    decomposition cuts token count on superscripts/subscripts.
+    """
     if not isinstance(text, str):
         return text
 
@@ -1019,6 +1026,7 @@ def _clean_unicode_artifacts(text: str) -> str:
     for char in bidi_chars:
         text = text.replace(char, "")
 
+    text = unicodedata.normalize("NFKC", text)
     text = re.sub(r"[\u00a0\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]", " ", text)
     text = re.sub(r" {2,}", " ", text)
     return text.strip()
@@ -1182,6 +1190,29 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         for title_obj in result["titles"]:
             if isinstance(title_obj, dict) and "title" in title_obj:
                 title_obj["title"] = _clean_unicode_artifacts(title_obj.get("title", ""))
+
+    # Normalize licenses to SPDX form when confidently matched
+    if "rightsList" in result:
+        from .normalize import normalize_rights_list
+
+        result["rightsList"] = normalize_rights_list(result["rightsList"])
+
+    # Cleanup + dedupe subjects
+    if "subjects" in result:
+        from .normalize import normalize_subjects
+
+        result["subjects"] = normalize_subjects(result["subjects"])
+
+    # ROR enrichment for affiliations and publisher
+    from .ror import enrich_persons, enrich_publisher, get_default_client
+
+    ror = get_default_client()
+    if "creators" in result:
+        result["creators"] = enrich_persons(result["creators"], ror)
+    if "contributors" in result:
+        result["contributors"] = enrich_persons(result["contributors"], ror)
+    if "publisher" in result:
+        result["publisher"] = enrich_publisher(result["publisher"], ror)
 
     # Enrich with identifiers from raw text
     if raw_text:
