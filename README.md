@@ -74,8 +74,15 @@ pip install poster2json
 ### CLI Usage
 
 ```bash
-# Extract metadata from a poster
+# Extract metadata from a poster (default: fine-tuned Llama @ 4bit)
 poster2json extract poster.pdf -o result.json
+
+# Use a different instruct model (any HuggingFace repo id works)
+poster2json extract poster.pdf --model google/gemma-2-9b-it --quantization 4bit
+
+# Trade VRAM for quality
+poster2json extract poster.pdf --quantization 8bit
+poster2json extract poster.pdf --quantization fp16
 
 # Validate extracted JSON
 poster2json validate result.json
@@ -131,7 +138,7 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
 
 | Requirement | Specification                    |
 | ----------- | -------------------------------- |
-| GPU         | NVIDIA CUDA-capable, ≥16GB VRAM  |
+| GPU         | NVIDIA CUDA-capable, ≥8GB VRAM (default 4bit); ≥16GB for `--quantization fp16` or image/OCR posters |
 | RAM         | ≥32GB recommended                |
 | Python      | 3.10+                            |
 | OS          | Linux, macOS, Windows (via WSL2) |

@@ -33,6 +33,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoProcessor,
     AutoTokenizer,
+    BitsAndBytesConfig,
     Qwen2VLForConditionalGeneration,
     TextStreamer,
 )
@@ -589,9 +590,21 @@ _json_model = None
 _json_tokenizer = None
 
 
-def load_json_model(force_full_precision: bool = False):
-    """Load Llama 3.1 8B for JSON structuring."""
+def load_json_model(
+    model_id: Optional[str] = None,
+    quantization: Optional[str] = None,
+):
+    """Load the JSON-structuring LLM.
+
+    Args:
+        model_id: override the default JSON_MODEL_ID. Accepts any HuggingFace
+            repo id (e.g. the default fine-tuned Llama, or a generic instruct
+            model like google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct).
+        quantization: precision mode — one of "fp16", "8bit", "4bit".
+            Defaults to "4bit" (NF4), which fits on ~6GB VRAM.
+    """
     global _json_model, _json_tokenizer
+    resolved_model_id = model_id or JSON_MODEL_ID
     if _json_model is None:
         device = get_best_gpu()
 
@@ -604,12 +617,16 @@ def load_json_model(force_full_precision: bool = False):
             free_gb = 32
             device_map_value = "cpu"
 
-        log(f"Loading {JSON_MODEL_ID} for JSON structuring on {device}...")
+        log(f"Loading {resolved_model_id} for JSON structuring on {device}...")
 
         try:
-            _json_tokenizer = AutoTokenizer.from_pretrained(JSON_MODEL_ID)
+            _json_tokenizer = AutoTokenizer.from_pretrained(resolved_model_id)
 
-            use_8bit = free_gb < 16 and device != "cpu" and not force_full_precision
+            mode = (quantization or "4bit").lower()
+            if mode not in {"fp16", "8bit", "4bit"}:
+                raise ValueError(
+                    f"quantization must be one of fp16|8bit|4bit, got {quantization!r}"
+                )
 
             # Try Flash Attention 2
             try:
@@ -621,28 +638,30 @@ def load_json_model(force_full_precision: bool = False):
                 attn_impl = None
                 log("   Flash Attention not available, using default attention")
 
-            if use_8bit:
-                log(f"   Using 8-bit quantization (only {free_gb:.1f}GB free)")
-                model_kwargs = {
-                    "load_in_8bit": True,
-                    "device_map": device_map_value,
-                    "low_cpu_mem_usage": True,
-                }
-                if attn_impl:
-                    model_kwargs["attn_implementation"] = attn_impl
-                _json_model = AutoModelForCausalLM.from_pretrained(JSON_MODEL_ID, **model_kwargs)
-            else:
-                if force_full_precision and free_gb < 16:
-                    log(f"   Forcing full precision for quality ({free_gb:.1f}GB free)")
-                model_kwargs = {
-                    "torch_dtype": torch.bfloat16,
-                    "device_map": device_map_value,
-                    "low_cpu_mem_usage": True,
-                }
-                if attn_impl:
-                    model_kwargs["attn_implementation"] = attn_impl
-                _json_model = AutoModelForCausalLM.from_pretrained(JSON_MODEL_ID, **model_kwargs)
-            log(f"   ✓ JSON model loaded on {device}")
+            model_kwargs = {
+                "device_map": device_map_value,
+                "low_cpu_mem_usage": True,
+            }
+            if attn_impl:
+                model_kwargs["attn_implementation"] = attn_impl
+
+            if mode == "8bit":
+                log(f"   Using 8-bit quantization (free={free_gb:.1f}GB)")
+                model_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+            elif mode == "4bit":
+                log(f"   Using 4-bit NF4 quantization (free={free_gb:.1f}GB)")
+                model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                    bnb_4bit_use_double_quant=True,
+                )
+            else:  # fp16 (bfloat16)
+                log(f"   Using bfloat16 (free={free_gb:.1f}GB)")
+                model_kwargs["torch_dtype"] = torch.bfloat16
+
+            _json_model = AutoModelForCausalLM.from_pretrained(resolved_model_id, **model_kwargs)
+            log(f"   ✓ JSON model loaded on {device} ({mode})")
         except Exception as e:
             log(f"   ✗ Failed to load JSON model: {e}")
             if _json_model is not None:
@@ -1247,23 +1266,22 @@ def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
     return result
 
 
-def extract_poster(poster_path: str) -> dict:
+def extract_poster(
+    poster_path: str,
+    model_id: Optional[str] = None,
+    quantization: Optional[str] = None,
+) -> dict:
     """
     Extract structured JSON metadata from a scientific poster.
 
-    This is the main entry point for poster extraction.
-
     Args:
-        poster_path: Path to the poster file (PDF, JPG, or PNG)
-
-    Returns:
-        Dictionary containing structured poster metadata conforming to
-        the poster-json-schema.
-
-    Example:
-        >>> result = extract_poster("poster.pdf")
-        >>> print(result["titles"][0]["title"])
-        "Machine Learning Approaches to Diabetic Retinopathy Detection"
+        poster_path: Path to the poster file (PDF, JPG, or PNG).
+        model_id: Override the default JSON structuring model. Accepts any
+            HuggingFace repo id (e.g. google/gemma-2-9b-it,
+            Qwen/Qwen2.5-7B-Instruct) in addition to the default fine-tuned
+            Llama.
+        quantization: Precision mode: "fp16", "8bit", or "4bit".
+            Defaults to "4bit" (NF4) when unset.
     """
     log(f"Processing poster: {poster_path}")
 
@@ -1278,12 +1296,13 @@ def extract_poster(poster_path: str) -> dict:
     log(f"Extracted {len(raw_text)} chars using {source} in {t_extract_elapsed:.2f}s")
 
     # Unload vision model before loading JSON model
-    ext = Path(poster_path).suffix.lower()
-    is_image_poster = ext in [".jpg", ".jpeg", ".png"]
     unload_vision_model()
 
     # Load JSON model
-    model, tokenizer = load_json_model(force_full_precision=is_image_poster)
+    model, tokenizer = load_json_model(
+        model_id=model_id,
+        quantization=quantization,
+    )
 
     try:
         t_json_start = time.time()

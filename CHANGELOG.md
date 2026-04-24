@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-24
+
+### Changed
+
+- Default quantization for the JSON-structuring Llama model is now **4bit** (NF4) across both PDF and image/OCR pipelines. Previously auto-selected 8bit when <16GB free and fp16 otherwise, and forced bf16 on the OCR path. Use `--quantization 8bit` or `--quantization fp16` to opt into higher precision.
+- VRAM floor drops to ~8GB for PDF posters at the 4bit default (image/OCR posters still need ~16GB because of the bf16 Qwen2-VL vision model).
+
+### Documented
+
+- `--model` flag: clarified in help text and README that any HuggingFace instruct repo id is accepted (e.g. `google/gemma-2-9b-it`, `Qwen/Qwen2.5-7B-Instruct`), not just the default fine-tuned Llama.
+
+### Removed
+
+- `force_full_precision` parameter on `load_json_model` (dead after the 4bit default — quality on OCR output at 4bit has held up in the canary set; revisit if regressions appear).
+
 ## [0.2.3] - 2026-04-06
 
 ### Fixed

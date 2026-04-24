@@ -54,26 +54,52 @@ def main(ctx):
     default=True,
     help="Pretty-print JSON output (default: pretty)"
 )
-def extract(input_file: str, output: str, pretty: bool):
+@click.option(
+    "--model",
+    "model_id",
+    type=str,
+    default=None,
+    help=(
+        "HuggingFace model ID to use for JSON structuring. Overrides the "
+        "default fine-tuned Llama. Any instruct model works "
+        "(e.g. google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct)."
+    )
+)
+@click.option(
+    "--quantization",
+    type=click.Choice(["fp16", "8bit", "4bit"], case_sensitive=False),
+    default=None,
+    help="Precision mode for the JSON model. Defaults to 4bit (NF4)."
+)
+def extract(input_file: str, output: str, pretty: bool, model_id: str, quantization: str):
     """
     Extract structured JSON from a scientific poster.
-    
+
     INPUT_FILE: Path to the poster file (PDF, JPG, or PNG)
-    
-    Requires a CUDA-capable GPU with ≥16GB VRAM.
-    
+
+    Requires a CUDA-capable GPU. The default 4bit quantization fits on
+    ~6GB VRAM; use --quantization 8bit or fp16 if you have headroom and
+    want slightly better quality. (Image/OCR posters also load a Qwen2-VL
+    vision model at bf16 — expect higher peak VRAM on that path.)
+
     Examples:
-    
+
         poster2json extract poster.pdf
-        
+
         poster2json extract poster.jpg -o output.json
+
+        poster2json extract poster.pdf --model google/gemma-2-9b-it --quantization 8bit
     """
     from .extract import extract_poster
-    
+
     click.echo(f"Extracting metadata from: {input_file}", err=True)
-    
+    if model_id:
+        click.echo(f"Model: {model_id}", err=True)
+    if quantization:
+        click.echo(f"Quantization: {quantization}", err=True)
+
     try:
-        result = extract_poster(input_file)
+        result = extract_poster(input_file, model_id=model_id, quantization=quantization)
         
         if "error" in result:
             click.echo(f"Error during extraction: {result['error']}", err=True)
