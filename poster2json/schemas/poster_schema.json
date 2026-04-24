@@ -16,16 +16,29 @@
             "type": "string",
             "description": "The identifier value.",
             "minLength": 1,
-            "examples": ["10.5072/posters.2025.001234", "arXiv:2501.12345", "Local-ID-789"]
+            "examples": [
+              "10.5072/posters.2025.001234",
+              "arXiv:2501.12345",
+              "Local-ID-789"
+            ]
           },
           "identifierType": {
             "type": "string",
             "description": "The type of identifier. Use 'DOI' for Digital Object Identifiers, or other standard identifier types.",
             "minLength": 1,
-            "examples": ["DOI", "arXiv", "Local accession number", "Institutional ID", "file"]
+            "examples": [
+              "DOI",
+              "arXiv",
+              "Local accession number",
+              "Institutional ID",
+              "file"
+            ]
           }
         },
-        "required": ["identifier", "identifierType"],
+        "required": [
+          "identifier",
+          "identifierType"
+        ],
         "additionalProperties": false
       },
       "minItems": 1,
@@ -41,25 +54,40 @@
             "type": "string",
             "description": "The full name of the creator (personal name or organization name). Personal name format should be: family, given.",
             "minLength": 1,
-            "examples": ["Garcia, Sofia", "Smith, John", "AI Research Laboratory"]
+            "examples": [
+              "Garcia, Sofia",
+              "Smith, John",
+              "AI Research Laboratory"
+            ]
           },
           "givenName": {
             "type": "string",
             "description": "The given (first) name of the creator. Use only for personal names, not organizational names.",
             "minLength": 1,
-            "examples": ["Sofia", "John", "Marie"]
+            "examples": [
+              "Sofia",
+              "John",
+              "Marie"
+            ]
           },
           "familyName": {
             "type": "string",
             "description": "The family (last) name of the creator. Use only for personal names, not organizational names.",
             "minLength": 1,
-            "examples": ["Garcia", "Smith", "Curie"]
+            "examples": [
+              "Garcia",
+              "Smith",
+              "Curie"
+            ]
           },
           "nameType": {
             "type": "string",
             "description": "The type of name of the creator.",
             "minLength": 1,
-            "enum": ["Personal", "Organizational"]
+            "enum": [
+              "Personal",
+              "Organizational"
+            ]
           },
           "nameIdentifiers": {
             "type": "array",
@@ -80,7 +108,11 @@
                   "type": "string",
                   "description": "The scheme of the name identifier of the creator.",
                   "minLength": 1,
-                  "examples": ["ORCID", "ISNI", "ROR"]
+                  "examples": [
+                    "ORCID",
+                    "ISNI",
+                    "ROR"
+                  ]
                 },
                 "schemeURI": {
                   "type": "string",
@@ -93,7 +125,9 @@
                   ]
                 }
               },
-              "required": ["nameIdentifier"],
+              "required": [
+                "nameIdentifier"
+              ],
               "additionalProperties": false
             },
             "uniqueItems": true
@@ -139,16 +173,24 @@
                       "type": "string",
                       "description": "The scheme of the affiliation identifier. If affiliationIdentifier is used, affiliationIdentifierScheme is mandatory.",
                       "minLength": 1,
-                      "examples": ["ROR", "ISNI"]
+                      "examples": [
+                        "ROR",
+                        "ISNI"
+                      ]
                     },
                     "schemeURI": {
                       "type": "string",
                       "description": "The URI of the affiliation identifier scheme.",
                       "minLength": 1,
-                      "examples": ["https://ror.org", "https://isni.org"]
+                      "examples": [
+                        "https://ror.org",
+                        "https://isni.org"
+                      ]
                     }
                   },
-                  "required": ["name"],
+                  "required": [
+                    "name"
+                  ],
                   "additionalProperties": false,
                   "if": {
                     "properties": {
@@ -157,10 +199,14 @@
                         "minLength": 1
                       }
                     },
-                    "required": ["affiliationIdentifier"]
+                    "required": [
+                      "affiliationIdentifier"
+                    ]
                   },
                   "then": {
-                    "required": ["affiliationIdentifierScheme"]
+                    "required": [
+                      "affiliationIdentifierScheme"
+                    ]
                   }
                 }
               ]
@@ -168,7 +214,9 @@
             "uniqueItems": true
           }
         },
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "additionalProperties": false
       },
       "minItems": 1,
@@ -184,16 +232,26 @@
             "type": "string",
             "description": "The title of the poster.",
             "minLength": 1,
-            "examples": ["Machine Learning Approaches to Diabetic Retinopathy Detection", "AI-Ready Clinical Datasets for Type 2 Diabetes Research"]
+            "examples": [
+              "Machine Learning Approaches to Diabetic Retinopathy Detection",
+              "AI-Ready Clinical Datasets for Type 2 Diabetes Research"
+            ]
           },
           "titleType": {
             "type": "string",
             "description": "The type of title of the item. The titleType subproperty is used when more than a single title is provided. Unless otherwise indicated by titleType, a title is considered to be the main title.",
             "minLength": 1,
-            "enum": ["AlternativeTitle", "Subtitle", "TranslatedTitle", "Other"]
+            "enum": [
+              "AlternativeTitle",
+              "Subtitle",
+              "TranslatedTitle",
+              "Other"
+            ]
           }
         },
-        "required": ["title"],
+        "required": [
+          "title"
+        ],
         "additionalProperties": false
       },
       "minItems": 1,
@@ -207,7 +265,12 @@
           "type": "string",
           "description": "The name of the publisher.",
           "minLength": 1,
-          "examples": ["Zenodo", "IEEE Conference Publications", "ACM Digital Library", "Institutional Repository"]
+          "examples": [
+            "Zenodo",
+            "IEEE Conference Publications",
+            "ACM Digital Library",
+            "Institutional Repository"
+          ]
         },
         "publisherIdentifier": {
           "type": "string",
@@ -223,7 +286,11 @@
           "type": "string",
           "description": "The scheme of the publisher identifier of the item.",
           "minLength": 1,
-          "examples": ["ROR", "re3data", "ISNI"]
+          "examples": [
+            "ROR",
+            "re3data",
+            "ISNI"
+          ]
         },
         "schemeURI": {
           "type": "string",
@@ -236,7 +303,9 @@
           ]
         }
       },
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "additionalProperties": false,
       "if": {
         "properties": {
@@ -245,7 +314,9 @@
             "minLength": 1
           }
         },
-        "required": ["publisherIdentifier"],
+        "required": [
+          "publisherIdentifier"
+        ],
         "additionalProperties": false
       },
       "then": {
@@ -255,7 +326,9 @@
             "minLength": 1
           }
         },
-        "required": ["publisherIdentifierScheme"]
+        "required": [
+          "publisherIdentifierScheme"
+        ]
       }
     },
     "publicationYear": {
@@ -263,7 +336,9 @@
       "description": "The year when the poster was or will be made publicly available. Format: YYYY",
       "minimum": 1000,
       "maximum": 9999,
-      "examples": [2025]
+      "examples": [
+        2025
+      ]
     },
     "subjects": {
       "type": "array",
@@ -275,34 +350,53 @@
             "type": "string",
             "description": "Subject, keyword, classification code, or key phrase describing the poster content.",
             "minLength": 1,
-            "examples": ["Machine Learning", "Type 2 Diabetes", "Retinal Imaging", "Clinical Data Standards"]
+            "examples": [
+              "Machine Learning",
+              "Type 2 Diabetes",
+              "Retinal Imaging",
+              "Clinical Data Standards"
+            ]
           },
           "schemeUri": {
             "type": "string",
             "description": "The URI of the subject identifier scheme.",
             "minLength": 1,
-            "examples": ["https://www.nlm.nih.gov/mesh/", "https://id.loc.gov/authorities/subjects.html"]
+            "examples": [
+              "https://www.nlm.nih.gov/mesh/",
+              "https://id.loc.gov/authorities/subjects.html"
+            ]
           },
           "valueUri": {
             "type": "string",
             "description": "The URI of the subject identifier.",
             "minLength": 1,
-            "examples": ["https://www.nlm.nih.gov/mesh/D000001", "https://id.loc.gov/authorities/subjects/sh85118622.html"]
+            "examples": [
+              "https://www.nlm.nih.gov/mesh/D000001",
+              "https://id.loc.gov/authorities/subjects/sh85118622.html"
+            ]
           },
           "subjectScheme": {
             "type": "string",
             "description": "The name of the subject scheme or classification code or authority if one is used.",
             "minLength": 1,
-            "examples": ["NLM", "LCSH", "ANZSRC"]
+            "examples": [
+              "NLM",
+              "LCSH",
+              "ANZSRC"
+            ]
           },
           "classificationCode": {
             "type": "string",
             "description": "The classification code of the subject of the item. The classificationCode sub-property may be used for subject schemes, like ANZSRC, which do not have valueURIs for each subject term.",
             "minLength": 1,
-            "examples": ["310607"]
+            "examples": [
+              "310607"
+            ]
           }
         },
-        "required": ["subject"],
+        "required": [
+          "subject"
+        ],
         "additionalProperties": false
       },
       "minItems": 1,
@@ -385,12 +479,22 @@
             ]
           },
           "dateInformation": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Additional information about the date. Can be used to provide context, e.g., 'Presented at US-RSE 2025 Conference' when using dateType 'Issued' for poster presentation dates.",
-            "examples": ["Presented at US-RSE 2025 Conference", "2025-01-01", "55 BCE"]
+            "examples": [
+              "Presented at US-RSE 2025 Conference",
+              "2025-01-01",
+              "55 BCE"
+            ]
           }
         },
-        "required": ["date", "dateType"],
+        "required": [
+          "date",
+          "dateType"
+        ],
         "additionalProperties": false
       },
       "uniqueItems": true
@@ -399,7 +503,15 @@
       "type": "string",
       "minLength": 2,
       "description": "Primary language of the poster content. ISO 639-1 language code (e.g., 'en', 'es', 'de', 'fr', 'zh').",
-      "examples": ["en", "es", "zh", "fr", "de", "ja", "pt"]
+      "examples": [
+        "en",
+        "es",
+        "zh",
+        "fr",
+        "de",
+        "ja",
+        "pt"
+      ]
     },
     "types": {
       "type": "object",
@@ -415,7 +527,9 @@
           "default": "Poster"
         }
       },
-      "required": ["resourceType"],
+      "required": [
+        "resourceType"
+      ],
       "additionalProperties": true
     },
     "relatedIdentifiers": {
@@ -428,7 +542,10 @@
             "type": "string",
             "description": "The related identifier of the item.",
             "minLength": 1,
-            "examples": ["10.21384/bar", "https://example.com/"]
+            "examples": [
+              "10.21384/bar",
+              "https://example.com/"
+            ]
           },
           "relatedIdentifierType": {
             "description": "The type of related identifier of the item.",
@@ -442,7 +559,9 @@
             "type": "string",
             "description": "The scheme of the related metadata of the item. Use only if the relationType is HasMetadata or IsMetadataFor.",
             "minLength": 1,
-            "examples": ["DDI-L"]
+            "examples": [
+              "DDI-L"
+            ]
           },
           "schemeURI": {
             "type": "string",
@@ -456,7 +575,10 @@
             "type": "string",
             "description": "The type of the related metadata scheme of the item. Use only if the relationType is HasMetadata or IsMetadataFor.",
             "minLength": 1,
-            "examples": ["XSD", "DDT"]
+            "examples": [
+              "XSD",
+              "DDT"
+            ]
           },
           "resourceTypeGeneral": {
             "description": "The general type of related resource.",
@@ -466,7 +588,10 @@
             "type": "string",
             "description": "Additional information about the relation type. Recommended when relationType is 'Other' to provide context about the relationship.",
             "minLength": 1,
-            "examples": ["Is poster version of", "Was presented alongside"]
+            "examples": [
+              "Is poster version of",
+              "Was presented alongside"
+            ]
           }
         },
         "required": [
@@ -485,7 +610,13 @@
         "type": "string",
         "minLength": 1,
         "description": "A specific dimension or size",
-        "examples": ["36x48 inches portrait", "48x36 inches landscape", "A0 portrait", "90x120 cm", "24 MB PDF"]
+        "examples": [
+          "36x48 inches portrait",
+          "48x36 inches landscape",
+          "A0 portrait",
+          "90x120 cm",
+          "24 MB PDF"
+        ]
       },
       "uniqueItems": true
     },
@@ -499,19 +630,33 @@
       "minItems": 1,
       "uniqueItems": true,
       "examples": [
-        ["PDF"],
-        ["XML"],
-        ["MPG"],
-        ["application/pdf"],
-        ["text/xml"],
-        ["video/mpeg"]
+        [
+          "PDF"
+        ],
+        [
+          "XML"
+        ],
+        [
+          "MPG"
+        ],
+        [
+          "application/pdf"
+        ],
+        [
+          "text/xml"
+        ],
+        [
+          "video/mpeg"
+        ]
       ]
     },
     "version": {
       "type": "string",
       "description": "The version number of the dataset. Suggested practice: major_version.minor_version. Register a new identifier for a major version change. May be used in conjunction with properties 'alternateIdentifier' and 'relatedIdentifier' to indicate various information updates. May be used in conjunction with property 'description' to indicate the nature and file/record range of version.",
       "minLength": 1,
-      "examples": ["2.1"]
+      "examples": [
+        "2.1"
+      ]
     },
     "rightsList": {
       "type": "array",
@@ -524,34 +669,47 @@
             "type": "string",
             "minLength": 1,
             "description": "Use the complete title of a license and include version information if applicable.",
-            "examples": ["Creative Commons Attribution 4.0 International", "CC-BY-4.0"]
+            "examples": [
+              "Creative Commons Attribution 4.0 International",
+              "CC-BY-4.0"
+            ]
           },
           "rightsUri": {
             "type": "string",
             "minLength": 1,
             "description": "The URI of the license",
-            "examples": ["https://creativecommons.org/licenses/by/4.0/"]
+            "examples": [
+              "https://creativecommons.org/licenses/by/4.0/"
+            ]
           },
           "rightsIdentifier": {
             "type": "string",
             "minLength": 1,
             "description": "A short, standardized version of the license name. A list of identifiers for commonly-used licenses may be found here: (https://spdx.org/licenses/)",
-            "examples": ["CC-BY-4.0"]
+            "examples": [
+              "CC-BY-4.0"
+            ]
           },
           "rightsIdentifierScheme": {
             "type": "string",
             "minLength": 1,
             "description": "The name of the scheme",
-            "examples": ["SPDX"]
+            "examples": [
+              "SPDX"
+            ]
           },
           "schemeUri": {
             "type": "string",
             "minLength": 1,
             "description": "The URI of the rightsIdentifierScheme",
-            "examples": ["https://spdx.org/licenses/"]
+            "examples": [
+              "https://spdx.org/licenses/"
+            ]
           }
         },
-        "required": ["rights"]
+        "required": [
+          "rights"
+        ]
       },
       "minItems": 1,
       "uniqueItems": true
@@ -567,7 +725,10 @@
             "type": "string",
             "minLength": 1,
             "description": "A description of the poster content.",
-            "examples": ["This poster presents machine learning methods for automated diabetic retinopathy screening using retinal fundus images from 4,000 participants...", "We describe a novel clinical dataset structure (CDS) for organizing multimodal research data in AI-ready formats..."]
+            "examples": [
+              "This poster presents machine learning methods for automated diabetic retinopathy screening using retinal fundus images from 4,000 participants...",
+              "We describe a novel clinical dataset structure (CDS) for organizing multimodal research data in AI-ready formats..."
+            ]
           },
           "descriptionType": {
             "type": "string",
@@ -600,7 +761,10 @@
             ]
           }
         },
-        "required": ["descriptionType", "description"]
+        "required": [
+          "descriptionType",
+          "description"
+        ]
       },
       "minItems": 1,
       "uniqueItems": true
@@ -616,31 +780,49 @@
             "type": "string",
             "minLength": 1,
             "description": "Name of the funding provider.",
-            "examples": ["National Institutes of Health (NIH)", "National Science Foundation", "European Research Council"]
+            "examples": [
+              "National Institutes of Health (NIH)",
+              "National Science Foundation",
+              "European Research Council"
+            ]
           },
           "funderIdentifier": {
             "type": "string",
             "minLength": 1,
             "description": "Uniquely identifies a funding entity, according to various types.",
-            "examples": ["https://doi.org/10.13039/100000936"]
+            "examples": [
+              "https://doi.org/10.13039/100000936"
+            ]
           },
           "funderIdentifierType": {
             "type": "string",
             "minLength": 1,
             "description": "The type of funder identifier used.",
-            "enum": ["Crossref Funder ID", "GRID", "ISNI", "ROR", "Other"]
+            "enum": [
+              "Crossref Funder ID",
+              "GRID",
+              "ISNI",
+              "ROR",
+              "Other"
+            ]
           },
           "schemeUri": {
             "type": "string",
             "minLength": 1,
             "description": "The URI of the funder identifier scheme",
-            "examples": ["https://ror.org", "https://www.crossref.org/services/funder-registry/"]
+            "examples": [
+              "https://ror.org",
+              "https://www.crossref.org/services/funder-registry/"
+            ]
           },
           "awardNumber": {
             "type": "string",
             "minLength": 1,
             "description": "The code assigned by the funder to a sponsored award (grant).",
-            "examples": ["OT2OD032644", "GBMF3859.01"]
+            "examples": [
+              "OT2OD032644",
+              "GBMF3859.01"
+            ]
           },
           "awardUri": {
             "type": "string",
@@ -656,10 +838,15 @@
             "type": "string",
             "minLength": 1,
             "description": "The human readable title or name of the award (grant)",
-            "examples": ["The awesome project of XYZ", "Socioenvironmental Monitoring of the Amazon Basin and Xingu"]
+            "examples": [
+              "The awesome project of XYZ",
+              "Socioenvironmental Monitoring of the Amazon Basin and Xingu"
+            ]
           }
         },
-        "required": ["funderName"],
+        "required": [
+          "funderName"
+        ],
         "if": {
           "properties": {
             "funderIdentifier": {
@@ -667,7 +854,9 @@
               "minLength": 1
             }
           },
-          "required": ["funderIdentifier"],
+          "required": [
+            "funderIdentifier"
+          ],
           "additionalProperties": false
         },
         "then": {
@@ -677,7 +866,9 @@
               "minLength": 1
             }
           },
-          "required": ["funderIdentifierType"]
+          "required": [
+            "funderIdentifierType"
+          ]
         }
       },
       "uniqueItems": true
@@ -721,13 +912,17 @@
           "type": "string",
           "minLength": 1,
           "description": "Start date of the conference",
-          "examples": ["2025-09-15"]
+          "examples": [
+            "2025-09-15"
+          ]
         },
         "conferenceEndDate": {
           "type": "string",
           "minLength": 1,
           "description": "End date of the conference",
-          "examples": ["2025-09-17"]
+          "examples": [
+            "2025-09-17"
+          ]
         },
         "conferenceAcronym": {
           "type": "string",
@@ -744,10 +939,16 @@
           "description": "The year of the conference. Format: YYYY",
           "minimum": 1900,
           "maximum": 2100,
-          "examples": [2025, 2026]
+          "examples": [
+            2025,
+            2026
+          ]
         }
       },
-      "required": ["conferenceName", "conferenceYear"],
+      "required": [
+        "conferenceName",
+        "conferenceYear"
+      ],
       "additionalProperties": false
     },
     "content": {
@@ -765,13 +966,21 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The title or heading of this section as it appears on the poster. Examples: 'Introduction', 'Background', 'Methods', 'Approach', 'Results', 'Results & Conclusions', 'Discussion', 'Future Work', 'Acknowledgements', 'References', etc.",
-                "examples": ["Introduction", "Methods", "Results & Discussion", "Conclusions", "References"]
+                "examples": [
+                  "Introduction",
+                  "Methods",
+                  "Results & Discussion",
+                  "Conclusions",
+                  "References"
+                ]
               },
               "sectionContent": {
                 "type": "string",
                 "minLength": 1,
                 "description": "The text content of this section extracted from the poster.",
-                "examples": ["Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."]
+                "examples": [
+                  "Machine learning algorithms were applied to analyze retinal images from 4,000 participants..."
+                ]
               }
             },
             "additionalProperties": false
@@ -796,16 +1005,25 @@
           "id": {
             "type": "string",
             "description": "Optional identifier for cross-referencing this table (e.g., 'table1', 'tbl-results'). Useful when table data and captions are extracted separately.",
-            "examples": ["table1", "tbl-results", "T1"]
+            "examples": [
+              "table1",
+              "tbl-results",
+              "T1"
+            ]
           },
           "caption": {
             "type": "string",
             "minLength": 1,
             "description": "The full caption text for this table.",
-            "examples": ["Table 1. Summary of Results", "Table 2. Comparison of model performance across datasets"]
+            "examples": [
+              "Table 1. Summary of Results",
+              "Table 2. Comparison of model performance across datasets"
+            ]
           }
         },
-        "required": ["caption"],
+        "required": [
+          "caption"
+        ],
         "additionalProperties": false
       },
       "uniqueItems": true
@@ -820,16 +1038,25 @@
           "id": {
             "type": "string",
             "description": "Optional identifier for cross-referencing this figure (e.g., 'fig1', 'figure-workflow'). Useful when images and captions are extracted separately.",
-            "examples": ["fig1", "figure-workflow", "F1"]
+            "examples": [
+              "fig1",
+              "figure-workflow",
+              "F1"
+            ]
           },
           "caption": {
             "type": "string",
             "minLength": 1,
             "description": "The full caption text for this image/figure.",
-            "examples": ["Figure 1. Overview of the Task Force", "Figure 2. Distribution of participants by region"]
+            "examples": [
+              "Figure 1. Overview of the Task Force",
+              "Figure 2. Distribution of participants by region"
+            ]
           }
         },
-        "required": ["caption"],
+        "required": [
+          "caption"
+        ],
         "additionalProperties": false
       },
       "uniqueItems": true
@@ -837,8 +1064,13 @@
     "researchField": {
       "type": "string",
       "minLength": 1,
-      "description": "Primary research field or discipline area for the research presented. Renamed from 'domain' to avoid confusion with biological taxonomy (where domain is the highest rank above kingdom/species).",
-      "examples": ["Machine Learning", "Clinical Medicine", "Bioinformatics", "Public Health", "Neuroscience"]
+      "description": "Top-level research domain for the poster. Use one of the four OpenAlex domains: 'Health Sciences', 'Life Sciences', 'Physical Sciences', 'Social Sciences'. Omit the field (or set to null) if the domain cannot be determined from poster content; never use 'Other', 'Unknown', or placeholder text. Renamed from 'domain' to avoid confusion with biological taxonomy.",
+      "examples": [
+        "Health Sciences",
+        "Life Sciences",
+        "Physical Sciences",
+        "Social Sciences"
+      ]
     }
   },
   "required": [

@@ -743,6 +743,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "publisher": {{"name": "Conference Organizer or Institution Name"}},
   "conference": null,
   "formats": ["PDF"],
+  "researchField": null,
   "content": {{
     "sections": [
       {{"sectionTitle": "Introduction", "sectionContent": "Complete verbatim text..."}},
@@ -769,6 +770,11 @@ EXTRACTION NOTES:
 - formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
 - imageCaptions/tableCaptions: Use "id" field (e.g., "fig1") for cross-referencing if needed
 - rightsList: OPTIONAL - include if license/copyright info found on poster
+- researchField: Top-level OpenAlex domain. MUST be EXACTLY one of:
+    "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences"
+  Pick the single best fit based on poster content (subjects, methods, findings).
+  If unclear, set to null. NEVER output "Other", "Unknown", "Research field",
+  empty string, or any other placeholder text.
 
 POSTER TEXT TO CONVERT:
 {raw_text}
@@ -791,12 +797,15 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "publisher": {{"name": "Conference or Institution"}},
   "conference": null,
   "formats": ["PDF"],
+  "researchField": null,
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
   }},
   "imageCaptions": [{{"id": "fig1", "caption": "Figure 1. Caption"}}],
   "tableCaptions": [{{"id": "table1", "caption": "Table 1. Caption"}}]
 }}
+
+researchField MUST be exactly one of: "Health Sciences", "Life Sciences", "Physical Sciences", "Social Sciences" — or null if unclear. NEVER output "Other", "Unknown", or placeholder text.
 
 TEXT:
 {raw_text}
@@ -1115,6 +1124,17 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
     for key in ["researchField"]:
         if key in result and isinstance(result[key], str):
             result[key] = _clean_unicode_artifacts(result[key])
+
+    # Strip placeholder/fallback values from researchField. The schema asks for
+    # one of the four OpenAlex top-level domains; anything else is the model
+    # echoing template text or hedging, which downstream rolls up as "Other".
+    rf = result.get("researchField")
+    if isinstance(rf, str):
+        if rf.strip().lower() in {
+            "", "other", "unknown", "n/a", "na", "none",
+            "research field", "domain", "field",
+        }:
+            result["researchField"] = None
 
     # Clean content sections
     if "content" in result and isinstance(result["content"], dict):

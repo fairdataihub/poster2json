@@ -113,3 +113,34 @@ def test_normalize_subjects_preserves_first_casing():
     subs = [{"subject": "machine learning"}, {"subject": "Machine Learning"}]
     out = normalize_subjects(subs)
     assert out == [{"subject": "machine learning"}]
+
+
+@pytest.mark.parametrize(
+    "rf_in,expected",
+    [
+        ("Health Sciences", "Health Sciences"),
+        ("Life Sciences", "Life Sciences"),
+        ("Physical Sciences", "Physical Sciences"),
+        ("Social Sciences", "Social Sciences"),
+        # Placeholder/fallback values should null out
+        ("Other", None),
+        ("other", None),
+        ("OTHER", None),
+        ("", None),
+        ("Research field", None),
+        ("Unknown", None),
+        ("N/A", None),
+        ("Domain", None),
+        # Legit-looking but non-canonical values pass through (we don't
+        # enforce the enum at normalization time)
+        ("Other Sciences", "Other Sciences"),
+        ("Bioinformatics", "Bioinformatics"),
+        # Already-null stays null
+        (None, None),
+    ],
+)
+def test_postprocess_strips_researchfield_placeholders(rf_in, expected):
+    from poster2json.extract import _postprocess_json
+
+    out = _postprocess_json({"researchField": rf_in}, raw_text="")
+    assert out.get("researchField") == expected

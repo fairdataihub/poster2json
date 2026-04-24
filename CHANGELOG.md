@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-24
+
+### Added
+
+- `researchField` is now in both `EXTRACTION_PROMPT` and `FALLBACK_PROMPT` with explicit instruction: must be one of the four OpenAlex top-level domains ("Health Sciences", "Life Sciences", "Physical Sciences", "Social Sciences") or null. Previously the field wasn't mentioned in either prompt, so the model never had a chance to fill it.
+- Post-process placeholder filter: `researchField` values matching the deny-list `{"", "Other", "Unknown", "N/A", "Research field", "Domain", "Field", "None"}` (case-insensitive) are coerced to None. Belt-and-suspenders against model drift and against legacy data flowing through the pipeline.
+
+### Changed
+
+- Bundled `poster2json/schemas/poster_schema.json` synced from canonical poster-json-schema repo (researchField examples + description updated to OpenAlex four-domain guidance).
+
 ## [0.4.0] - 2026-04-24
 
 ### Added
