@@ -598,8 +598,8 @@ def load_json_model(
 
     Args:
         model_id: override the default JSON_MODEL_ID. Accepts any HuggingFace
-            repo id (e.g. the default fine-tuned Llama, or a generic instruct
-            model like google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct).
+            repo id (e.g. the default Llama-3.1-8B-Instruct, or a generic
+            instruct model like google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct).
         quantization: precision mode — one of "fp16", "8bit", "4bit".
             Defaults to "4bit" (NF4), which fits on ~6GB VRAM.
     """
@@ -1342,10 +1342,9 @@ def extract_poster(
 
     Args:
         poster_path: Path to the poster file (PDF, JPG, or PNG).
-        model_id: Override the default JSON structuring model. Accepts any
-            HuggingFace repo id (e.g. google/gemma-2-9b-it,
-            Qwen/Qwen2.5-7B-Instruct) in addition to the default fine-tuned
-            Llama.
+        model_id: Override the default JSON structuring model
+            (Llama-3.1-8B-Instruct). Accepts any HuggingFace repo id
+            (e.g. google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct).
         quantization: Precision mode: "fp16", "8bit", or "4bit".
             Defaults to "4bit" (NF4) when unset.
     """

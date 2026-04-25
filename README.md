@@ -59,9 +59,12 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 
 The pipeline uses:
 
-- [**Llama-3.1-8B-Poster-Extraction**](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) for JSON structuring
+- [**Llama-3.1-8B-Instruct**](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) (a verbatim mirror of Meta's release; swap with any HuggingFace instruct model via `--model`) for JSON structuring
 - **Qwen2-VL-7B** for vision-based OCR of image posters
 - **pdfalto** for layout-aware PDF text extraction
+- **lingua-language-detector** for ISO 639-1 language detection on body text (overrides any value the model emits — body text beats metadata-fragment guessing)
+- **ROR** (`https://api.ror.org`) for affiliation and publisher canonicalisation; matched names get a ROR identifier attached
+- **SPDX** matching (with integer-exact version handling) for license normalisation in `rightsList`
 
 ## Quick Start
 
@@ -74,7 +77,7 @@ pip install poster2json
 ### CLI Usage
 
 ```bash
-# Extract metadata from a poster (default: fine-tuned Llama @ 4bit)
+# Extract metadata from a poster (default: Llama-3.1-8B-Instruct @ 4bit)
 poster2json extract poster.pdf -o result.json
 
 # Use a different instruct model (any HuggingFace repo id works)
@@ -116,11 +119,38 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
       "name": "Garcia, Sofia",
       "givenName": "Sofia",
       "familyName": "Garcia",
-      "affiliation": ["University"]
+      "affiliation": [
+        {
+          "name": "Stanford University",
+          "affiliationIdentifier": "https://ror.org/00f54p054",
+          "affiliationIdentifierScheme": "ROR",
+          "schemeUri": "https://ror.org/"
+        }
+      ]
     }
   ],
   "titles": [
     { "title": "Machine Learning Approaches to Diabetic Retinopathy Detection" }
+  ],
+  "publicationYear": 2025,
+  "language": "en",
+  "researchField": "Health Sciences",
+  "subjects": [
+    { "subject": "Machine Learning" },
+    { "subject": "Diabetic Retinopathy" }
+  ],
+  "descriptions": [
+    { "description": "We present a deep learning model...", "descriptionType": "Abstract" }
+  ],
+  "publisher": { "name": "Zenodo" },
+  "rightsList": [
+    {
+      "rights": "Creative Commons Attribution 4.0 International",
+      "rightsIdentifier": "CC-BY-4.0",
+      "rightsIdentifierScheme": "SPDX",
+      "schemeUri": "https://spdx.org/licenses/",
+      "rightsUri": "https://creativecommons.org/licenses/by/4.0/"
+    }
   ],
   "content": {
     "sections": [
@@ -129,10 +159,16 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
       { "sectionTitle": "Results", "sectionContent": "..." }
     ]
   },
-  "imageCaptions": [{ "captions": ["Figure 1.", "ROC curves showing..."] }],
-  "tableCaptions": [{ "captions": ["Table 1.", "Performance metrics"] }]
+  "imageCaptions": [{ "id": "fig1", "caption": "Figure 1. ROC curves showing..." }],
+  "tableCaptions": [{ "id": "table1", "caption": "Table 1. Performance metrics" }]
 }
 ```
+
+Notes on the auto-populated fields:
+- `language` is detected from the raw body text (lingua heuristic). Returns null when text is too short (<200 chars / <50 non-ASCII codepoints) or the detector is unsure.
+- `researchField` must be one of the four OpenAlex top-level domains: `Health Sciences`, `Life Sciences`, `Physical Sciences`, `Social Sciences`. Null when the model can't pick one confidently.
+- `affiliation` and `publisher` get ROR enrichment when the matcher returns a high-confidence chosen result. Strings without a confident match pass through unchanged. Set `POSTER2JSON_ROR=0` to disable.
+- `rightsList` entries are matched against an SPDX table; the matcher is conservative on version numbers (e.g. `CC-BY-4.0` and `CC-BY-4.1` are never confused).
 
 ## System Requirements
 
@@ -209,7 +245,7 @@ MIT License - see [LICENSE](LICENSE.md) for details.
   title = {poster2json: Scientific Poster to JSON Metadata Extraction},
   author = {O'Neill, James and Soundarajan, Sanjay and Portillo, Dorian and Patel, Bhavesh},
   year = {2026},
-  version = {0.2.3},
+  version = {0.4.2},
   url = {https://github.com/fairdataihub/poster2json},
   doi = {10.5281/zenodo.18320010}
 }

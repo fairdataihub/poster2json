@@ -61,7 +61,7 @@ def main(ctx):
     default=None,
     help=(
         "HuggingFace model ID to use for JSON structuring. Overrides the "
-        "default fine-tuned Llama. Any instruct model works "
+        "default Llama-3.1-8B-Instruct. Any instruct model works "
         "(e.g. google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct)."
     )
 )

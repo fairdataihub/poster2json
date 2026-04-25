@@ -20,15 +20,14 @@ Technical architecture and methodology for poster2json.
 
 ## Models
 
-### Llama 3.1 8B Poster Extraction
+### Llama 3.1 8B Instruct (default JSON structuring model)
 
-**Model**: [fairdataihub/Llama-3.1-8B-Poster-Extraction](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction)
+**Model**: [fairdataihub/Llama-3.1-8B-Poster-Extraction](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) — a verbatim mirror of Meta's `Llama-3.1-8B-Instruct`. The repo name has historical reasons; the weights themselves are not fine-tuned.
 
-Fine-tuned version of Meta's Llama 3.1 8B Instruct for scientific poster metadata extraction:
+Any HuggingFace instruct model works; pass `--model <repo-id>` to swap (e.g. `google/gemma-2-9b-it`, `Qwen/Qwen2.5-7B-Instruct`). The default loads at 4-bit NF4 quantization (~6GB VRAM); use `--quantization 8bit` or `fp16` for higher precision.
 
 - 8B parameters
 - 128K context window
-- Optimized for structured JSON output
 - Strong section identification
 
 ### Qwen2-VL-7B-Instruct
