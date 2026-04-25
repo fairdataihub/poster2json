@@ -245,7 +245,7 @@ MIT License - see [LICENSE](LICENSE.md) for details.
   title = {poster2json: Scientific Poster to JSON Metadata Extraction},
   author = {O'Neill, James and Soundarajan, Sanjay and Portillo, Dorian and Patel, Bhavesh},
   year = {2026},
-  version = {0.4.2},
+  version = {0.4.3},
   url = {https://github.com/fairdataihub/poster2json},
   doi = {10.5281/zenodo.18320010}
 }

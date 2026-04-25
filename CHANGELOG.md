@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-04-24
+
+### Documented
+
+- README pipeline overview now lists the lingua / ROR / SPDX features added in 0.4.0–0.4.2; expanded JSON output example with `language`, `researchField`, ROR-enriched affiliation, and SPDX-normalized rights; added a "Notes on auto-populated fields" section covering the 4 OpenAlex domains and the `POSTER2JSON_ROR=0` opt-out.
+- Corrected docstrings, README, architecture.md, and CLI help that called the default model "fine-tuned" — `fairdataihub/Llama-3.1-8B-Poster-Extraction` is a verbatim mirror of Meta's `Llama-3.1-8B-Instruct`.
+- Citation block bumped to current version.
+
+(No code changes from 0.4.2; re-published because PyPI doesn't allow file-name reuse and 0.4.2 was already uploaded.)
+
 ## [0.4.2] - 2026-04-24
 
 ### Added
