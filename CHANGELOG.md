@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-04-24
+
+### Added
+
+- Heuristic language detection on raw poster body text via `lingua-language-detector`. New `poster2json/language.py` module loads a 29-language detector lazily (Western European + East Asian + South/Southeast Asian + Middle Eastern + Slavic). Result is emitted as ISO 639-1 in the `language` field. Returns null below the minimum body-text threshold or when the detector can't separate the top two candidates by ≥10% (configured via `with_minimum_relative_distance(0.10)`).
+- `_postprocess_json` always overwrites `language` with the heuristic's result (or null). Reason: the LLM has been observed to emit `language: "en"` for posters with English metadata fragments but Japanese/Spanish/etc. body content (the figshare poster at DOI 10.6084/m9.figshare.10116536.v1 is the canary case — now correctly tagged `ja`). Body-text heuristic is more reliable than the model.
+- Hybrid threshold: 200 chars OR 50 non-ASCII codepoints. CJK/Arabic/Cyrillic encode much more info per codepoint than Latin scripts, so a 130-char Japanese poster passes the gate that a 130-char English poster wouldn't.
+
+### Dependencies
+
+- Added `lingua-language-detector >=2.1,<2.2` (~96MB wheel; lazy-init so no import-time cost). Pinned below 2.2 because 2.2.0 dropped Python 3.10/3.11 and we still target ^3.10.
+
 ## [0.4.1] - 2026-04-24
 
 ### Added

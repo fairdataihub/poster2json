@@ -1223,6 +1223,21 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
 
         result["subjects"] = normalize_subjects(result["subjects"])
 
+    # Heuristic language detection on the raw body text. Overwrites any
+    # value the LLM may have emitted — the model has been observed to
+    # hallucinate `language` from English metadata fragments (e.g. the
+    # figshare Japanese poster at DOI 10.6084/m9.figshare.10116536.v1).
+    if raw_text:
+        from .language import detect_language
+
+        detected = detect_language(raw_text)
+        if detected:
+            result["language"] = detected
+        else:
+            # Body text too short or detector unsure — null is more
+            # honest than guessing.
+            result["language"] = None
+
     # ROR enrichment for affiliations and publisher
     from .ror import enrich_persons, enrich_publisher, get_default_client
 

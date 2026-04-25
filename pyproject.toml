@@ -1,7 +1,7 @@
 [tool.poetry]
 
 name = "poster2json"
-version = "0.4.1"
+version = "0.4.2"
 description = "Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models"
 
 packages = [{ include = "poster2json" }]
@@ -69,6 +69,11 @@ Pillow = ">=9.0.0"
 jsonschema = ">=4.17.0"
 rouge-score = "*"
 numpy = "*"
+
+# Language detection (heuristic, no LLM).
+# Pinned to ~2.1 because 2.2.0 dropped Python 3.10/3.11 support and we
+# still target ^3.10. Revisit when poster2json bumps its Python floor.
+lingua-language-detector = ">=2.1,<2.2"
 
 # CLI/Utilities
 art = "^6.0"
