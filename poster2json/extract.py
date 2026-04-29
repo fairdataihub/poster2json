@@ -1350,6 +1350,15 @@ def extract_poster(
     """
     log(f"Processing poster: {poster_path}")
 
+    # For image posters: unload the JSON model BEFORE the vision model
+    # loads. Qwen2-VL-7B at bf16 needs ~15GB; on a 24GB card the JSON
+    # model warm-loaded by api.py healthcheck is ~9GB resident, leaving
+    # the vision load short by a few hundred MB and OOMing.
+    # Cost: ~10s of JSON reload after OCR. PDF posters skip this branch.
+    ext = Path(poster_path).suffix.lower()
+    if ext in {".jpg", ".jpeg", ".png"}:
+        unload_json_model()
+
     # Extract raw text
     t_extract_start = time.time()
     raw_text, source = get_raw_text(poster_path)

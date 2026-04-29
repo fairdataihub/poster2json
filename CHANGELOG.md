@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-04-29
+
+### Fixed
+
+- OOM on image posters when the API has the JSON model warm-loaded. `extract_poster()` now unloads the JSON model before reading an image (Qwen2-VL-7B at bf16 needs ~15GB; on a 24GB card with JSON resident ~9GB, vision load was OOMing by a few hundred MB). PDF posters are unaffected — they never load vision, so the JSON warm-load stays free.
+
 ## [0.4.3] - 2026-04-24
 
 ### Documented
