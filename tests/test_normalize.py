@@ -4,6 +4,8 @@ import pytest
 
 from poster2json.normalize import (
     _match_license,
+    normalize_award_number,
+    normalize_funding_references,
     normalize_rights_entry,
     normalize_rights_list,
     normalize_subject_value,
@@ -144,3 +146,33 @@ def test_postprocess_strips_researchfield_placeholders(rf_in, expected):
 
     out = _postprocess_json({"researchField": rf_in}, raw_text="")
     assert out.get("researchField") == expected
+
+
+@pytest.mark.parametrize(
+    "in_,expected",
+    [
+        ("OT2OD032644", "OT2OD032644"),
+        ("ot2od032644", "OT2OD032644"),
+        ("  OT2OD032644  ", "OT2OD032644"),
+        ("GBMF3859.01", "GBMF3859.01"),
+        ("nsf-ags-1234", "NSF-AGS-1234"),
+        ("(OT2OD032644)", "OT2OD032644"),
+        ("OT2OD032644.", "OT2OD032644"),
+        ("", None),
+        ("   ", None),
+    ],
+)
+def test_normalize_award_number(in_, expected):
+    assert normalize_award_number(in_) == expected
+
+
+def test_normalize_funding_references_drops_empty_award():
+    frs = [{"funderName": "NIH", "awardNumber": "  "}]
+    out = normalize_funding_references(frs)
+    assert "awardNumber" not in out[0]
+
+
+def test_normalize_funding_references_normalizes_funder_whitespace():
+    frs = [{"funderName": "  National  Institutes  of   Health  "}]
+    out = normalize_funding_references(frs)
+    assert out[0]["funderName"] == "National Institutes of Health"

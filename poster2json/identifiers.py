@@ -40,6 +40,25 @@ CROSSREF_FUNDER_RE = re.compile(
     r"(?:https?://doi\.org/)?10\.13039/(\d+)\b"
 )
 
+# Strips the resolver URL from DOIs. Preserves case in the suffix because
+# DOI suffixes can be (and are) registered as case-sensitive even though
+# Crossref's resolver treats them case-insensitively. Dedup elsewhere uses
+# .lower() so this is safe.
+DOI_URL_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:https?://)?(?:dx\.)?doi\.org/|doi:\s*)", re.IGNORECASE
+)
+
+
+def canonicalize_doi(value: str) -> str:
+    """Return a bare DOI ('10.xxxx/...') given any of: bare DOI,
+    'doi:10.xxxx/...', 'https://doi.org/10.xxxx/...', 'http://dx.doi.org/...'.
+    Non-DOI strings pass through unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = DOI_URL_PREFIX_RE.sub("", value).strip()
+    return stripped if stripped.startswith("10.") else value
+
 # Scheme metadata lookup
 SCHEME_TABLE = {
     "orcid": ("ORCID", "https://orcid.org"),
@@ -203,6 +222,9 @@ def _enrich_existing_identifiers(data: dict) -> dict:
             scheme, uri = result
             if "identifierType" not in item or not item["identifierType"]:
                 item["identifierType"] = scheme
+            # Canonicalize DOI form (strip https://doi.org/ etc.)
+            if scheme == "DOI" and isinstance(value, str):
+                item["identifier"] = canonicalize_doi(value)
 
     # creators[*].nameIdentifiers[]
     for creator in data.get("creators", []):
@@ -234,6 +256,19 @@ def _enrich_existing_identifiers(data: dict) -> dict:
             # fundingReferences uses schemeUri (lowercase i)
             if "schemeUri" not in fr or not fr["schemeUri"]:
                 fr["schemeUri"] = uri
+            # Canonicalize Crossref Funder DOI form
+            if scheme == "Crossref Funder ID" and isinstance(fid, str):
+                fr["funderIdentifier"] = canonicalize_doi(fid)
+
+    # relatedIdentifiers[*].relatedIdentifier — canonicalize DOIs
+    for ri in data.get("relatedIdentifiers", []):
+        if not isinstance(ri, dict):
+            continue
+        rid = ri.get("relatedIdentifier", "")
+        if isinstance(rid, str):
+            rid_type = ri.get("relatedIdentifierType", "")
+            if rid_type == "DOI" or DOI_URL_PREFIX_RE.match(rid):
+                ri["relatedIdentifier"] = canonicalize_doi(rid)
 
     return data
 

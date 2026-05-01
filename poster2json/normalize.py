@@ -310,6 +310,50 @@ def normalize_subject_value(s: str) -> str:
     return s
 
 
+def normalize_award_number(s: str) -> Optional[str]:
+    """Cleanup for fundingReferences[].awardNumber.
+
+    Grant codes are alphanumeric identifiers like 'OT2OD032644' or
+    'GBMF3859.01'. Whitespace, surrounding punctuation, and casing drift
+    cause near-duplicates downstream. We strip outer whitespace, drop
+    leading/trailing punctuation, and uppercase.
+
+    No fuzzy matching — same rule as SPDX integer-exact: numbers and
+    digits in award codes are part of the identifier and must not drift.
+    Returns None for empty input.
+    """
+    if not isinstance(s, str):
+        return s
+    cleaned = unicodedata.normalize("NFKC", s).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    # Strip surrounding punctuation but keep internal . - / _ which appear
+    # in real codes (GBMF3859.01, NSF-AGS-1234).
+    cleaned = cleaned.strip(" .,;:()[]{}\"'")
+    if not cleaned:
+        return None
+    return cleaned.upper()
+
+
+def normalize_funding_references(funding_refs: list) -> list:
+    """Cleanup awardNumber + funderName whitespace on each entry."""
+    if not isinstance(funding_refs, list):
+        return funding_refs
+    for fr in funding_refs:
+        if not isinstance(fr, dict):
+            continue
+        if "awardNumber" in fr:
+            fixed = normalize_award_number(fr["awardNumber"])
+            if fixed is None:
+                fr.pop("awardNumber", None)
+            else:
+                fr["awardNumber"] = fixed
+        if "funderName" in fr and isinstance(fr["funderName"], str):
+            fr["funderName"] = re.sub(
+                r"\s+", " ", unicodedata.normalize("NFKC", fr["funderName"])
+            ).strip()
+    return funding_refs
+
+
 def normalize_subjects(subjects: list) -> list:
     """Cleanup + dedupe (case-insensitive, keep first occurrence's casing)."""
     if not isinstance(subjects, list):

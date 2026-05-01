@@ -3,11 +3,60 @@
 import pytest
 
 from poster2json.identifiers import (
+    canonicalize_doi,
     enrich_json_with_identifiers,
     extract_identifiers_from_text,
     infer_identifier_scheme,
 )
 from poster2json.extract import _normalize_captions
+
+
+class TestCanonicalizeDOI:
+    @pytest.mark.parametrize(
+        "in_,expected",
+        [
+            ("10.5281/zenodo.123456", "10.5281/zenodo.123456"),
+            ("https://doi.org/10.5281/zenodo.123456", "10.5281/zenodo.123456"),
+            ("http://doi.org/10.5281/zenodo.123456", "10.5281/zenodo.123456"),
+            ("https://dx.doi.org/10.5281/zenodo.123456", "10.5281/zenodo.123456"),
+            ("doi:10.5281/zenodo.123456", "10.5281/zenodo.123456"),
+            ("doi: 10.5281/zenodo.123456", "10.5281/zenodo.123456"),
+            # Suffix case is preserved (DOI suffixes can be case-sensitive)
+            ("https://doi.org/10.5281/Zenodo.X", "10.5281/Zenodo.X"),
+            # Non-DOI passes through
+            ("arXiv:2501.12345", "arXiv:2501.12345"),
+            ("Local-ID-789", "Local-ID-789"),
+            ("", ""),
+        ],
+    )
+    def test_strips_url_prefix(self, in_, expected):
+        assert canonicalize_doi(in_) == expected
+
+    def test_non_string_passes_through(self):
+        assert canonicalize_doi(None) is None
+        assert canonicalize_doi(42) == 42
+
+
+class TestEnrichCanonicalizesDOIs:
+    def test_canonicalizes_top_level_doi_identifier(self):
+        data = {"identifiers": [{"identifier": "https://doi.org/10.5281/zenodo.99", "identifierType": "DOI"}]}
+        out = enrich_json_with_identifiers(data, "")
+        assert out["identifiers"][0]["identifier"] == "10.5281/zenodo.99"
+
+    def test_canonicalizes_funder_crossref_doi(self):
+        data = {"fundingReferences": [{"funderName": "NIH", "funderIdentifier": "https://doi.org/10.13039/100000002"}]}
+        out = enrich_json_with_identifiers(data, "")
+        assert out["fundingReferences"][0]["funderIdentifier"] == "10.13039/100000002"
+
+    def test_canonicalizes_related_identifier_doi(self):
+        data = {"relatedIdentifiers": [{"relatedIdentifier": "doi:10.21384/foo", "relatedIdentifierType": "DOI"}]}
+        out = enrich_json_with_identifiers(data, "")
+        assert out["relatedIdentifiers"][0]["relatedIdentifier"] == "10.21384/foo"
+
+    def test_arxiv_identifier_unchanged(self):
+        data = {"identifiers": [{"identifier": "arXiv:2501.12345", "identifierType": "arXiv"}]}
+        out = enrich_json_with_identifiers(data, "")
+        assert out["identifiers"][0]["identifier"] == "arXiv:2501.12345"
 
 
 # ============================

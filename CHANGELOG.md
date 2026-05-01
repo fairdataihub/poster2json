@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-01
+
+Phase 1 of the field-normalization audit (DOI / funder / award).
+
+### Added
+
+- **DOI canonical form** (`identifiers.canonicalize_doi`): strips `https://doi.org/`, `dx.doi.org/`, and `doi:` prefixes from DOIs. Applied to `identifiers[].identifier`, `fundingReferences[].funderIdentifier` (Crossref Funder DOIs), and `relatedIdentifiers[].relatedIdentifier`. Suffix case is preserved.
+- **Funder enrichment via ROR** (`poster2json/funders.py`): always-on (`POSTER2JSON_FUNDER=0` to opt out), disk-cached, rate-limited, 1500ms timeout — same shape as `ror.py`. Stricter accept criteria than affiliations: requires the matched org's `types` to include `"funder"`. When matched, populates `funderIdentifier` (Crossref Funder DOI when available, else ROR URL), `funderIdentifierType` (`"Crossref Funder ID"` or `"ROR"`), and `schemeUri`. Replaces messy input names with ROR's canonical display name. Bare acronyms like "NIH" that hit a non-funder sub-institute are correctly skipped.
+- **Award number cleanup** (`normalize.normalize_award_number`): NFKC, whitespace-collapse, surrounding-punctuation strip, uppercase. No fuzzy matching — same integer-exact rule as SPDX. Drops empty values to None.
+
 ## [0.4.4] - 2026-04-29
 
 ### Fixed

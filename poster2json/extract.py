@@ -1249,6 +1249,21 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
     if "publisher" in result:
         result["publisher"] = enrich_publisher(result["publisher"], ror)
 
+    # Funder + award normalization, then ROR funder lookup
+    if "fundingReferences" in result:
+        from .normalize import normalize_funding_references
+
+        result["fundingReferences"] = normalize_funding_references(
+            result["fundingReferences"]
+        )
+
+        from .funders import enrich_funding_references
+        from .funders import get_default_client as get_funder_client
+
+        result["fundingReferences"] = enrich_funding_references(
+            result["fundingReferences"], get_funder_client()
+        )
+
     # Enrich with identifiers from raw text
     if raw_text:
         from .identifiers import enrich_json_with_identifiers
