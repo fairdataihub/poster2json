@@ -176,3 +176,118 @@ def test_normalize_funding_references_normalizes_funder_whitespace():
     frs = [{"funderName": "  National  Institutes  of   Health  "}]
     out = normalize_funding_references(frs)
     assert out[0]["funderName"] == "National Institutes of Health"
+
+
+# ------------------------------------------------------------------
+# Publisher-suspect detection (Phase 3)
+# ------------------------------------------------------------------
+
+
+def test_publisher_suspect_flag_when_ror_matches_affiliation():
+    from poster2json.extract import _postprocess_json
+
+    data = {
+        "publisher": {
+            "name": "University of Barcelona",
+            "publisherIdentifier": "https://ror.org/021018s57",
+        },
+        "creators": [
+            {
+                "givenName": "Sofia",
+                "familyName": "Garcia",
+                "affiliation": [
+                    {
+                        "name": "University of Barcelona",
+                        "affiliationIdentifier": "https://ror.org/021018s57",
+                        "affiliationIdentifierScheme": "ROR",
+                    }
+                ],
+            }
+        ],
+    }
+    out = _postprocess_json(data, raw_text="")
+    assert "_validation" in out
+    warnings = [w for w in out["_validation"] if w["field"] == "publisher"]
+    assert len(warnings) == 1
+    assert warnings[0]["level"] == "warning"
+    assert "https://ror.org/021018s57" in warnings[0]["message"]
+
+
+def test_publisher_suspect_not_flagged_when_ror_differs():
+    from poster2json.extract import _postprocess_json
+
+    data = {
+        "publisher": {
+            "name": "Zenodo",
+            "publisherIdentifier": "https://ror.org/04wxnsj81",
+        },
+        "creators": [
+            {
+                "givenName": "Sofia",
+                "familyName": "Garcia",
+                "affiliation": [
+                    {
+                        "name": "University of Barcelona",
+                        "affiliationIdentifier": "https://ror.org/021018s57",
+                    }
+                ],
+            }
+        ],
+    }
+    out = _postprocess_json(data, raw_text="")
+    assert "_validation" not in out
+
+
+def test_publisher_suspect_not_flagged_without_publisher_id(monkeypatch):
+    monkeypatch.setenv("POSTER2JSON_ROR", "0")
+    import poster2json.ror as ror_mod
+
+    ror_mod._default_client = None  # reset singleton so env var takes effect
+
+    from poster2json.extract import _postprocess_json
+
+    data = {
+        "publisher": {"name": "University of Barcelona"},
+        "creators": [
+            {
+                "givenName": "Sofia",
+                "familyName": "Garcia",
+                "affiliation": [
+                    {
+                        "name": "University of Barcelona",
+                        "affiliationIdentifier": "https://ror.org/021018s57",
+                    }
+                ],
+            }
+        ],
+    }
+    out = _postprocess_json(data, raw_text="")
+    assert "_validation" not in out
+    ror_mod._default_client = None  # cleanup
+
+
+def test_publisher_suspect_checks_contributors_too():
+    from poster2json.extract import _postprocess_json
+
+    data = {
+        "publisher": {
+            "name": "MIT",
+            "publisherIdentifier": "https://ror.org/042nb2s44",
+        },
+        "creators": [],
+        "contributors": [
+            {
+                "givenName": "Alice",
+                "familyName": "Smith",
+                "affiliation": [
+                    {
+                        "name": "MIT",
+                        "affiliationIdentifier": "https://ror.org/042nb2s44",
+                    }
+                ],
+            }
+        ],
+    }
+    out = _postprocess_json(data, raw_text="")
+    assert "_validation" in out
+    assert any(w["field"] == "publisher" for w in out["_validation"])

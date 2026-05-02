@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-05-01
+
+Phase 3 of the field-normalization audit (publisher-suspect detection).
+
+### Added
+
+- **Publisher-suspect warning**: after ROR enrichment, if the publisher's `publisherIdentifier` matches any creator or contributor `affiliationIdentifier`, a `_validation` warning is emitted (`field: "publisher"`, `level: "warning"`). This flags the common case where a poster author listed their university as the publisher instead of the repository/platform (e.g. Zenodo, figshare). No data is changed — the dashboard can use the warning to suppress these entries from "Top Publishers" rollups.
+
 ## [0.5.1] - 2026-05-01
 
 Phase 2 of the field-normalization audit (ORCID).

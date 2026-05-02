@@ -1279,6 +1279,38 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             result["creators"], get_orcid_client()
         )
 
+    # Publisher-suspect detection: flag when publisher ROR matches a
+    # creator's affiliation ROR (user likely typed their institution
+    # as the publisher instead of the repository/platform).
+    pub_id = (
+        result.get("publisher", {}).get("publisherIdentifier")
+        if isinstance(result.get("publisher"), dict)
+        else None
+    )
+    if pub_id:
+        aff_ids = set()
+        for person_list in ("creators", "contributors"):
+            for person in result.get(person_list, []):
+                if not isinstance(person, dict):
+                    continue
+                for aff in person.get("affiliation", []):
+                    if isinstance(aff, dict):
+                        aid = aff.get("affiliationIdentifier")
+                        if aid:
+                            aff_ids.add(aid)
+        if pub_id in aff_ids:
+            result.setdefault("_validation", [])
+            result["_validation"].append(
+                {
+                    "field": "publisher",
+                    "level": "warning",
+                    "message": (
+                        f"Publisher ROR ({pub_id}) matches a creator affiliation; "
+                        "the publisher may actually be a repository or platform."
+                    ),
+                }
+            )
+
     return result
 
 
