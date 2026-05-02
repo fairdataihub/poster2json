@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-01
+
+Phase 2 of the field-normalization audit (ORCID).
+
+### Added
+
+- **ORCID enrichment via public API** (`poster2json/orcid.py`): always-on (`POSTER2JSON_ORCID=0` to opt out), disk-cached at `~/.cache/poster2json/orcid.json`, rate-limited to 2 req/s, 1500ms timeout — same shape as `ror.py` and `funders.py`. Searches the ORCID expanded-search endpoint by `given-names` + `family-name` + `affiliation-org-name`. Only attaches when exactly one result matches (single high-confidence hit) and the returned name passes accent-insensitive comparison. Requires affiliation as a disambiguator — name-only searches are skipped. Runs after regex-based ORCID extraction so creators who already have an ORCID from the poster text are not re-queried.
+
 ## [0.5.0] - 2026-05-01
 
 Phase 1 of the field-normalization audit (DOI / funder / award).

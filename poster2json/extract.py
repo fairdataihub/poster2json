@@ -1270,6 +1270,15 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
 
         result = enrich_json_with_identifiers(result, raw_text)
 
+    # ORCID lookup for creators still missing one (after regex extraction)
+    if "creators" in result:
+        from .orcid import enrich_creators_orcid
+        from .orcid import get_default_client as get_orcid_client
+
+        result["creators"] = enrich_creators_orcid(
+            result["creators"], get_orcid_client()
+        )
+
     return result
 
 
