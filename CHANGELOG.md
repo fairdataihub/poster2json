@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-05-04
+
+Tag auto-generated descriptions as "Other" instead of "Abstract" so users can provide
+their own formal abstract separately.
+
+### Changed
+
+- Extraction prompt now uses `descriptionType: "Other"` for machine-generated poster
+  summaries. Previously hardcoded as "Abstract", which misrepresented auto-extracted
+  content as user-provided abstracts. The frontend will let users supply their own
+  abstract (tagged "Abstract") and optionally keep the generated summary as "Other".
+
 ## [0.5.2] - 2026-05-01
 
 Phase 3 of the field-normalization audit (publisher-suspect detection).

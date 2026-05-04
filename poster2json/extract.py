@@ -739,7 +739,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "titles": [{{"title": "Main Poster Title"}}],
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
-  "descriptions": [{{"description": "The abstract text from the poster...", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "A concise summary of the poster content...", "descriptionType": "Other"}}],
   "publisher": {{"name": "Conference Organizer or Institution Name"}},
   "conference": null,
   "formats": ["PDF"],
@@ -758,7 +758,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 EXTRACTION NOTES:
 - publicationYear: Extract from poster or conference date, use current year if not found
 - subjects: Extract 3-5 keywords from poster content
-- descriptions: Use the Abstract section content, descriptionType is REQUIRED
+- descriptions: Summarize the poster content concisely; descriptionType MUST be "Other" (the user may later provide their own formal abstract)
 - publisher: Use conference organizer, hosting institution, or repository name
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
 - conference: Extract ONLY from text clearly visible on the poster (header, footer, logos).
@@ -793,7 +793,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "titles": [{{"title": "Poster Title"}}],
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
-  "descriptions": [{{"description": "Abstract text", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "Concise poster summary", "descriptionType": "Other"}}],
   "publisher": {{"name": "Conference or Institution"}},
   "conference": null,
   "formats": ["PDF"],
