@@ -291,3 +291,62 @@ def test_publisher_suspect_checks_contributors_too():
     out = _postprocess_json(data, raw_text="")
     assert "_validation" in out
     assert any(w["field"] == "publisher" for w in out["_validation"])
+
+
+# ------------------------------------------------------------------
+# Placeholder safety net (0.5.4)
+# ------------------------------------------------------------------
+
+
+def test_conference_placeholder_stripped():
+    from poster2json.extract import _postprocess_json
+
+    data = {
+        "conference": {
+            "conferenceName": "Name of Conference",
+            "conferenceYear": 2024,
+        }
+    }
+    out = _postprocess_json(data, raw_text="")
+    # conferenceName stripped; conferenceYear remains → object not collapsed
+    assert out["conference"] == {"conferenceYear": 2024}
+
+
+def test_conference_all_placeholder_collapses_to_null():
+    from poster2json.extract import _postprocess_json
+
+    data = {"conference": {"conferenceName": "Name of Conference", "conferenceLocation": "City, Country"}}
+    out = _postprocess_json(data, raw_text="")
+    assert out["conference"] is None
+
+
+def test_bogus_table_caption_filtered():
+    from poster2json.extract import _postprocess_json
+
+    data = {
+        "tableCaptions": [
+            {"id": "table1", "caption": "Table not found in the poster text"},
+        ],
+        "imageCaptions": [
+            {"id": "fig1", "caption": "Figure 1: Experimental setup"},
+        ],
+    }
+    out = _postprocess_json(data, raw_text="")
+    assert out["tableCaptions"] == []
+    assert len(out["imageCaptions"]) == 1
+
+
+def test_publisher_placeholder_stripped():
+    from poster2json.extract import _postprocess_json
+
+    data = {"publisher": {"name": "Conference Organizer or Institution Name"}}
+    out = _postprocess_json(data, raw_text="")
+    assert out["publisher"] is None
+
+
+def test_real_conference_preserved():
+    from poster2json.extract import _postprocess_json
+
+    data = {"conference": {"conferenceName": "US-RSE'25", "conferenceYear": 2025}}
+    out = _postprocess_json(data, raw_text="")
+    assert out["conference"]["conferenceName"] == "US-RSE'25"

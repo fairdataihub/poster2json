@@ -722,13 +722,14 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
+0. GROUNDING: Every value you output MUST come from text visibly present in the poster below. If a field's value cannot be found in the poster text, use null or []. NEVER invent, guess, or infer content that is not explicitly written on the poster.
 1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
 5. Copy ALL text EXACTLY - do not paraphrase or summarize
 6. "Key Findings" ≠ "References": Key Findings = discoveries/results; References = numbered citations with authors/years
-7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent
+7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent. Only include captions for figures/tables that actually exist on the poster. If no figures or tables are present, use empty arrays.
 8. Text without a clear header (e.g. contact info, URLs, footer text) is still a section — use "sectionTitle": "" with the verbatim text as "sectionContent". Do NOT skip any poster text.
 
 JSON SCHEMA (all top-level fields are REQUIRED):
@@ -740,35 +741,39 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
   "descriptions": [{{"description": "A concise summary of the poster content...", "descriptionType": "Other"}}],
-  "publisher": {{"name": "Conference Organizer or Institution Name"}},
+  "publisher": null,
   "conference": null,
   "formats": ["PDF"],
   "researchField": null,
   "content": {{
     "sections": [
-      {{"sectionTitle": "Introduction", "sectionContent": "Complete verbatim text..."}},
-      {{"sectionTitle": "Methods", "sectionContent": "Complete verbatim text..."}},
-      {{"sectionTitle": "Results", "sectionContent": "Complete verbatim text..."}}
+      {{"sectionTitle": "Introduction", "sectionContent": "...verbatim text from poster..."}},
+      {{"sectionTitle": "Methods", "sectionContent": "...verbatim text from poster..."}},
+      {{"sectionTitle": "Results", "sectionContent": "...verbatim text from poster..."}}
     ]
   }},
-  "imageCaptions": [{{"id": "fig1", "caption": "Figure 1. Caption text"}}, {{"id": "fig2", "caption": "Figure 2. Caption text"}}],
-  "tableCaptions": [{{"id": "table1", "caption": "Table 1. Caption text"}}]
+  "imageCaptions": [{{"id": "fig1", "caption": "Figure 1: Actual caption from poster"}}],
+  "tableCaptions": []
 }}
 
 EXTRACTION NOTES:
 - publicationYear: Extract from poster or conference date, use current year if not found
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Summarize the poster content concisely; descriptionType MUST be "Other" (the user may later provide their own formal abstract)
-- publisher: Use conference organizer, hosting institution, or repository name
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
+- publisher: Extract the publisher, hosting institution, or repository name ONLY if explicitly stated on the poster. If not found, set to null.
+  CORRECT: {{"name": "Zenodo"}} (if "Zenodo" appears on the poster)
+  CORRECT: null (if no publisher info found)
+  WRONG: {{"name": "Conference Organizer or Institution Name"}} (placeholder)
 - conference: Extract ONLY from text clearly visible on the poster (header, footer, logos).
-  * If conference details are NOT visible, set "conference": null — do NOT invent names, locations, dates, URLs, or acronyms.
-  * NEVER output generic values like "Name of Conference", "City, Country", "Conference Name", or made-up URLs.
-  * If only SOME fields are visible (e.g. name and year but not location), include only those: {{"conferenceName": "ACL 2024", "conferenceYear": 2024}}
+  CORRECT: {{"conferenceName": "US-RSE'25", "conferenceYear": 2025}} (if printed on poster)
+  CORRECT: null (if no conference info found)
+  WRONG: {{"conferenceName": "Name of Conference"}} (placeholder — NEVER output this)
+  WRONG: {{"conferenceName": "International Conference on..."}} (invented)
+  * If only SOME fields are visible, include only those.
   * If no conference information is found at all, output "conference": null
-- publisher: Extract from poster. If not found, set to null — do NOT use placeholder text
 - formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
-- imageCaptions/tableCaptions: Use "id" field (e.g., "fig1") for cross-referencing if needed
+- imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be text you can see on the poster (e.g. "Figure 1: Experimental setup"). If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output "Table not found" or similar — just use an empty array.
 - rightsList: OPTIONAL - include if license/copyright info found on poster
 - researchField: Top-level OpenAlex domain. MUST be EXACTLY one of:
     "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences"
@@ -787,6 +792,8 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 3. Copy ALL text EXACTLY verbatim
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
 5. conference/publisher: extract ONLY if clearly visible on the poster. If not found, set to null. NEVER invent names, locations, dates, URLs, or use generic placeholders.
+6. imageCaptions/tableCaptions: ONLY for figures/tables that exist on the poster. If none, use [].
+7. GROUNDING: Every value must come from text in the poster. If not found, use null or [].
 
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
@@ -794,15 +801,15 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
   "descriptions": [{{"description": "Concise poster summary", "descriptionType": "Other"}}],
-  "publisher": {{"name": "Conference or Institution"}},
+  "publisher": null,
   "conference": null,
   "formats": ["PDF"],
   "researchField": null,
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
   }},
-  "imageCaptions": [{{"id": "fig1", "caption": "Figure 1. Caption"}}],
-  "tableCaptions": [{{"id": "table1", "caption": "Table 1. Caption"}}]
+  "imageCaptions": [],
+  "tableCaptions": []
 }}
 
 researchField MUST be exactly one of: "Health Sciences", "Life Sciences", "Physical Sciences", "Social Sciences" — or null if unclear. NEVER output "Other", "Unknown", or placeholder text.
@@ -1096,6 +1103,26 @@ def _normalize_captions(captions_input, caption_type: str = "fig") -> list:
     return normalized
 
 
+_PLACEHOLDER_STRINGS = frozenset({
+    "name of conference", "conference name", "city, country",
+    "conference organizer or institution name",
+    "institution name", "complete verbatim text",
+    "table not found in the poster text",
+    "no table found", "no tables found",
+    "table not found", "not found in poster",
+    "figure 1. caption text", "table 1. caption text",
+    "caption text", "figure caption", "table caption",
+    "yyyy-mm-dd", "yyyy", "http://example.com",
+    "https://example.com", "conference url",
+    "poster title", "main poster title",
+})
+
+
+def _is_placeholder(value: str) -> bool:
+    """Return True if value matches a known template/placeholder string."""
+    return value.strip().lower() in _PLACEHOLDER_STRINGS
+
+
 def _postprocess_json(data: dict, raw_text: str = "") -> dict:
     """Comprehensive post-processing for extracted JSON."""
     result = data.copy()
@@ -1119,6 +1146,39 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             result[key] = []
         elif isinstance(result[key], (dict, list)):
             result[key] = _normalize_captions(result[key], caption_type=ctype)
+
+    # Strip placeholder/hallucinated conference values
+    conf = result.get("conference")
+    if isinstance(conf, dict):
+        cn = conf.get("conferenceName", "")
+        if isinstance(cn, str) and _is_placeholder(cn):
+            conf.pop("conferenceName", None)
+        cl = conf.get("conferenceLocation", "")
+        if isinstance(cl, str) and _is_placeholder(cl):
+            conf.pop("conferenceLocation", None)
+        cu = conf.get("conferenceUrl", "")
+        if isinstance(cu, str) and _is_placeholder(cu):
+            conf.pop("conferenceUrl", None)
+        # Collapse to null if no meaningful fields remain
+        meaningful = {k for k, v in conf.items() if v}
+        if not meaningful:
+            result["conference"] = None
+
+    # Strip placeholder/hallucinated publisher values
+    pub = result.get("publisher")
+    if isinstance(pub, dict):
+        pn = pub.get("name", "")
+        if isinstance(pn, str) and _is_placeholder(pn):
+            result["publisher"] = None
+
+    # Filter bogus captions (hallucinated "not found" or template echoes)
+    for key in ("imageCaptions", "tableCaptions"):
+        if key in result and isinstance(result[key], list):
+            result[key] = [
+                cap for cap in result[key]
+                if isinstance(cap, dict)
+                and not _is_placeholder(cap.get("caption", ""))
+            ]
 
     # Clean Unicode from string fields
     for key in ["researchField"]:

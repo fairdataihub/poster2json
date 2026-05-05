@@ -105,3 +105,17 @@ def test_cache_records_negative_lookups(tmp_path, monkeypatch):
     client = RorClient(cache_path=cache)
     # Cached None -> returns None without network
     assert client.lookup("Unknown Inst") is None
+
+
+def test_strip_trailing_country():
+    from poster2json.ror import _strip_trailing_country
+
+    assert _strip_trailing_country("universidad politecnica de madrid, spain") == "universidad politecnica de madrid"
+    assert _strip_trailing_country("eth zurich, switzerland") == "eth zurich"
+    assert _strip_trailing_country("dept of cs, univ of california, berkeley") == "dept of cs, univ of california"
+    # Should NOT strip when tail has digits or is too long
+    assert _strip_trailing_country("building 5, floor 3") is None
+    assert _strip_trailing_country("no comma here") is None
+    assert _strip_trailing_country("dept, school of engineering and applied sciences") is None
+
+

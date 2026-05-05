@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-05-05
+
+Anti-hallucination hardening (conference/caption/publisher placeholders + prompt improvements).
+
+### Fixed
+
+- **Conference placeholder safety net**: `_postprocess_json` now strips known placeholder values ("Name of Conference", "City, Country", etc.) from `conferenceName`, `conferenceLocation`, and `conferenceUrl`. Conference objects with no remaining meaningful fields collapse to `null`.
+- **Bogus caption filter**: `imageCaptions` and `tableCaptions` entries whose caption text matches a placeholder pattern (e.g. "Table not found in the poster text") are removed.
+- **Publisher placeholder stripping**: Publisher objects whose name matches template echoes (e.g. "Conference Organizer or Institution Name") are nullified.
+- **ROR trailing-country retry**: affiliations like "Universidad Politecnica de Madrid, Spain" now retry without the ", Spain" suffix when the full string gets no ROR match, improving hit rate for poster-style affiliations.
+
+### Changed
+
+- **Extraction prompt hardened**: added Rule 0 "GROUNDING" (every value must come from poster text or be null), strengthened caption/conference/publisher instructions with positive and negative examples, removed placeholder strings from the schema example template (publisher is now `null` in the example, captions use `[]`), added rule 6/7 to fallback prompt.
+
 ## [0.5.3] - 2026-05-04
 
 Tag auto-generated descriptions as "Other" instead of "Abstract" so users can provide

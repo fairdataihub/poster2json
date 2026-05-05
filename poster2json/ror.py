@@ -32,6 +32,25 @@ def _normalize_query(s: str) -> str:
     return s
 
 
+def _strip_trailing_country(s: str) -> Optional[str]:
+    """Strip a trailing ', Country' suffix common in poster affiliations.
+
+    Returns the stripped string if it looks like a country was removed,
+    else None.  Only strips if what follows the last comma is 1-3 words
+    with no digits (to avoid stripping department info).
+    """
+    if "," not in s:
+        return None
+    base, _, tail = s.rpartition(",")
+    tail = tail.strip()
+    if not tail or not base.strip():
+        return None
+    words = tail.split()
+    if 1 <= len(words) <= 3 and not any(c.isdigit() for c in tail):
+        return base.strip()
+    return None
+
+
 def _ror_display_name(org: dict) -> Optional[str]:
     for n in org.get("names", []):
         if "ror_display" in n.get("types", []):
@@ -78,21 +97,8 @@ class RorClient:
             time.sleep(ROR_RATE_LIMIT - delta)
         self._last_call = time.time()
 
-    def lookup(self, name: str) -> Optional[dict]:
-        """Return {'id': ror_url, 'name': canonical_name} or None.
-
-        None means "no confident match" — cached so we don't re-query.
-        After the first network failure of a run, ROR is disabled for the
-        rest of the run to avoid blocking on a flaky network.
-        """
-        if not self.enabled or not isinstance(name, str):
-            return None
-        key = _normalize_query(name)
-        if not key:
-            return None
-        if key in self._cache:
-            return self._cache[key]
-
+    def _query_ror(self, key: str) -> Optional[dict]:
+        """Single ROR API call. Returns match dict or None."""
         self._throttle()
         url = f"{ROR_API}?affiliation={urllib.parse.quote(key)}"
         try:
@@ -108,7 +114,6 @@ class RorClient:
                 self.enabled = False
             return None
 
-        match = None
         for item in data.get("items", []):
             if not item.get("chosen"):
                 continue
@@ -128,8 +133,32 @@ class RorClient:
             display = _ror_display_name(org)
             rid = org.get("id")
             if display and rid:
-                match = {"id": rid, "name": display}
+                return {"id": rid, "name": display}
             break
+        return None
+
+    def lookup(self, name: str) -> Optional[dict]:
+        """Return {'id': ror_url, 'name': canonical_name} or None.
+
+        None means "no confident match" — cached so we don't re-query.
+        After the first network failure of a run, ROR is disabled for the
+        rest of the run to avoid blocking on a flaky network.
+        """
+        if not self.enabled or not isinstance(name, str):
+            return None
+        key = _normalize_query(name)
+        if not key:
+            return None
+        if key in self._cache:
+            return self._cache[key]
+
+        match = self._query_ror(key)
+
+        # Retry without trailing country suffix (e.g. "..., Spain")
+        if match is None and self.enabled:
+            stripped = _strip_trailing_country(key)
+            if stripped and stripped not in self._cache:
+                match = self._query_ror(stripped)
 
         self._cache[key] = match
         self._save_cache()
