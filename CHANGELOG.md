@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] - 2026-05-06
+
+Robust JSON quote repair + version bump for PyPI re-publish.
+
+### Fixed
+
+- **Character-walking quote repair**: `_repair_unescaped_quotes` rewritten from regex to a character-by-character JSON walker that correctly handles unescaped quotes inside string values (code snippets, citations, nested speech). Fixes the class of JSON parse failures where pdfalto text contained special characters the LLM failed to escape.
+
 ## [0.5.6] - 2026-05-06
 
 Anti-example-echoing: remove concrete values from prompts and add conference grounding check.
