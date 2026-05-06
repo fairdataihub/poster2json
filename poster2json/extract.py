@@ -859,21 +859,91 @@ def _extract_first_json_object(s: str) -> str:
 def _repair_unescaped_quotes(s: str) -> str:
     """Fix unescaped double-quotes inside JSON string values.
 
-    Handles two patterns:
-    1. Quotes after units: e.g. ``16.7 pc/"`` → ``16.7 pc/\\"``
-    2. Inline scare-quotes: e.g. ``M dwarf "twin" binaries``
-       → ``M dwarf 'twin' binaries``
+    Walks the JSON character-by-character. When inside a string value,
+    any `"` that would prematurely close the string (i.e. the character
+    after it doesn't look like valid JSON structure) gets escaped.
+    Handles code snippets, citations, and nested speech the LLM failed
+    to escape.
     """
-    # Unit-slash pattern (original)
-    s = re.sub(
-        r'(\d+\s*(?:pc|km|m|cm|mm|Hz|kHz|MHz|GHz|s|ms|ns|arcsec|arcmin|deg))/"',
-        r'\1/\\"',
-        s,
-    )
-    s = re.sub(r'\((\d+\.?\d*\s*\w+)/"\)', r'(\1/\\")', s)
-    # Inline scare-quotes: word "quoted word(s)" word → single quotes
-    s = re.sub(r'(?<=\w)\s*"\s*(\w+(?:\s+\w+)*)\s*"\s*(?=\w)', r" '\1' ", s)
-    return s
+    result = []
+    i = 0
+    n = len(s)
+    in_string = False
+    is_key = True
+
+    while i < n:
+        c = s[i]
+
+        if not in_string:
+            result.append(c)
+            if c == '"':
+                in_string = True
+                is_key = not any(
+                    s[j] == ":" for j in range(len(result) - 2, max(len(result) - 20, -1), -1)
+                    if j >= 0 and s[j] == ":"
+                )
+            i += 1
+            continue
+
+        if c == "\\" and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt in '"\\\/bfnrtu':
+                result.append(c)
+                result.append(nxt)
+            else:
+                result.append("\\\\")
+                result.append(nxt)
+            i += 2
+            continue
+
+        if c == '"':
+            j = i + 1
+            while j < n and s[j] in " \t\r\n":
+                j += 1
+            if j >= n:
+                result.append(c)
+                in_string = False
+            elif s[j] in "}]":
+                result.append(c)
+                in_string = False
+            elif s[j] == ":":
+                result.append(c)
+                in_string = False
+            elif s[j] == ",":
+                k = j + 1
+                while k < n and s[k] in " \t\r\n":
+                    k += 1
+                if k < n and s[k] in '"{[0123456789tfn-':
+                    result.append(c)
+                    in_string = False
+                else:
+                    result.append('\\"')
+            else:
+                result.append('\\"')
+            i += 1
+            continue
+
+        if c == "\n":
+            result.append("\\n")
+            i += 1
+            continue
+        if c == "\r":
+            result.append("\\r")
+            i += 1
+            continue
+        if c == "\t":
+            result.append("\\t")
+            i += 1
+            continue
+        if ord(c) < 0x20:
+            result.append(f"\\u{ord(c):04x}")
+            i += 1
+            continue
+
+        result.append(c)
+        i += 1
+
+    return "".join(result)
 
 
 def _repair_trailing_commas(s: str) -> str:
