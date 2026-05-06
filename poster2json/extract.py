@@ -887,7 +887,7 @@ def _repair_unescaped_quotes(s: str) -> str:
 
         if c == "\\" and i + 1 < n:
             nxt = s[i + 1]
-            if nxt in '"\\\/bfnrtu':
+            if nxt in '"\\/bfnrtu':
                 result.append(c)
                 result.append(nxt)
             else:
