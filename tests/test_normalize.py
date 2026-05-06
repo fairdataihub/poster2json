@@ -350,3 +350,19 @@ def test_real_conference_preserved():
     data = {"conference": {"conferenceName": "US-RSE'25", "conferenceYear": 2025}}
     out = _postprocess_json(data, raw_text="")
     assert out["conference"]["conferenceName"] == "US-RSE'25"
+
+
+def test_conference_grounded_in_poster_text():
+    from poster2json.extract import _postprocess_json
+
+    data = {"conference": {"conferenceName": "ICML 2025", "conferenceYear": 2025}}
+    out = _postprocess_json(data, raw_text="Presented at ICML 2025, Vancouver")
+    assert out["conference"]["conferenceName"] == "ICML 2025"
+
+
+def test_conference_not_in_poster_text_stripped():
+    from poster2json.extract import _postprocess_json
+
+    data = {"conference": {"conferenceName": "US-RSE'25", "conferenceYear": 2025}}
+    out = _postprocess_json(data, raw_text="Drug-polymer interactions in nanoparticle delivery systems")
+    assert out["conference"] is None

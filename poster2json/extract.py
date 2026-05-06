@@ -752,7 +752,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
       {{"sectionTitle": "Results", "sectionContent": "...verbatim text from poster..."}}
     ]
   }},
-  "imageCaptions": [{{"id": "fig1", "caption": "Figure 1: Actual caption from poster"}}],
+  "imageCaptions": [],
   "tableCaptions": []
 }}
 
@@ -761,19 +761,10 @@ EXTRACTION NOTES:
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Summarize the poster content concisely; descriptionType MUST be "Other" (the user may later provide their own formal abstract)
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
-- publisher: Extract the publisher, hosting institution, or repository name ONLY if explicitly stated on the poster. If not found, set to null.
-  CORRECT: {{"name": "Zenodo"}} (if "Zenodo" appears on the poster)
-  CORRECT: null (if no publisher info found)
-  WRONG: {{"name": "Conference Organizer or Institution Name"}} (placeholder)
-- conference: Extract ONLY from text clearly visible on the poster (header, footer, logos).
-  CORRECT: {{"conferenceName": "US-RSE'25", "conferenceYear": 2025}} (if printed on poster)
-  CORRECT: null (if no conference info found)
-  WRONG: {{"conferenceName": "Name of Conference"}} (placeholder — NEVER output this)
-  WRONG: {{"conferenceName": "International Conference on..."}} (invented)
-  * If only SOME fields are visible, include only those.
-  * If no conference information is found at all, output "conference": null
+- publisher: Extract the publisher, hosting institution, or repository name ONLY if the exact name appears as text on the poster. If not found, set to null. Do NOT copy any name from these instructions.
+- conference: Extract ONLY from text clearly visible on the poster (header, footer, logos). Every conference field value must be a direct quote from the poster text. If no conference information is found, output "conference": null. Do NOT invent or guess conference names, locations, dates, or URLs. Do NOT copy any example from these instructions.
 - formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
-- imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be text you can see on the poster (e.g. "Figure 1: Experimental setup"). If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output "Table not found" or similar — just use an empty array.
+- imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be verbatim text from the poster. If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output placeholder text — just use an empty array.
 - rightsList: OPTIONAL - include if license/copyright info found on poster
 - researchField: Top-level OpenAlex domain. MUST be EXACTLY one of:
     "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences"
@@ -1153,16 +1144,24 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         cn = conf.get("conferenceName", "")
         if isinstance(cn, str) and _is_placeholder(cn):
             conf.pop("conferenceName", None)
-        cl = conf.get("conferenceLocation", "")
-        if isinstance(cl, str) and _is_placeholder(cl):
-            conf.pop("conferenceLocation", None)
-        cu = conf.get("conferenceUrl", "")
-        if isinstance(cu, str) and _is_placeholder(cu):
-            conf.pop("conferenceUrl", None)
-        # Collapse to null if no meaningful fields remain
-        meaningful = {k for k, v in conf.items() if v}
-        if not meaningful:
-            result["conference"] = None
+        # Ground-truth check: conference name must appear in the poster text
+        cn = conf.get("conferenceName", "")
+        if isinstance(cn, str) and cn and raw_text:
+            cn_lower = cn.lower().strip()
+            if cn_lower not in raw_text.lower():
+                result["conference"] = None
+                conf = None
+        if conf is not None:
+            cl = conf.get("conferenceLocation", "")
+            if isinstance(cl, str) and _is_placeholder(cl):
+                conf.pop("conferenceLocation", None)
+            cu = conf.get("conferenceUrl", "")
+            if isinstance(cu, str) and _is_placeholder(cu):
+                conf.pop("conferenceUrl", None)
+            # Collapse to null if no meaningful fields remain
+            meaningful = {k for k, v in conf.items() if v}
+            if not meaningful:
+                result["conference"] = None
 
     # Strip placeholder/hallucinated publisher values
     pub = result.get("publisher")

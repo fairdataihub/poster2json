@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-05-06
+
+Anti-example-echoing: remove concrete values from prompts and add conference grounding check.
+
+### Fixed
+
+- **Prompt de-contamination**: replaced all concrete example values in EXTRACTION_PROMPT (publisher `"Zenodo"`, conference `"US-RSE'25"`, caption `"Figure 1: Experimental setup"`) with type-annotated placeholders. The model was echoing these examples as real data for unrelated posters.
+- **Conference grounding check**: `_postprocess_json` now verifies that any extracted `conferenceName` actually appears in the raw poster text. If the name is not found in the source text, the entire conference object is nullified. This catches hallucinated conference names that survive the placeholder filter.
+- **Schema example cleanup**: `imageCaptions` in the JSON template changed from a populated example to `[]`, matching `tableCaptions`.
+
 ## [0.5.5] - 2026-05-06
 
 PyMuPDF fallback when pdfalto text causes JSON parse failures.
