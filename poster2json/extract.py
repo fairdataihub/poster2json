@@ -1062,6 +1062,15 @@ def _robust_json_parse(response: str) -> dict:
     except Exception:
         pass
 
+    # Last resort: json_repair library (MIT, zero-dep, LLM-aware)
+    try:
+        from json_repair import repair_json
+
+        repaired = repair_json(json_str, return_objects=False)
+        return json.loads(repaired)
+    except Exception:
+        pass
+
     return {"error": "JSON parse failed", "raw": json_str[:3000]}
 
 

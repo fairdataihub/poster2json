@@ -1,7 +1,7 @@
 [tool.poetry]
 
 name = "poster2json"
-version = "0.5.7"
+version = "0.5.8"
 description = "Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models"
 
 packages = [{ include = "poster2json" }]
@@ -65,8 +65,9 @@ sentencepiece = "*"
 pymupdf = ">=1.22.0"
 Pillow = ">=9.0.0"
 
-# Validation
+# Validation / JSON repair
 jsonschema = ">=4.17.0"
+json-repair = ">=0.30.0"
 rouge-score = "*"
 numpy = "*"
 

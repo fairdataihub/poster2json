@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8] - 2026-05-06
+
+Add json-repair as last-resort JSON parse fallback.
+
+### Added
+
+- **json-repair fallback**: after all hand-rolled repair passes fail, `_robust_json_parse` now tries the `json-repair` library (MIT, zero-dep, LLM-aware) as a final attempt before returning an error. Our own repair functions run first and are unchanged.
+
+### Dependencies
+
+- Added `json-repair >=0.30.0` (~47kB pure Python, zero transitive deps).
+
 ## [0.5.7] - 2026-05-06
 
 Robust JSON quote repair + version bump for PyPI re-publish.
