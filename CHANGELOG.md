@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-05-06
+
+PyMuPDF fallback when pdfalto text causes JSON parse failures.
+
+### Fixed
+
+- **PyMuPDF fallback on JSON parse failure**: when `extract_json_with_retry` fails with pdfalto-extracted text, `extract_poster` now retries the full extraction pipeline using PyMuPDF text before giving up. Some posters produce pdfalto text that consistently causes the LLM to emit unparseable JSON (e.g. 5128504.pdf), while PyMuPDF text for the same poster parses cleanly. The fallback is transparent — no API or CLI changes.
+
 ## [0.5.4] - 2026-05-05
 
 Anti-hallucination hardening (conference/caption/publisher placeholders + prompt improvements).

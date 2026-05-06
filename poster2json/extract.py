@@ -1499,10 +1499,22 @@ def extract_poster(
         generated = extract_json_with_retry(raw_text, model, tokenizer)
         t_json_elapsed = time.time() - t_json_start
 
+        if "error" in generated and source == "pdfalto":
+            log(f"pdfalto text failed after {t_json_elapsed:.2f}s, retrying with PyMuPDF")
+            pymupdf_text = extract_text_with_pymupdf(poster_path)
+            if pymupdf_text and len(pymupdf_text) > 500:
+                t_retry_start = time.time()
+                generated = extract_json_with_retry(pymupdf_text, model, tokenizer)
+                t_retry_elapsed = time.time() - t_retry_start
+                if "error" not in generated:
+                    log(f"PyMuPDF fallback succeeded in {t_retry_elapsed:.2f}s")
+                else:
+                    log(f"PyMuPDF fallback also failed after {t_retry_elapsed:.2f}s")
+
         if "error" in generated:
-            log(f"Extraction completed with error after {t_json_elapsed:.2f}s")
+            log(f"Extraction completed with error after {time.time() - t_json_start:.2f}s")
         else:
-            log(f"Extraction succeeded in {t_json_elapsed:.2f}s")
+            log(f"Extraction succeeded in {time.time() - t_json_start:.2f}s")
 
         unload_json_model()
         return generated
