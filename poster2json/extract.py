@@ -723,7 +723,7 @@ EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
 0. GROUNDING: Every value you output MUST come from text visibly present in the poster below. If a field's value cannot be found in the poster text, use null or []. NEVER invent, guess, or infer content that is not explicitly written on the poster.
-1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats
+1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats, version
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
@@ -745,6 +745,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "conference": null,
   "formats": ["PDF"],
   "researchField": null,
+  "version": null,
   "content": {{
     "sections": [
       {{"sectionTitle": "Introduction", "sectionContent": "...verbatim text from poster..."}},
@@ -765,6 +766,7 @@ EXTRACTION NOTES:
 - conference: Extract ONLY from text clearly visible on the poster (header, footer, logos). Every conference field value must be a direct quote from the poster text. If no conference information is found, output "conference": null. Do NOT invent or guess conference names, locations, dates, or URLs. Do NOT copy any example from these instructions.
 - formats: Set to ["PDF"] for PDF files, ["PNG"] or ["JPEG"] for images
 - imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be verbatim text from the poster. If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output placeholder text — just use an empty array.
+- version: Extract ONLY if a version number/string is explicitly printed on the poster (e.g. "v1.0", "Version 2"). If not found, set to null.
 - rightsList: OPTIONAL - include if license/copyright info found on poster
 - researchField: Top-level OpenAlex domain. MUST be EXACTLY one of:
     "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences"
@@ -778,7 +780,7 @@ POSTER TEXT TO CONVERT:
 OUTPUT VALID JSON ONLY:"""
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
-1. creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats, content
+1. creators, titles, publicationYear, subjects, descriptions, publisher, conference, formats, version, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
@@ -796,6 +798,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "conference": null,
   "formats": ["PDF"],
   "researchField": null,
+  "version": null,
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
   }},

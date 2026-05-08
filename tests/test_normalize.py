@@ -54,7 +54,7 @@ def test_normalize_rights_entry_match_fills_spdx_fields():
     assert out["rightsIdentifierScheme"] == "SPDX"
     assert out["schemeUri"] == "https://spdx.org/licenses/"
     assert out["rightsUri"] == "https://creativecommons.org/licenses/by/4.0/"
-    assert out["rights"] == "cc-by-4.0"  # original preserved
+    assert out["rights"] == "Creative Commons Attribution 4.0 International"
 
 
 def test_normalize_rights_entry_no_match_unchanged():

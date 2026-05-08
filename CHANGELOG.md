@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] - 2026-05-08
+
+License display name normalization + version field extraction.
+
+### Fixed
+
+- **License canonical display name**: `normalize_rights_entry` now always sets `rights` to the full canonical name (e.g. "Creative Commons Attribution 4.0 International") when an SPDX match is found. Previously preserved the raw LLM output (e.g. "cc-by-4.0"), causing inconsistent display between manual and auto-registered posters.
+
+### Added
+
+- **Version field extraction**: both `EXTRACTION_PROMPT` and `FALLBACK_PROMPT` now include `version` as a required field. Extracts version strings (e.g. "v1.0", "Version 2") when explicitly printed on the poster; defaults to null otherwise.
+
 ## [0.5.8] - 2026-05-06
 
 Add json-repair as last-resort JSON parse fallback.

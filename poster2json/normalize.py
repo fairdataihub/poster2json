@@ -281,8 +281,7 @@ def normalize_rights_entry(entry: dict) -> dict:
 
     rec = _BY_SPDX[spdx]
     out = dict(entry)
-    if not out.get("rights"):
-        out["rights"] = rec["name"]
+    out["rights"] = rec["name"]
     out["rightsIdentifier"] = spdx
     out["rightsIdentifierScheme"] = "SPDX"
     out["schemeUri"] = "https://spdx.org/licenses/"
