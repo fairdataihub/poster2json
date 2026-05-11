@@ -45,6 +45,7 @@ VISION_MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
 # Token limits
 MAX_JSON_TOKENS = 18000
 MAX_RETRY_TOKENS = 24000
+MAX_INPUT_TOKENS = 15000
 
 # Schema URL
 SCHEMA_URL = "https://posters.science/schema/v0.2/poster_schema.json"
@@ -1495,13 +1496,26 @@ def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
     Send raw poster text to the LLM and robustly parse the JSON response.
 
     This function:
-      1. Normalizes Unicode in the raw text
-      2. Calls the model with a full prompt
-      3. Retries with more tokens if truncation is detected
-      4. Falls back to a shorter prompt if needed
-      5. Runs repair passes to make the JSON parseable
+      1. Checks input length against MAX_INPUT_TOKENS
+      2. Normalizes Unicode in the raw text
+      3. Calls the model with a full prompt
+      4. Retries with more tokens if truncation is detected
+      5. Falls back to a shorter prompt if needed
+      6. Runs repair passes to make the JSON parseable
     """
     raw_text = _normalize_raw_text_for_model(raw_text)
+
+    input_tokens = len(tokenizer.encode(raw_text, add_special_tokens=False))
+    if input_tokens > MAX_INPUT_TOKENS:
+        log(f"Input too long: {input_tokens} tokens (max {MAX_INPUT_TOKENS})")
+        return {
+            "error": f"input_too_long: poster text is {input_tokens} tokens, "
+                     f"exceeding the {MAX_INPUT_TOKENS}-token limit for reliable extraction",
+            "errorCode": "INPUT_TOO_LONG",
+            "_input_tokens": input_tokens,
+            "_max_input_tokens": MAX_INPUT_TOKENS,
+        }
+
     prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
 
     log("Starting primary JSON extraction with full prompt")
