@@ -21,8 +21,10 @@ from typing import Optional
 
 
 ROR_API = "https://api.ror.org/organizations"
-ROR_TIMEOUT = 1.5
-ROR_RATE_LIMIT = 0.5
+ROR_TIMEOUT = 5.0
+ROR_RATE_LIMIT = 0.16
+ROR_MAX_CONSECUTIVE_FAILURES = 25
+ROR_RETRY_ATTEMPTS = 3
 CACHE_PATH = Path.home() / ".cache" / "poster2json" / "ror.json"
 
 
@@ -72,6 +74,7 @@ class RorClient:
         self._cache = {}
         self._last_call = 0.0
         self._warned = False
+        self._consecutive_failures = 0
         if self.enabled:
             self._load_cache()
 
@@ -98,20 +101,32 @@ class RorClient:
         self._last_call = time.time()
 
     def _query_ror(self, key: str) -> Optional[dict]:
-        """Single ROR API call. Returns match dict or None."""
-        self._throttle()
+        """Single ROR API call with retries. Returns match dict or None."""
         url = f"{ROR_API}?affiliation={urllib.parse.quote(key)}"
-        try:
-            with urllib.request.urlopen(url, timeout=ROR_TIMEOUT) as r:
-                data = json.loads(r.read())
-        except Exception as e:  # noqa: BLE001 — best-effort enrichment
-            if not self._warned:
+        last_err = None
+        for attempt in range(ROR_RETRY_ATTEMPTS):
+            self._throttle()
+            try:
+                with urllib.request.urlopen(url, timeout=ROR_TIMEOUT) as r:
+                    data = json.loads(r.read())
+                self._consecutive_failures = 0
+                break
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if attempt < ROR_RETRY_ATTEMPTS - 1:
+                    time.sleep(1.0 * (attempt + 1))
+        else:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= ROR_MAX_CONSECUTIVE_FAILURES:
                 print(
-                    f"[ror] lookup failed; disabling ROR enrichment for this run: {e}",
+                    f"[ror] {ROR_MAX_CONSECUTIVE_FAILURES} consecutive failures; "
+                    f"disabling for this run: {last_err}",
                     file=sys.stderr,
                 )
-                self._warned = True
                 self.enabled = False
+            elif not self._warned:
+                print(f"[ror] lookup failed: {last_err}", file=sys.stderr)
+                self._warned = True
             return None
 
         for item in data.get("items", []):
