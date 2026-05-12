@@ -1,12 +1,16 @@
 """
 ORCID enrichment for poster creators.
 
-Searches the ORCID public API expanded-search endpoint to match creators
-by name + affiliation.  Only attaches an ORCID when there is a single
-unambiguous hit (``num-found == 1``) whose name matches the query.
+Searches the ORCID expanded-search endpoint to match creators by name +
+affiliation.  Only attaches an ORCID when there is a single unambiguous
+hit (``num-found == 1``) whose name matches the query.
+
+Authentication: set ``ORCID_CLIENT_ID`` and ``ORCID_CLIENT_SECRET`` env
+vars to use the authenticated Member API (24 req/s).  Without them, falls
+back to the public API (2 req/s).
 
 Always-on by default; opt out with ``POSTER2JSON_ORCID=0``.  Disk-cached
-at ``~/.cache/poster2json/orcid.json``; rate-limited to 2 req/s;
+at ``~/.cache/poster2json/orcid.json``;
 auto-disables after the first network failure of a run.
 """
 
@@ -22,9 +26,12 @@ from pathlib import Path
 from typing import Optional
 
 
-ORCID_API = "https://pub.orcid.org/v3.0/expanded-search/"
-TIMEOUT = 1.5
-RATE_LIMIT = 0.5
+ORCID_PUBLIC_API = "https://pub.orcid.org/v3.0/expanded-search/"
+ORCID_MEMBER_API = "https://pub.orcid.org/v3.0/expanded-search/"
+ORCID_TOKEN_URL = "https://orcid.org/oauth/token"
+TIMEOUT = 3.0
+RATE_LIMIT_PUBLIC = 0.5
+RATE_LIMIT_AUTHENTICATED = 0.042
 CACHE_PATH = Path.home() / ".cache" / "poster2json" / "orcid.json"
 
 
@@ -48,8 +55,9 @@ def _names_match(query: str, result: str) -> bool:
 class OrcidClient:
     """Disk-cached, rate-limited ORCID lookup.
 
-    Sibling of ``poster2json.ror.RorClient``.  Uses the public
-    ``/expanded-search`` endpoint — no OAuth token required.
+    Uses the authenticated Member API when ORCID_CLIENT_ID and
+    ORCID_CLIENT_SECRET env vars are set (24 req/s), otherwise falls
+    back to the public API (2 req/s).
     """
 
     def __init__(self, enabled: bool = True, cache_path: Path = CACHE_PATH):
@@ -59,8 +67,43 @@ class OrcidClient:
         self._cache: dict = {}
         self._last_call = 0.0
         self._warned = False
+        self._access_token: Optional[str] = None
+        self._api_url = ORCID_PUBLIC_API
+        self._rate_limit = RATE_LIMIT_PUBLIC
         if self.enabled:
             self._load_cache()
+            self._try_authenticate()
+
+    def _try_authenticate(self):
+        client_id = os.environ.get("ORCID_CLIENT_ID")
+        client_secret = os.environ.get("ORCID_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            return
+        try:
+            body = urllib.parse.urlencode({
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "client_credentials",
+                "scope": "/read-public",
+            }).encode()
+            req = urllib.request.Request(
+                ORCID_TOKEN_URL, data=body,
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                token_data = json.loads(r.read())
+            self._access_token = token_data["access_token"]
+            self._api_url = ORCID_MEMBER_API
+            self._rate_limit = RATE_LIMIT_AUTHENTICATED
+            print(
+                f"[orcid] Authenticated (client {client_id[:10]}..., 24 req/s)",
+                file=sys.stderr,
+            )
+        except Exception as e:
+            print(
+                f"[orcid] OAuth failed, falling back to public API: {e}",
+                file=sys.stderr,
+            )
 
     def _load_cache(self):
         try:
@@ -80,8 +123,8 @@ class OrcidClient:
 
     def _throttle(self):
         delta = time.time() - self._last_call
-        if delta < RATE_LIMIT:
-            time.sleep(RATE_LIMIT - delta)
+        if delta < self._rate_limit:
+            time.sleep(self._rate_limit - delta)
         self._last_call = time.time()
 
     def lookup(
@@ -114,8 +157,11 @@ class OrcidClient:
         q = " AND ".join(parts)
 
         self._throttle()
-        url = f"{ORCID_API}?q={urllib.parse.quote(q)}&rows=5"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        url = f"{self._api_url}?q={urllib.parse.quote(q)}&rows=5"
+        headers = {"Accept": "application/json"}
+        if self._access_token:
+            headers["Authorization"] = f"Bearer {self._access_token}"
+        req = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
                 data = json.loads(r.read())
