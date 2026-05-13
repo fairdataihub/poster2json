@@ -204,7 +204,7 @@ def _creator_has_orcid(creator: dict) -> bool:
 
 
 def _creator_affiliation_name(creator: dict) -> Optional[str]:
-    for aff in creator.get("affiliation", []):
+    for aff in creator.get("affiliation") or []:
         if isinstance(aff, str) and aff.strip():
             return aff.strip()
         if isinstance(aff, dict):

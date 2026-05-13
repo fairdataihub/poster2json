@@ -1197,6 +1197,58 @@ def _is_placeholder(value: str) -> bool:
     return value.strip().lower() in _PLACEHOLDER_STRINGS
 
 
+def _needs_ror_enrichment(persons) -> bool:
+    if not isinstance(persons, list):
+        return False
+    for p in persons:
+        if not isinstance(p, dict):
+            continue
+        for aff in p.get("affiliation") or []:
+            if isinstance(aff, str) and aff.strip():
+                return True
+            if isinstance(aff, dict) and aff.get("name") and not aff.get("affiliationIdentifier"):
+                return True
+    return False
+
+
+def _needs_publisher_ror(publisher) -> bool:
+    if not isinstance(publisher, dict):
+        return False
+    return bool(publisher.get("name")) and not publisher.get("publisherIdentifier")
+
+
+def _needs_orcid_enrichment(creators) -> bool:
+    if not isinstance(creators, list):
+        return False
+    for c in creators:
+        if not isinstance(c, dict):
+            continue
+        if not c.get("givenName") or not c.get("familyName"):
+            continue
+        has_aff = any(
+            (isinstance(a, str) and a.strip()) or (isinstance(a, dict) and a.get("name"))
+            for a in c.get("affiliation") or []
+        )
+        if not has_aff:
+            continue
+        has_orcid = any(
+            isinstance(ni, dict) and ni.get("nameIdentifierScheme") == "ORCID"
+            for ni in c.get("nameIdentifiers") or []
+        )
+        if not has_orcid:
+            return True
+    return False
+
+
+def _needs_funder_enrichment(funding_refs) -> bool:
+    if not isinstance(funding_refs, list):
+        return False
+    for fr in funding_refs:
+        if isinstance(fr, dict) and fr.get("funderName") and not fr.get("funderIdentifier"):
+            return True
+    return False
+
+
 def _postprocess_json(data: dict, raw_text: str = "") -> dict:
     """Comprehensive post-processing for extracted JSON."""
     result = data.copy()
@@ -1380,31 +1432,31 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             # honest than guessing.
             result["language"] = None
 
-    # ROR enrichment for affiliations and publisher
-    from .ror import enrich_persons, enrich_publisher, get_default_client
-
-    ror = get_default_client()
-    if "creators" in result:
-        result["creators"] = enrich_persons(result["creators"], ror)
-    if "contributors" in result:
-        result["contributors"] = enrich_persons(result["contributors"], ror)
-    if "publisher" in result:
-        result["publisher"] = enrich_publisher(result["publisher"], ror)
+    # ROR enrichment -- skip if all affiliations/publisher already resolved
+    if (_needs_ror_enrichment(result.get("creators"))
+            or _needs_ror_enrichment(result.get("contributors"))
+            or _needs_publisher_ror(result.get("publisher"))):
+        from .ror import enrich_persons, enrich_publisher, get_default_client
+        ror = get_default_client()
+        if "creators" in result:
+            result["creators"] = enrich_persons(result["creators"], ror)
+        if "contributors" in result:
+            result["contributors"] = enrich_persons(result["contributors"], ror)
+        if "publisher" in result:
+            result["publisher"] = enrich_publisher(result["publisher"], ror)
 
     # Funder + award normalization, then ROR funder lookup
     if "fundingReferences" in result:
         from .normalize import normalize_funding_references
-
         result["fundingReferences"] = normalize_funding_references(
             result["fundingReferences"]
         )
-
-        from .funders import enrich_funding_references
-        from .funders import get_default_client as get_funder_client
-
-        result["fundingReferences"] = enrich_funding_references(
-            result["fundingReferences"], get_funder_client()
-        )
+        if _needs_funder_enrichment(result["fundingReferences"]):
+            from .funders import enrich_funding_references
+            from .funders import get_default_client as get_funder_client
+            result["fundingReferences"] = enrich_funding_references(
+                result["fundingReferences"], get_funder_client()
+            )
 
     # Enrich with identifiers from raw text
     if raw_text:
@@ -1412,11 +1464,10 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
 
         result = enrich_json_with_identifiers(result, raw_text)
 
-    # ORCID lookup for creators still missing one (after regex extraction)
-    if "creators" in result:
+    # ORCID lookup -- skip if all creators already have ORCID
+    if _needs_orcid_enrichment(result.get("creators")):
         from .orcid import enrich_creators_orcid
         from .orcid import get_default_client as get_orcid_client
-
         result["creators"] = enrich_creators_orcid(
             result["creators"], get_orcid_client()
         )
@@ -1435,7 +1486,7 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             for person in result.get(person_list, []):
                 if not isinstance(person, dict):
                     continue
-                for aff in person.get("affiliation", []):
+                for aff in person.get("affiliation") or []:
                     if isinstance(aff, dict):
                         aid = aff.get("affiliationIdentifier")
                         if aid:

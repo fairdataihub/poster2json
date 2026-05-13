@@ -22,10 +22,23 @@ _LICENSE_RECORDS: List[Dict] = [
         "name": "Creative Commons Attribution 4.0 International",
         "uri": "https://creativecommons.org/licenses/by/4.0/",
         "aliases": [
-            "CC-BY-4.0", "CC BY 4.0", "CCBY4.0",
+            "CC-BY-4.0", "CC BY 4.0", "CC-BY 4.0", "CCBY4.0",
+            "cc-by-4.0", "cc-by", "CC-BY", "CC BY",
             "Creative Commons Attribution 4.0 International",
+            "Creative Commons Attribution 4.0 International License",
+            "Creative Commons Attribution 4.0 International license",
             "Creative Commons Attribution 4.0",
+            "Creative Commons Attribution 4.0 International (CC BY 4.0)",
             "Attribution 4.0 International",
+            "Creative Commons Namensnennung 4.0 International Lizenz",
+            "Creative Commons Namensnennung 4.0 International Lizenz (CC BY 4.0)",
+            "Creative Commons Namensnennung 4.0 International (CC BY 4.0)",
+            "Creative Commons Namensnennung 4.0 International",
+            "This work is licensed under a Creative Commons Attribution 4.0 International License.",
+            "This work is licensed under a Creative Commons Attribution 4.0 International License",
+            "Attribution 4.0 International (CC BY 4.0)",
+            "Attribution 4.0 International",
+            "Creative Commons Attribution 4.0 License",
         ],
     },
     {
@@ -33,8 +46,9 @@ _LICENSE_RECORDS: List[Dict] = [
         "name": "Creative Commons Attribution-ShareAlike 4.0 International",
         "uri": "https://creativecommons.org/licenses/by-sa/4.0/",
         "aliases": [
-            "CC-BY-SA-4.0", "CC BY-SA 4.0", "CCBYSA4.0",
+            "CC-BY-SA-4.0", "CC BY-SA 4.0", "CC-BY-SA 4.0", "CC BY-SA", "CCBYSA4.0",
             "Creative Commons Attribution-ShareAlike 4.0 International",
+            "Creative Commons Attribution-ShareAlike 4.0 International License",
             "Attribution-ShareAlike 4.0 International",
         ],
     },
@@ -43,8 +57,9 @@ _LICENSE_RECORDS: List[Dict] = [
         "name": "Creative Commons Attribution-NonCommercial 4.0 International",
         "uri": "https://creativecommons.org/licenses/by-nc/4.0/",
         "aliases": [
-            "CC-BY-NC-4.0", "CC BY-NC 4.0", "CCBYNC4.0",
+            "CC-BY-NC-4.0", "CC BY-NC 4.0", "CC-BY-NC 4.0", "CC BY-NC", "CC-BY-NC", "CCBYNC4.0",
             "Creative Commons Attribution-NonCommercial 4.0 International",
+            "Creative Commons Attribution-NonCommercial 4.0 International License",
             "Attribution-NonCommercial 4.0 International",
         ],
     },
@@ -53,8 +68,9 @@ _LICENSE_RECORDS: List[Dict] = [
         "name": "Creative Commons Attribution-NoDerivatives 4.0 International",
         "uri": "https://creativecommons.org/licenses/by-nd/4.0/",
         "aliases": [
-            "CC-BY-ND-4.0", "CC BY-ND 4.0",
+            "CC-BY-ND-4.0", "CC BY-ND 4.0", "CC-BY-ND 4.0",
             "Creative Commons Attribution-NoDerivatives 4.0 International",
+            "Creative Commons Attribution-NoDerivatives 4.0 International License",
         ],
     },
     {
@@ -62,8 +78,9 @@ _LICENSE_RECORDS: List[Dict] = [
         "name": "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International",
         "uri": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
         "aliases": [
-            "CC-BY-NC-SA-4.0", "CC BY-NC-SA 4.0",
+            "CC-BY-NC-SA-4.0", "CC BY-NC-SA 4.0", "CC-BY-NC-SA 4.0",
             "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International",
+            "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License",
         ],
     },
     {
@@ -71,8 +88,11 @@ _LICENSE_RECORDS: List[Dict] = [
         "name": "Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International",
         "uri": "https://creativecommons.org/licenses/by-nc-nd/4.0/",
         "aliases": [
-            "CC-BY-NC-ND-4.0", "CC BY-NC-ND 4.0",
+            "CC-BY-NC-ND-4.0", "CC BY-NC-ND 4.0", "CC-BY-NC-ND 4.0",
             "Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International",
+            "Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License",
+            "This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License.",
+            "This work is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License",
         ],
     },
     {
@@ -80,7 +100,7 @@ _LICENSE_RECORDS: List[Dict] = [
         "name": "Creative Commons Attribution 3.0 Unported",
         "uri": "https://creativecommons.org/licenses/by/3.0/",
         "aliases": [
-            "CC-BY-3.0", "CC BY 3.0",
+            "CC-BY-3.0", "CC BY 3.0", "cc-by-3.0-us",
             "Creative Commons Attribution 3.0",
             "Creative Commons Attribution 3.0 Unported",
         ],
@@ -106,9 +126,11 @@ _LICENSE_RECORDS: List[Dict] = [
         "uri": "https://creativecommons.org/publicdomain/zero/1.0/",
         "aliases": [
             "CC0-1.0", "CC0 1.0", "CC0",
+            "cc-zero", "cc0", "CC Zero",
             "Creative Commons Zero 1.0 Universal",
             "Creative Commons Zero",
             "Public Domain Dedication",
+            "Public Domain",
         ],
     },
     {
@@ -290,10 +312,170 @@ def normalize_rights_entry(entry: dict) -> dict:
     return out
 
 
+_CC_URL_RE = re.compile(
+    r"https?://creativecommons\.org/(?:licenses|publicdomain)/"
+    r"([-a-z]+)/(\d+\.\d+)",
+    re.IGNORECASE,
+)
+
+_CC_SLUG_TO_SPDX = {
+    "by": "CC-BY",
+    "by-sa": "CC-BY-SA",
+    "by-nc": "CC-BY-NC",
+    "by-nd": "CC-BY-ND",
+    "by-nc-sa": "CC-BY-NC-SA",
+    "by-nc-nd": "CC-BY-NC-ND",
+    "zero": "CC0",
+}
+
+
+def _match_cc_url(text: str) -> Optional[str]:
+    m = _CC_URL_RE.search(text)
+    if not m:
+        return None
+    slug, version = m.group(1).lower(), m.group(2)
+    prefix = _CC_SLUG_TO_SPDX.get(slug)
+    if not prefix:
+        return None
+    return f"{prefix}-{version}" if prefix != "CC0" else f"{prefix}-{version}"
+
+
+_KNOWN_NON_SPDX = frozenset({
+    "in copyright", "all rights reserved",
+    "copyright not evaluated", "copyright undetermined",
+    "other-at", "other-open", "other-closed", "other-nc", "other-pd", "other",
+})
+
+_JUNK_PATTERNS = [
+    re.compile(r"^(license|rights|copyright|null|not specified|unknown)$", re.I),
+    re.compile(r"^(creative commons|creative commons license|cc-nc|cc nc)$", re.I),
+    re.compile(r"^sectionTitle$|^sectionContent$", re.I),
+    re.compile(r"RESEARCH POSTER PRESENTATION DESIGN", re.I),
+    re.compile(r"PosterPresentations\.com", re.I),
+    re.compile(r"^Copyright\s+\d{4}", re.I),
+    re.compile(r"has received funding from|is funded by", re.I),
+    re.compile(r"Funded by the European Union", re.I),
+    re.compile(r"does not necessarily reflect", re.I),
+    re.compile(r"does not necessarily represent", re.I),
+    re.compile(r"Practice Abstract reflects only", re.I),
+    re.compile(r"^https?://(?!creativecommons\.org)", re.I),
+    re.compile(r"Retrievable, Reusable, Repeatable", re.I),
+    re.compile(r"^Universiteit\b|^University\b|^SRUC\b", re.I),
+    re.compile(r"collabchem\.com", re.I),
+    re.compile(r"Horizon\s+(2020|Europe)", re.I),
+    re.compile(r"grant\s+agreement", re.I),
+    re.compile(r"innovation programme", re.I),
+    re.compile(r"Environmental Protection Agency", re.I),
+    re.compile(r"views expressed in this", re.I),
+    re.compile(r"endorsed by|endorsement", re.I),
+    re.compile(r"Deutsche Forschungsgemeinschaft", re.I),
+    re.compile(r"Norwegian Financial Mechanism", re.I),
+    re.compile(r"zenodo-freetoread", re.I),
+    re.compile(r"National Science Foundation", re.I),
+    re.compile(r"Murray.Darling Basin", re.I),
+    re.compile(r"Helmholtz Association", re.I),
+    re.compile(r"^@\w+$", re.I),
+    re.compile(r"^Open Access$", re.I),
+    re.compile(r"This (project|material|work) is supported", re.I),
+    re.compile(r"based upon work supported by", re.I),
+    re.compile(r"^cc-?nc$", re.I),
+    re.compile(r"POSTER PRESENTATION TEMPLATE", re.I),
+    re.compile(r"poster template was developed", re.I),
+    re.compile(r"Forschungsgemeinschaft|Forschungsdateninfrastruktur", re.I),
+    re.compile(r"Helmholtz (Alliance|Young)", re.I),
+    re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"),
+    re.compile(r"^Copyright\s+(©\s*)?\w", re.I),
+    re.compile(r"postersession\.com", re.I),
+    re.compile(r"co-?funded with taxes|state parliament", re.I),
+    re.compile(r"L\s*A\s*T\s*E\s*X\s*Tik\s*Z", re.I),
+    re.compile(r"Science Foundation Ireland", re.I),
+]
+
+
+def _is_rights_junk(text: str) -> bool:
+    if not text or not text.strip():
+        return True
+    text = text.strip()
+    if len(text) > 200:
+        return True
+    for pat in _JUNK_PATTERNS:
+        if pat.search(text):
+            return True
+    return False
+
+
+def _coerce_to_dict(entry) -> Optional[Dict]:
+    if isinstance(entry, dict):
+        return entry
+    if isinstance(entry, str):
+        text = entry.strip()
+        if not text:
+            return None
+        return {"rights": text}
+    return None
+
+
 def normalize_rights_list(rights_list) -> list:
+    if isinstance(rights_list, str):
+        rights_list = [rights_list]
     if not isinstance(rights_list, list):
         return rights_list
-    return [normalize_rights_entry(e) for e in rights_list]
+
+    out = []
+    for raw in rights_list:
+        entry = _coerce_to_dict(raw)
+        if entry is None:
+            continue
+
+        all_text = " ".join(
+            str(v) for v in entry.values() if isinstance(v, str)
+        ).strip()
+
+        if entry.get("rightsIdentifier") or entry.get("rights"):
+            norm_id = (entry.get("rightsIdentifier") or "").strip().lower()
+            norm_name = (entry.get("rights") or "").strip().lower()
+            if norm_id in _KNOWN_NON_SPDX or norm_name in _KNOWN_NON_SPDX:
+                out.append(entry)
+                continue
+
+        spdx_from_url = None
+        for key in ("rightsUri", "rightsURI", "rights"):
+            val = entry.get(key, "")
+            if isinstance(val, str):
+                spdx_from_url = _match_cc_url(val)
+                if spdx_from_url:
+                    break
+        if not spdx_from_url:
+            spdx_from_url = _match_cc_url(all_text)
+
+        if spdx_from_url and spdx_from_url in _BY_SPDX:
+            rec = _BY_SPDX[spdx_from_url]
+            out.append({
+                "rights": rec["name"],
+                "rightsIdentifier": rec["spdx"],
+                "rightsIdentifierScheme": "SPDX",
+                "schemeUri": "https://spdx.org/licenses/",
+                "rightsUri": rec["uri"],
+            })
+            continue
+
+        normalized = normalize_rights_entry(entry)
+        if normalized.get("rightsIdentifierScheme") == "SPDX":
+            out.append(normalized)
+            continue
+
+        if _is_rights_junk(all_text):
+            continue
+        if any(
+            _is_rights_junk(str(v).strip())
+            for v in entry.values()
+            if isinstance(v, str) and v.strip()
+        ):
+            continue
+
+        out.append(entry)
+
+    return out
 
 
 # ---------------------------------------------------------------------------
