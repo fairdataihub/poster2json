@@ -541,6 +541,33 @@ def extract_text_with_pymupdf(pdf_path: str) -> str:
 MIN_PDF_TEXT_CHARS = 200
 
 
+def extract_pdf_link_annotations(pdf_path: str) -> list:
+    """Extract URI link annotations embedded in a PDF.
+
+    Returns a deduplicated list of URI strings found via PyMuPDF
+    page.get_links(). These are clickable links in the PDF annotation
+    layer, independent of any selectable text.
+    """
+    import fitz
+
+    seen = set()
+    uris = []
+    try:
+        doc = fitz.open(pdf_path)
+        for page in doc:
+            for link in page.get_links():
+                uri = link.get("uri", "")
+                if uri and uri not in seen:
+                    seen.add(uri)
+                    uris.append(uri)
+        doc.close()
+    except Exception as e:
+        log(f"Failed to extract PDF link annotations: {e}")
+    if uris:
+        log(f"Extracted {len(uris)} link annotations from PDF")
+    return uris
+
+
 def _render_pdf_to_image(pdf_path: str) -> Optional[str]:
     """Render the first page of a PDF to a temporary PNG for vision OCR."""
     import fitz
@@ -1675,6 +1702,11 @@ def extract_poster(
     raw_text, source = get_raw_text(poster_path)
     t_extract_elapsed = time.time() - t_extract_start
 
+    # Extract PDF link annotations (clickable URIs in the annotation layer)
+    pdf_links = []
+    if ext == ".pdf":
+        pdf_links = extract_pdf_link_annotations(poster_path)
+
     if not raw_text or source == "unknown":
         return {"error": "Failed to extract text. Unsupported format or extraction failed."}
 
@@ -1710,6 +1742,10 @@ def extract_poster(
             log(f"Extraction completed with error after {time.time() - t_json_start:.2f}s")
         else:
             log(f"Extraction succeeded in {time.time() - t_json_start:.2f}s")
+
+        if pdf_links and "error" not in generated:
+            from .identifiers import merge_pdf_link_annotations
+            generated = merge_pdf_link_annotations(generated, pdf_links)
 
         unload_json_model()
         return generated

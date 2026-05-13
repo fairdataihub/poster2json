@@ -380,6 +380,81 @@ def _add_extracted_identifiers(data: dict, extracted: Dict[str, List[str]]) -> d
     return data
 
 
+_LICENSE_URL_RE = re.compile(
+    r"https?://(creativecommons\.org|spdx\.org|opensource\.org/licenses)",
+    re.IGNORECASE,
+)
+
+
+def merge_pdf_link_annotations(data: dict, pdf_links: List[str]) -> dict:
+    """Merge PDF link annotations into the JSON output.
+
+    Classifies each URI and places it in the correct schema field:
+    - DOIs -> identifiers[]
+    - arXiv -> identifiers[]
+    - ORCIDs -> creators[*].nameIdentifiers[]
+    - Other scholarly URLs -> relatedIdentifiers[] with relationType "References"
+
+    Skips license URLs (creativecommons.org, spdx.org) since those are
+    handled by normalize_rights_list.
+    """
+    if not pdf_links:
+        return data
+
+    result = data.copy()
+
+    scholarly_text = "\n".join(pdf_links)
+    extracted = extract_identifiers_from_text(scholarly_text)
+    if extracted:
+        result = _add_extracted_identifiers(result, extracted)
+
+    scholarly_uris = set()
+    for vals in extracted.values():
+        for v in vals:
+            scholarly_uris.add(v.lower())
+
+    existing_related = set()
+    for ri in result.get("relatedIdentifiers", []):
+        if isinstance(ri, dict):
+            existing_related.add(ri.get("relatedIdentifier", "").lower())
+
+    existing_ids = set()
+    for ident in result.get("identifiers", []):
+        if isinstance(ident, dict):
+            val = ident.get("identifier", "").lower()
+            existing_ids.add(val)
+            if val.startswith("10."):
+                existing_ids.add(f"https://doi.org/{val}")
+
+    new_related = []
+    for uri in pdf_links:
+        uri_lower = uri.lower().rstrip("/")
+        if _LICENSE_URL_RE.search(uri):
+            continue
+        if any(uri_lower.endswith(sv) or sv in uri_lower for sv in scholarly_uris):
+            continue
+        if uri_lower in existing_related or uri_lower.rstrip("/") in existing_related:
+            continue
+        if uri_lower in existing_ids:
+            continue
+
+        scheme = infer_identifier_scheme(uri)
+        if scheme:
+            continue
+
+        new_related.append({
+            "relatedIdentifier": uri,
+            "relatedIdentifierType": "URL",
+            "relationType": "References",
+        })
+
+    if new_related:
+        result.setdefault("relatedIdentifiers", [])
+        result["relatedIdentifiers"].extend(new_related)
+
+    return result
+
+
 def enrich_json_with_identifiers(data: dict, raw_text: str) -> dict:
     """
     Main entry point for identifier enrichment.
