@@ -538,6 +538,31 @@ def extract_text_with_pymupdf(pdf_path: str) -> str:
     return text.strip()
 
 
+MIN_PDF_TEXT_CHARS = 200
+
+
+def _render_pdf_to_image(pdf_path: str) -> Optional[str]:
+    """Render the first page of a PDF to a temporary PNG for vision OCR."""
+    import fitz
+    import tempfile
+
+    log(f"Rendering PDF page to image for vision OCR: {pdf_path}")
+    try:
+        doc = fitz.open(pdf_path)
+        page = doc[0]
+        zoom = 2.0
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        pix.save(tmp.name)
+        doc.close()
+        log(f"   Rendered page to {pix.width}x{pix.height} image: {tmp.name}")
+        return tmp.name
+    except Exception as e:
+        log(f"   Failed to render PDF to image: {e}")
+        return None
+
+
 def get_raw_text(
     poster_path: str, poster_id: str = None, output_dir: str = None
 ) -> Tuple[str, str]:
@@ -577,8 +602,31 @@ def get_raw_text(
             log(f"Using pdfalto output ({len(text)} characters)")
             return text, "pdfalto"
         text = extract_text_with_pymupdf(poster_path)
-        log(f"Using PyMuPDF fallback ({len(text)} characters)")
-        return text, "pymupdf"
+        if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
+            log(f"Using PyMuPDF fallback ({len(text)} characters)")
+            return text, "pymupdf"
+
+        log(f"PDF text extraction yielded only {len(text.strip()) if text else 0} chars, "
+            f"falling back to vision OCR")
+        unload_json_model()
+        img_path = _render_pdf_to_image(poster_path)
+        if img_path:
+            try:
+                ocr_text = extract_text_with_qwen_vision(img_path)
+                if ocr_text and len(ocr_text.strip()) > len(text.strip() if text else ""):
+                    log(f"Vision OCR fallback produced {len(ocr_text)} characters")
+                    return ocr_text, "qwen_vision_pdf"
+            finally:
+                try:
+                    os.remove(img_path)
+                except OSError:
+                    pass
+
+        if text and text.strip():
+            log(f"Vision OCR did not improve; using PyMuPDF ({len(text)} chars)")
+            return text, "pymupdf"
+
+        return "", "unknown"
 
     return "", "unknown"
 
@@ -1612,16 +1660,17 @@ def extract_poster(
     """
     log(f"Processing poster: {poster_path}")
 
-    # For image posters: unload the JSON model BEFORE the vision model
-    # loads. Qwen2-VL-7B at bf16 needs ~15GB; on a 24GB card the JSON
-    # model warm-loaded by api.py healthcheck is ~9GB resident, leaving
-    # the vision load short by a few hundred MB and OOMing.
-    # Cost: ~10s of JSON reload after OCR. PDF posters skip this branch.
+    # For image posters (and PDFs that may need vision OCR fallback):
+    # unload the JSON model BEFORE the vision model loads. Qwen2-VL-7B
+    # at bf16 needs ~15GB; on a 24GB card the JSON model warm-loaded by
+    # api.py healthcheck is ~9GB resident, leaving the vision load short
+    # by a few hundred MB and OOMing.
+    # Cost: ~10s of JSON reload after OCR.
     ext = Path(poster_path).suffix.lower()
     if ext in {".jpg", ".jpeg", ".png"}:
         unload_json_model()
 
-    # Extract raw text
+    # Extract raw text (may trigger vision OCR for image-only PDFs)
     t_extract_start = time.time()
     raw_text, source = get_raw_text(poster_path)
     t_extract_elapsed = time.time() - t_extract_start
