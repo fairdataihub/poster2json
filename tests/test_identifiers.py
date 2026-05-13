@@ -43,10 +43,10 @@ class TestEnrichCanonicalizesDOIs:
         out = enrich_json_with_identifiers(data, "")
         assert out["identifiers"][0]["identifier"] == "10.5281/zenodo.99"
 
-    def test_canonicalizes_funder_crossref_doi(self):
+    def test_keeps_funder_crossref_doi_as_url(self):
         data = {"fundingReferences": [{"funderName": "NIH", "funderIdentifier": "https://doi.org/10.13039/100000002"}]}
         out = enrich_json_with_identifiers(data, "")
-        assert out["fundingReferences"][0]["funderIdentifier"] == "10.13039/100000002"
+        assert out["fundingReferences"][0]["funderIdentifier"] == "https://doi.org/10.13039/100000002"
 
     def test_canonicalizes_related_identifier_doi(self):
         data = {"relatedIdentifiers": [{"relatedIdentifier": "doi:10.21384/foo", "relatedIdentifierType": "DOI"}]}
@@ -360,7 +360,7 @@ class TestEnrichJson:
         }
         text = "Funded by https://doi.org/10.13039/501100001659"
         result = enrich_json_with_identifiers(data, text)
-        assert result["fundingReferences"][0]["funderIdentifier"] == "10.13039/501100001659"
+        assert result["fundingReferences"][0]["funderIdentifier"] == "https://doi.org/10.13039/501100001659"
 
     def test_arxiv_from_text(self):
         data = {}

@@ -375,25 +375,26 @@ def _add_extracted_identifiers(data: dict, extracted: Dict[str, List[str]]) -> d
         # Assign to existing fundingReferences without funderIdentifier first
         unassigned = []
         for fid in funder_ids:
-            if fid.lower() in existing_funder_ids:
+            fid_url = f"https://doi.org/{fid}" if not fid.startswith("http") else fid
+            if fid.lower() in existing_funder_ids or fid_url.lower() in existing_funder_ids:
                 continue
             assigned = False
             for fr in data["fundingReferences"]:
                 if isinstance(fr, dict) and not fr.get("funderIdentifier"):
-                    fr["funderIdentifier"] = fid
+                    fr["funderIdentifier"] = fid_url
                     fr["funderIdentifierType"] = "Crossref Funder ID"
                     fr["schemeUri"] = "https://doi.org/10.13039"
                     assigned = True
-                    existing_funder_ids.add(fid.lower())
+                    existing_funder_ids.add(fid_url.lower())
                     break
             if not assigned:
-                unassigned.append(fid)
+                unassigned.append(fid_url)
 
         # Remaining funder IDs get new entries
-        for fid in unassigned:
+        for fid_url in unassigned:
             data["fundingReferences"].append({
                 "funderName": "Unknown Funder",
-                "funderIdentifier": fid,
+                "funderIdentifier": fid_url,
                 "funderIdentifierType": "Crossref Funder ID",
                 "schemeUri": "https://doi.org/10.13039",
             })
