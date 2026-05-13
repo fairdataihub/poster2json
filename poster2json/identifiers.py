@@ -39,6 +39,7 @@ GRID_RE = re.compile(
 CROSSREF_FUNDER_RE = re.compile(
     r"(?:https?://doi\.org/)?10\.13039/(\d+)\b"
 )
+BARE_ROR_RE = re.compile(r"^0[a-z0-9]{6}\d{2}$")
 
 # Strips the resolver URL from DOIs. Preserves case in the suffix because
 # DOI suffixes can be (and are) registered as case-sensitive even though
@@ -239,9 +240,29 @@ def _enrich_existing_identifiers(data: dict) -> dict:
                 scheme, uri = result
                 if "nameIdentifierScheme" not in ni or not ni["nameIdentifierScheme"]:
                     ni["nameIdentifierScheme"] = scheme
-                # nameIdentifiers uses schemeURI (capital I)
                 if "schemeURI" not in ni or not ni["schemeURI"]:
                     ni["schemeURI"] = uri
+                # Fix 1: bare ORCIDs -> full URL format
+                if scheme == "ORCID":
+                    m = ORCID_RE.search(value)
+                    if m and not value.startswith("http"):
+                        ni["nameIdentifier"] = f"https://orcid.org/{m.group(1)}"
+
+    # creators[*].affiliation[*].affiliationIdentifier -- normalize bare ROR IDs
+    for creator in data.get("creators", []):
+        if not isinstance(creator, dict):
+            continue
+        for aff in creator.get("affiliation") or []:
+            if not isinstance(aff, dict):
+                continue
+            aid = aff.get("affiliationIdentifier", "")
+            if isinstance(aid, str) and BARE_ROR_RE.match(aid):
+                aff["affiliationIdentifier"] = f"https://ror.org/{aid}"
+            aid = aff.get("affiliationIdentifier", "")
+            if isinstance(aid, str) and "ror.org/" in aid:
+                if not aff.get("affiliationIdentifierScheme"):
+                    aff["affiliationIdentifierScheme"] = "ROR"
+                aff.setdefault("schemeUri", "https://ror.org/")
 
     # fundingReferences[*].funderIdentifier
     for fr in data.get("fundingReferences", []):
@@ -253,12 +274,13 @@ def _enrich_existing_identifiers(data: dict) -> dict:
             scheme, uri = result
             if "funderIdentifierType" not in fr or not fr["funderIdentifierType"]:
                 fr["funderIdentifierType"] = scheme
-            # fundingReferences uses schemeUri (lowercase i)
             if "schemeUri" not in fr or not fr["schemeUri"]:
                 fr["schemeUri"] = uri
-            # Canonicalize Crossref Funder DOI form
+            # Fix 6: keep Crossref Funder DOIs in full URL format for Zenodo
             if scheme == "Crossref Funder ID" and isinstance(fid, str):
-                fr["funderIdentifier"] = canonicalize_doi(fid)
+                bare = canonicalize_doi(fid)
+                if bare.startswith("10.13039/"):
+                    fr["funderIdentifier"] = f"https://doi.org/{bare}"
 
     # relatedIdentifiers[*].relatedIdentifier — canonicalize DOIs
     for ri in data.get("relatedIdentifiers", []):

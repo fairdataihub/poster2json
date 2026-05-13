@@ -1368,6 +1368,11 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             cu = conf.get("conferenceUrl", "")
             if isinstance(cu, str) and _is_placeholder(cu):
                 conf.pop("conferenceUrl", None)
+            # Fix 4: validate conferenceUri is a real URL
+            for uri_key in ("conferenceUri", "conferenceUrl"):
+                val = conf.get(uri_key, "")
+                if isinstance(val, str) and val and not val.startswith(("http://", "https://")):
+                    conf.pop(uri_key, None)
             # Collapse to null if no meaningful fields remain
             meaningful = {k for k, v in conf.items() if v}
             if not meaningful:

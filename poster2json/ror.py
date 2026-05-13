@@ -235,6 +235,8 @@ def enrich_publisher(publisher, client: RorClient):
         out = dict(publisher)
         out["name"] = m["name"]
         out["publisherIdentifier"] = m["id"]
+        out["publisherIdentifierScheme"] = "ROR"
+        out["schemeURI"] = "https://ror.org"
         return out
     return publisher
 

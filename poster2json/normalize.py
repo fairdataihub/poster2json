@@ -516,7 +516,8 @@ def normalize_award_number(s: str) -> Optional[str]:
 
 
 def normalize_funding_references(funding_refs: list) -> list:
-    """Cleanup awardNumber + funderName whitespace on each entry."""
+    """Cleanup awardNumber + funderName whitespace on each entry.
+    Strip awardUri/schemeUri values that are not valid URLs."""
     if not isinstance(funding_refs, list):
         return funding_refs
     for fr in funding_refs:
@@ -532,6 +533,10 @@ def normalize_funding_references(funding_refs: list) -> list:
             fr["funderName"] = re.sub(
                 r"\s+", " ", unicodedata.normalize("NFKC", fr["funderName"])
             ).strip()
+        for uri_key in ("awardUri", "schemeUri"):
+            val = fr.get(uri_key, "")
+            if isinstance(val, str) and val and not val.startswith(("http://", "https://")):
+                fr.pop(uri_key, None)
     return funding_refs
 
 
