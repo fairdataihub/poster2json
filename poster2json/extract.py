@@ -816,7 +816,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "titles": [{{"title": "Main Poster Title"}}],
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
-  "descriptions": [{{"description": "A concise summary of the poster content...", "descriptionType": "Other"}}],
+  "descriptions": [{{"description": "A concise summary of the poster content...", "descriptionType": "Abstract"}}],
   "publisher": null,
   "conference": null,
   "formats": ["PDF"],
@@ -836,7 +836,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 EXTRACTION NOTES:
 - publicationYear: Extract from poster or conference date, use current year if not found
 - subjects: Extract 3-5 keywords from poster content
-- descriptions: Summarize the poster content concisely; descriptionType MUST be "Other" (the user may later provide their own formal abstract)
+- descriptions: Summarize the poster content concisely; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
 - publisher: Extract the publisher, hosting institution, or repository name ONLY if the exact name appears as text on the poster. If not found, set to null. Do NOT copy any name from these instructions.
 - conference: Extract ONLY from text clearly visible on the poster (header, footer, logos). Every conference field value must be a direct quote from the poster text. If no conference information is found, output "conference": null. Do NOT invent or guess conference names, locations, dates, or URLs. Do NOT copy any example from these instructions.
@@ -869,7 +869,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "titles": [{{"title": "Poster Title"}}],
   "publicationYear": 2025,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
-  "descriptions": [{{"description": "Concise poster summary", "descriptionType": "Other"}}],
+  "descriptions": [{{"description": "Concise poster summary", "descriptionType": "Abstract"}}],
   "publisher": null,
   "conference": null,
   "formats": ["PDF"],
