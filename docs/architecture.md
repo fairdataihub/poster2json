@@ -106,6 +106,48 @@ After JSON extraction, the pipeline applies:
 4. **Unicode cleaning**: Removes bidirectional characters
 5. **Table/chart data cleaning**: Removes axis labels from section content
 
+## Normalization and Enrichment
+
+After post-processing, the pipeline runs a series of normalization and enrichment steps that add or clean up metadata fields beyond what the LLM produces.
+
+### Identifier extraction
+
+DOIs, arXiv IDs, and other identifiers are extracted from the raw poster text using regex patterns. PDF link annotations are also parsed to find embedded URLs and DOIs. These populate the top-level `identifiers[]` and `relatedIdentifiers[]` arrays. The LLM prompt does not ask for identifiers; they come entirely from pattern matching.
+
+Each identifier's `identifierType` is auto-classified based on its format (DOI, arXiv, URL, etc.).
+
+### ORCID enrichment
+
+ORCIDs are extracted from poster text via regex, then matched to the appropriate creator. If an ORCID is found, the `nameIdentifiers` array is populated with the ORCID value, and `nameIdentifierScheme` and `schemeURI` are set automatically.
+
+### ROR enrichment
+
+Affiliation names are looked up against the [ROR API](https://ror.org). When a match is found, `affiliationIdentifier`, `affiliationIdentifierScheme`, and `schemeUri` are populated.
+
+### Publisher enrichment
+
+If a publisher name is extracted, it is also looked up against ROR to populate `publisherIdentifier`, `publisherIdentifierScheme`, and `schemeURI`.
+
+### Language detection
+
+The `language` field is detected from the raw poster text using `langdetect`, overwriting any value the LLM may have produced. The result is an ISO 639-3 code (e.g., "eng").
+
+### Description type
+
+The LLM prompt instructs the model to classify `descriptionType` based on poster content. It defaults to "Abstract" for poster summaries, but the model can choose from the full set of DataCite description types (Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other).
+
+### Rights normalization
+
+License strings from the LLM are canonicalized to SPDX form. This includes alias matching, Creative Commons URL parsing, and fuzzy matching (Levenshtein distance 1). Junk entries like funding acknowledgments or boilerplate text are filtered out.
+
+### Funding normalization
+
+Award numbers are cleaned (whitespace normalization, punctuation stripping, uppercasing). Invalid URIs in `awardUri` and `schemeUri` are removed. Funder identifiers are cross-referenced against the Crossref Funder Registry.
+
+### Subject normalization
+
+Keywords go through Unicode NFKC normalization, whitespace collapsing, and case-insensitive deduplication.
+
 ## Memory Management
 
 ### GPU Memory Optimization
