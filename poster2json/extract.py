@@ -383,6 +383,40 @@ def _detect_column_boundaries(cx_values: list, page_w: float) -> list:
     return sorted(valid)
 
 
+def _validate_boundaries(boundaries: list, lines: list,
+                         page_w: float) -> list:
+    """Remove boundaries that lack word-gap support from actual text lines.
+
+    A boundary is valid only if multiple lines have a word gap (>= 15pt)
+    whose midpoint falls within 5% of page width of the boundary.
+    """
+    if not boundaries or not lines:
+        return boundaries
+
+    tolerance = page_w * 0.05
+    min_support = 3
+    validated = []
+
+    for b in boundaries:
+        support = 0
+        for line in lines:
+            sw = sorted(line, key=lambda w: w["x0"])
+            if len(sw) < 2:
+                continue
+            for j in range(1, len(sw)):
+                gap = sw[j]["x0"] - sw[j - 1]["x1"]
+                if gap < 15:
+                    continue
+                mid = (sw[j - 1]["x1"] + sw[j]["x0"]) / 2
+                if abs(mid - b) <= tolerance:
+                    support += 1
+                    break
+        if support >= min_support:
+            validated.append(b)
+
+    return validated
+
+
 def _parse_alto_xml(xml_path: str) -> Optional[str]:
     """Parse ALTO XML output from pdfalto.
 
@@ -530,6 +564,514 @@ def _parse_alto_xml(xml_path: str) -> Optional[str]:
         return "\n".join(output_lines)
     except Exception:
         return None
+
+
+def _parse_font_style(fontname: str) -> dict:
+    """Parse bold/italic from a pdfplumber fontname string.
+
+    Font names follow the pattern 'SUBSET+FamilyName-Style' where style
+    contains 'Bold', 'Italic', 'BoldItalic', etc.
+    """
+    lower = fontname.lower()
+    suffix = lower.rsplit("-", 1)[-1] if "-" in lower else ""
+    return {
+        "bold": ("bold" in lower or "black" in lower or "heavy" in lower
+                 or "bd" in suffix or "demi" in suffix),
+        "italic": ("italic" in lower or "oblique" in lower or "it" in suffix),
+    }
+
+
+def _filter_phantom_spaces(chars: list) -> list:
+    """Remove space characters fully contained within a non-space character.
+
+    Some PDFs embed invisible space glyphs on top of real characters, causing
+    pdfplumber's extract_words to split words at those phantom boundaries
+    (e.g. "For" → "F or").  A phantom space is one whose entire horizontal
+    extent [x0, x1] falls within a non-space character's [x0, x1] on the
+    same line.  Legitimate word-separating spaces extend beyond the adjacent
+    character's bounds and are preserved.
+    """
+    non_space = [(c["x0"], c["x1"], c["top"]) for c in chars if c["text"].strip()]
+    if not non_space:
+        return chars
+
+    from bisect import bisect_right
+
+    ns_by_row = {}
+    for x0, x1, top in non_space:
+        row = round(top)
+        ns_by_row.setdefault(row, []).append((x0, x1))
+    for row in ns_by_row:
+        ns_by_row[row].sort()
+
+    filtered = []
+    for c in chars:
+        if not c["text"].strip():
+            row = round(c["top"])
+            is_phantom = False
+            for r in (row - 1, row, row + 1):
+                intervals = ns_by_row.get(r)
+                if not intervals:
+                    continue
+                idx = bisect_right(intervals, (c["x0"], float("inf"))) - 1
+                if idx >= 0 and intervals[idx][0] <= c["x0"] + 1 and c["x1"] <= intervals[idx][1] + 1:
+                    is_phantom = True
+                    break
+            if is_phantom:
+                continue
+        filtered.append(c)
+    return filtered
+
+
+def _annotate_words_with_fonts(words: list, chars: list) -> None:
+    """Add fontname to each word from overlapping raw characters.
+
+    pdfplumber's extract_words groups chars by extra_attrs, which means
+    including fontname would break words at font-subset boundaries (e.g.
+    ligature ﬀ in a different subset splitting "different" → "di|ff|erent").
+    We extract with extra_attrs=["size"] only, then look up each word's
+    dominant fontname from the raw chars.
+    """
+    from bisect import bisect_left, bisect_right
+
+    non_space = [c for c in chars if c["text"].strip()]
+    if not non_space:
+        return
+    non_space.sort(key=lambda c: (round(c["top"]), c["x0"]))
+    tops = [round(c["top"]) for c in non_space]
+
+    for w in words:
+        w_top = round(w["top"])
+        lo = bisect_left(tops, w_top - 2)
+        hi = bisect_right(tops, w_top + 2)
+        matching = [
+            c for c in non_space[lo:hi]
+            if c["x0"] >= w["x0"] - 1 and c["x1"] <= w["x1"] + 1
+        ]
+        if matching:
+            fonts = [c["fontname"] for c in matching if c.get("fontname")]
+            w["fontname"] = max(set(fonts), key=fonts.count) if fonts else ""
+        else:
+            w["fontname"] = ""
+
+
+def _group_words_into_lines(words: list, vtol: float = 3.0) -> list:
+    """Group pdfplumber words into lines by vertical proximity.
+
+    Words within vtol points of each other vertically are on the same line.
+    Returns list of lines, each a list of words sorted left-to-right.
+    """
+    if not words:
+        return []
+
+    sorted_words = sorted(words, key=lambda w: (w["top"], w["x0"]))
+    lines = []
+    current_line = [sorted_words[0]]
+
+    for w in sorted_words[1:]:
+        if abs(w["top"] - current_line[0]["top"]) <= vtol:
+            current_line.append(w)
+        else:
+            current_line.sort(key=lambda w: w["x0"])
+            lines.append(current_line)
+            current_line = [w]
+    if current_line:
+        current_line.sort(key=lambda w: w["x0"])
+        lines.append(current_line)
+
+    return lines
+
+
+def _assign_lines_to_columns(lines: list, boundaries: list,
+                              page_width: float = 0) -> list:
+    """Assign lines to columns, splitting cross-column merges.
+
+    When words at the same y-position from different columns get grouped
+    into one line, this function detects the gutter gap (much wider than
+    normal word spacing) and splits them apart.  Titles that intentionally
+    span the full width are kept intact.
+    """
+    from bisect import bisect_right
+
+    abs_split_min = page_width * 0.05 if page_width else 100
+
+    columns = [[] for _ in range(len(boundaries) + 1)]
+    for line in lines:
+        sorted_words = sorted(line, key=lambda w: w["x0"])
+
+        if len(sorted_words) < 2:
+            cx = (sorted_words[0]["x0"] + sorted_words[0]["x1"]) / 2
+            columns[bisect_right(boundaries, cx)].append(line)
+            continue
+
+        word_gaps = [sorted_words[i]["x0"] - sorted_words[i - 1]["x1"]
+                     for i in range(1, len(sorted_words))]
+        median_gap = min(sorted(word_gaps)[len(word_gaps) // 2], 50)
+        gutter_min = max(median_gap * 4, 20)
+
+        split_indices = []
+        for i, gap in enumerate(word_gaps):
+            if gap < gutter_min:
+                continue
+            left_x1 = sorted_words[i]["x1"]
+            right_x0 = sorted_words[i + 1]["x0"]
+            mid = (left_x1 + right_x0) / 2
+            crosses = any(left_x1 <= b <= right_x0 for b in boundaries)
+            near = any(abs(mid - b) < gap * 1.5 for b in boundaries)
+            large = gap >= abs_split_min
+            if crosses or near or large:
+                split_indices.append(i + 1)
+
+        if not split_indices:
+            cx = (min(w["x0"] for w in line) + max(w["x1"] for w in line)) / 2
+            columns[bisect_right(boundaries, cx)].append(line)
+        else:
+            cuts = [0] + split_indices + [len(sorted_words)]
+            for j in range(len(cuts) - 1):
+                sub = sorted_words[cuts[j]:cuts[j + 1]]
+                cx = (min(w["x0"] for w in sub) + max(w["x1"] for w in sub)) / 2
+                columns[bisect_right(boundaries, cx)].append(sub)
+
+    for col in columns:
+        col.sort(key=lambda line: min(w["top"] for w in line))
+
+    return columns
+
+
+def _line_is_bold(line: list) -> bool:
+    """Check if a line's dominant font is bold."""
+    styles = [_parse_font_style(w.get("fontname", "")) for w in line]
+    bold_count = sum(1 for s in styles if s["bold"])
+    return bold_count > len(styles) / 2 if styles else False
+
+
+def _line_dominant_size(line: list) -> float:
+    """Get the most common font size in a line."""
+    sizes = [w["size"] for w in line if w.get("size", 0) > 0]
+    if not sizes:
+        return 0
+    return max(set(sizes), key=sizes.count)
+
+
+def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
+    """Group vertically-sorted lines within a single column into blocks.
+
+    A new block starts when:
+      - The vertical gap exceeds line_height_mult * median line height, OR
+      - The font style changes (bold to non-bold or vice versa), OR
+      - The font size jumps significantly (> 1.3x ratio)
+    """
+    if not lines:
+        return []
+
+    line_heights = []
+    for line in lines:
+        h = max(w["bottom"] for w in line) - min(w["top"] for w in line)
+        line_heights.append(max(h, 1.0))
+    median_lh = sorted(line_heights)[len(line_heights) // 2]
+    gap_threshold = median_lh * line_height_mult
+
+    block_groups = [[lines[0]]]
+    for i in range(1, len(lines)):
+        prev_bottom = max(w["bottom"] for w in lines[i - 1])
+        curr_top = min(w["top"] for w in lines[i])
+        gap = curr_top - prev_bottom
+
+        prev_bold = _line_is_bold(lines[i - 1])
+        curr_bold = _line_is_bold(lines[i])
+        prev_size = _line_dominant_size(lines[i - 1])
+        curr_size = _line_dominant_size(lines[i])
+        size_ratio = max(curr_size, prev_size) / max(min(curr_size, prev_size), 0.1)
+
+        style_break = False
+        if size_ratio > 1.3:
+            style_break = True
+        elif prev_bold != curr_bold and gap > 0:
+            curr_text = " ".join(w["text"] for w in lines[i])
+            prev_text = " ".join(w["text"] for w in lines[i - 1])
+            short_line = len(curr_text) <= 120 or len(prev_text) <= 120
+            if short_line:
+                style_break = True
+
+        if gap > gap_threshold or style_break:
+            block_groups.append([lines[i]])
+        else:
+            block_groups[-1].append(lines[i])
+
+    blocks = []
+    for group in block_groups:
+        all_words = [w for line in group for w in line]
+        x0 = min(w["x0"] for w in all_words)
+        top = min(w["top"] for w in all_words)
+        x1 = max(w["x1"] for w in all_words)
+        bottom = max(w["bottom"] for w in all_words)
+        bw = x1 - x0
+        bh = bottom - top
+        cx = x0 + bw / 2
+
+        seen_texts = []
+        deduped_lines = []
+        for line in group:
+            line_top = min(w["top"] for w in line)
+            line_words = set(w["text"] for w in line)
+            line_text = " ".join(w["text"] for w in line)
+
+            is_dup = False
+            for sv, sw, _ in seen_texts:
+                if abs(sv - line_top) < 2:
+                    if line_words and sw:
+                        overlap = len(line_words & sw) / max(len(line_words), len(sw))
+                        if overlap > 0.8:
+                            is_dup = True
+                            break
+            if not is_dup:
+                seen_texts.append((line_top, line_words, line_text))
+                deduped_lines.append(line_text)
+
+        if not deduped_lines:
+            continue
+
+        block_text = " ".join(deduped_lines)
+
+        fontsizes = [w["size"] for w in all_words if w.get("size", 0) > 0]
+        fontnames = [w["fontname"] for w in all_words if w.get("fontname")]
+
+        dominant_size = max(set(fontsizes), key=fontsizes.count) if fontsizes else 0
+        styles = [_parse_font_style(fn) for fn in fontnames]
+        bold_count = sum(1 for s in styles if s["bold"])
+        is_bold = bold_count > len(styles) / 2 if styles else False
+
+        blocks.append({
+            "hpos": x0,
+            "vpos": top,
+            "width": bw,
+            "height": bh,
+            "cx": cx,
+            "text": block_text,
+            "fontsize": dominant_size,
+            "bold": is_bold,
+        })
+
+    return blocks
+
+
+def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
+    """Extract text from PDF using pdfplumber (layout-aware).
+
+    Mirrors the pdfalto pipeline: extracts words with font metadata,
+    detects columns from word positions, groups lines into blocks
+    within each column, and prefixes headers with '## ' based on
+    font size/style analysis.
+
+    Pipeline:
+      1. Extract words with (x0, y0, x1, y1, fontname, size)
+      2. Group words into lines by vertical proximity
+      3. Detect column boundaries from line center-x positions
+      4. Assign lines to columns
+      5. Within each column, group lines into blocks by vertical gaps
+      6. Read columns left-to-right, blocks top-to-bottom
+      7. Detect headers via font size/bold heuristics
+    """
+    import pdfplumber
+
+    log(f"Attempting text extraction with pdfplumber for: {pdf_path}")
+    t0 = time.time()
+
+    try:
+        pdf = pdfplumber.open(pdf_path)
+    except Exception as e:
+        log(f"pdfplumber failed to open {pdf_path}: {e}")
+        return None
+
+    all_output_lines = []
+
+    try:
+        for page in pdf.pages:
+            page_w = page.width
+            page_h = page.height
+
+            from pdfplumber.utils.text import extract_words as _pw_extract_words
+            chars = _filter_phantom_spaces(page.chars)
+
+            words = _pw_extract_words(chars, extra_attrs=["size"],
+                                     use_text_flow=True)
+            _annotate_words_with_fonts(words, chars)
+            if not words:
+                continue
+
+            det_lines = _group_words_into_lines(words)
+            if not det_lines:
+                continue
+            line_cxs = []
+            for line in det_lines:
+                cx = (min(w["x0"] for w in line)
+                      + max(w["x1"] for w in line)) / 2
+                line_cxs.append(cx)
+            boundaries = _detect_column_boundaries(line_cxs, page_w)
+            boundaries = _validate_boundaries(boundaries, det_lines,
+                                              page_w)
+
+            flow_lines = []
+            current_line = [words[0]]
+            for w in words[1:]:
+                if abs(w["top"] - current_line[0]["top"]) <= 3:
+                    current_line.append(w)
+                else:
+                    flow_lines.append(current_line)
+                    current_line = [w]
+            if current_line:
+                flow_lines.append(current_line)
+
+            from bisect import bisect_right
+            boundary_tol = page_w * 0.05
+            col_lines = [[] for _ in range(len(boundaries) + 1)]
+            for fline in flow_lines:
+                sorted_w = sorted(fline, key=lambda w: w["x0"])
+                x_min = sorted_w[0]["x0"]
+                x_max = sorted_w[-1]["x1"]
+
+                split_at = []
+                if len(sorted_w) >= 2 and boundaries:
+                    for b in boundaries:
+                        if x_min >= b or x_max <= b:
+                            continue
+                        for j in range(1, len(sorted_w)):
+                            gap = sorted_w[j]["x0"] - sorted_w[j - 1]["x1"]
+                            if gap < 15:
+                                continue
+                            mid = (sorted_w[j - 1]["x1"]
+                                   + sorted_w[j]["x0"]) / 2
+                            if abs(mid - b) <= boundary_tol:
+                                split_at.append(j)
+                                break
+
+                if split_at:
+                    split_at.sort()
+                    cuts = [0] + split_at + [len(sorted_w)]
+                    n_segs = len(cuts) - 1
+                    if all(cuts[k + 1] - cuts[k] >= 2
+                           for k in range(n_segs - 1)) and n_segs >= 1:
+                        for k in range(len(cuts) - 1):
+                            sub = sorted_w[cuts[k]:cuts[k + 1]]
+                            cx = (min(w["x0"] for w in sub)
+                                  + max(w["x1"] for w in sub)) / 2
+                            ci = bisect_right(boundaries, cx)
+                            col_lines[ci].append(sub)
+                        continue
+
+                cx = (x_min + x_max) / 2
+                ci = bisect_right(boundaries, cx)
+                col_lines[ci].append(sorted_w)
+
+            all_blocks = []
+            for ci, col in enumerate(col_lines):
+                col.sort(key=lambda line: min(w["top"] for w in line))
+                col_blocks = _lines_to_blocks(col)
+                for blk in col_blocks:
+                    blk["col"] = ci
+                    blk["flow_idx"] = 0
+                all_blocks.extend(col_blocks)
+
+            if not all_blocks:
+                continue
+
+            text_left = min(blk["hpos"] for blk in all_blocks)
+            text_right = max(blk["hpos"] + blk["width"] for blk in all_blocks)
+            text_span = text_right - text_left
+            span_threshold = text_span * 0.5
+
+            min_col_block_len = 10
+            col_tops = {}
+            for blk in all_blocks:
+                c = blk["col"]
+                if blk["width"] <= span_threshold and len(blk["text"].strip()) >= min_col_block_len:
+                    col_tops[c] = min(col_tops.get(c, float("inf")), blk["vpos"])
+            if not col_tops:
+                for blk in all_blocks:
+                    c = blk["col"]
+                    if blk["width"] <= span_threshold:
+                        col_tops[c] = min(col_tops.get(c, float("inf")), blk["vpos"])
+            col_start = min(col_tops.values()) if col_tops else 0
+            col_end = max(blk["vpos"] + blk["height"] for blk in all_blocks
+                         if blk["width"] <= span_threshold) if col_tops else page_h
+
+            _meta_re = re.compile(
+                r'@\S+\.\S+|orcid\.org|ORCID:\s*\d|^Authors?\b',
+            )
+            top_zone = page_h * 0.12
+            header_blocks = []
+            meta_blocks = []
+            body_blocks = []
+            footer_blocks = []
+            for blk in all_blocks:
+                is_wide = blk["width"] > span_threshold
+                if is_wide and blk["vpos"] + blk["height"] <= col_start + page_h * 0.02:
+                    header_blocks.append(blk)
+                elif is_wide and blk["vpos"] > col_end:
+                    footer_blocks.append(blk)
+                elif (not is_wide
+                      and blk["vpos"] + blk["height"] <= top_zone
+                      and _meta_re.search(blk["text"])):
+                    meta_blocks.append(blk)
+                else:
+                    body_blocks.append(blk)
+
+            header_blocks.sort(key=lambda b: b["vpos"])
+            meta_blocks.sort(key=lambda b: (b["vpos"], b["hpos"]))
+            body_blocks.sort(key=lambda b: (b["col"], b["vpos"]))
+            footer_blocks.sort(key=lambda b: b["vpos"])
+            all_blocks = header_blocks + meta_blocks + body_blocks + footer_blocks
+
+            body_sizes = [blk["fontsize"] for blk in all_blocks if blk["fontsize"] > 0]
+            median_fontsize = sorted(body_sizes)[len(body_sizes) // 2] if body_sizes else 0
+
+            for blk in all_blocks:
+                _t = blk["text"].strip()
+                if not _t:
+                    continue
+                _words = _t.split()
+                _single_char = sum(1 for w in _words if len(w) <= 1)
+                if len(_words) >= 2 and _single_char > len(_words) * 0.6:
+                    continue
+                if len(_t) <= 3 and not re.match(r'^[•●▪]+$', _t):
+                    continue
+                _alpha_words = re.findall(r'[A-Za-z]{2,}', _t)
+                _starts_with_letter = bool(re.match(r'[A-Z]', _t))
+                _is_contact = bool(
+                    re.search(r'@\S+\.\S+', _t)
+                    or re.search(r'\+\d[\d\s]{6,}', _t)
+                    or re.search(r'www\.', _t, re.I)
+                    or re.search(r'https?://', _t, re.I)
+                )
+
+                is_header = False
+                min_words = 1 if blk["bold"] else 2
+                if (median_fontsize > 0 and len(_t) <= 120
+                        and _starts_with_letter and len(_alpha_words) >= min_words
+                        and not _is_contact):
+                    fs = blk["fontsize"]
+                    if blk["bold"] and fs >= median_fontsize:
+                        is_header = True
+                    elif fs > median_fontsize * 1.3:
+                        is_header = True
+
+                text = blk["text"]
+                if is_header:
+                    text = f"## {text}"
+                all_output_lines.append(text)
+
+    finally:
+        pdf.close()
+
+    elapsed = time.time() - t0
+
+    if not all_output_lines:
+        log(f"pdfplumber produced no text for: {pdf_path}")
+        return None
+
+    result = "\n".join(all_output_lines)
+    log(f"pdfplumber extracted {len(result)} characters in {elapsed:.2f} seconds")
+    return result
 
 
 def extract_text_with_pymupdf(pdf_path: str) -> str:
