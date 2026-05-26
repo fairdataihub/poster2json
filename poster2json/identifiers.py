@@ -452,6 +452,8 @@ def merge_pdf_link_annotations(data: dict, pdf_links: List[str]) -> dict:
     new_related = []
     for uri in pdf_links:
         uri_lower = uri.lower().rstrip("/")
+        if uri_lower.startswith("mailto:"):
+            continue
         if _LICENSE_URL_RE.search(uri):
             continue
         if any(uri_lower.endswith(sv) or sv in uri_lower for sv in scholarly_uris):
