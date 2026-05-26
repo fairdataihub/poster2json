@@ -383,6 +383,87 @@ def _detect_column_boundaries(cx_values: list, page_w: float) -> list:
     return sorted(valid)
 
 
+def _detect_column_boundaries_from_gaps(lines: list,
+                                        page_w: float) -> list:
+    """Detect column boundaries from consistent within-line X-gaps.
+
+    For each wide line with body-text spacing, find gaps significantly
+    larger than the line's median gap. Cluster positions; a tight cluster
+    with 5+ supporting lines is a column boundary.
+    """
+    gap_positions = []
+    for line in lines:
+        sw = sorted(line, key=lambda w: w["x0"])
+        if len(sw) < 4:
+            continue
+        width = sw[-1]["x1"] - sw[0]["x0"]
+        if width < page_w * 0.5:
+            continue
+
+        gaps = []
+        for j in range(1, len(sw)):
+            gap = sw[j]["x0"] - sw[j - 1]["x1"]
+            pos = (sw[j - 1]["x1"] + sw[j]["x0"]) / 2
+            gaps.append((gap, pos))
+
+        if not gaps:
+            continue
+
+        median_gap = sorted(g for g, _ in gaps)[len(gaps) // 2]
+        if median_gap > 20:
+            continue
+        threshold = max(median_gap * 1.8, 20)
+        for gap, pos in gaps:
+            if gap > threshold:
+                gap_positions.append(pos)
+
+    if len(gap_positions) < 3:
+        return []
+
+    sorted_pos = sorted(gap_positions)
+    cluster_tol = page_w * 0.02
+    clusters = [[sorted_pos[0]]]
+    for pos in sorted_pos[1:]:
+        if pos - clusters[-1][-1] < cluster_tol:
+            clusters[-1].append(pos)
+        else:
+            clusters.append([pos])
+
+    from bisect import bisect_right
+
+    max_range = cluster_tol * 2
+    candidates = sorted(
+        sum(c) / len(c) for c in clusters
+        if len(c) >= 5 and (max(c) - min(c)) <= max_range
+    )[:2]
+
+    line_cxs = []
+    for line in lines:
+        cx = (min(w["x0"] for w in line)
+              + max(w["x1"] for w in line)) / 2
+        line_cxs.append(cx)
+
+    min_blocks = 3
+    min_col_width = page_w * 0.08
+    valid = []
+    for b in candidates:
+        test = sorted(valid + [b])
+        counts = [0] * (len(test) + 1)
+        for cx in line_cxs:
+            counts[bisect_right(test, cx)] += 1
+        if not all(c >= min_blocks for c in counts):
+            continue
+        edges = [0] + test + [page_w]
+        widths_ok = all(
+            edges[i + 1] - edges[i] >= min_col_width
+            for i in range(len(edges) - 1)
+        )
+        if widths_ok:
+            valid.append(b)
+
+    return sorted(valid)
+
+
 def _validate_boundaries(boundaries: list, lines: list,
                          page_w: float) -> list:
     """Remove boundaries that lack word-gap support from actual text lines.
@@ -911,6 +992,21 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             boundaries = _validate_boundaries(boundaries, det_lines,
                                               page_w)
 
+            from bisect import bisect_right
+
+            if boundaries:
+                counts = [0] * (len(boundaries) + 1)
+                for cx in line_cxs:
+                    counts[bisect_right(boundaries, cx)] += 1
+                if max(counts) / max(sum(counts), 1) > 0.85:
+                    boundaries = []
+
+            if not boundaries:
+                boundaries = _detect_column_boundaries_from_gaps(
+                    det_lines, page_w)
+                boundaries = _validate_boundaries(
+                    boundaries, det_lines, page_w)
+
             flow_lines = []
             current_line = [words[0]]
             for w in words[1:]:
@@ -922,55 +1018,64 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             if current_line:
                 flow_lines.append(current_line)
 
-            from bisect import bisect_right
-            boundary_tol = page_w * 0.05
-            col_lines = [[] for _ in range(len(boundaries) + 1)]
-            for fline in flow_lines:
-                sorted_w = sorted(fline, key=lambda w: w["x0"])
-                x_min = sorted_w[0]["x0"]
-                x_max = sorted_w[-1]["x1"]
+            if boundaries:
+                boundary_tol = page_w * 0.05
+                col_lines = [[] for _ in range(len(boundaries) + 1)]
+                for fline in flow_lines:
+                    sorted_w = sorted(fline, key=lambda w: w["x0"])
+                    x_min = sorted_w[0]["x0"]
+                    x_max = sorted_w[-1]["x1"]
 
-                split_at = []
-                if len(sorted_w) >= 2 and boundaries:
-                    for b in boundaries:
-                        if x_min >= b or x_max <= b:
-                            continue
-                        for j in range(1, len(sorted_w)):
-                            gap = sorted_w[j]["x0"] - sorted_w[j - 1]["x1"]
-                            if gap < 15:
+                    split_at = []
+                    if len(sorted_w) >= 2:
+                        for b in boundaries:
+                            if x_min >= b or x_max <= b:
                                 continue
-                            mid = (sorted_w[j - 1]["x1"]
-                                   + sorted_w[j]["x0"]) / 2
-                            if abs(mid - b) <= boundary_tol:
-                                split_at.append(j)
-                                break
+                            for j in range(1, len(sorted_w)):
+                                gap = sorted_w[j]["x0"] - sorted_w[j - 1]["x1"]
+                                if gap < 15:
+                                    continue
+                                mid = (sorted_w[j - 1]["x1"]
+                                       + sorted_w[j]["x0"]) / 2
+                                if abs(mid - b) <= boundary_tol:
+                                    split_at.append(j)
+                                    break
 
-                if split_at:
-                    split_at.sort()
-                    cuts = [0] + split_at + [len(sorted_w)]
-                    n_segs = len(cuts) - 1
-                    if all(cuts[k + 1] - cuts[k] >= 2
-                           for k in range(n_segs - 1)) and n_segs >= 1:
-                        for k in range(len(cuts) - 1):
-                            sub = sorted_w[cuts[k]:cuts[k + 1]]
-                            cx = (min(w["x0"] for w in sub)
-                                  + max(w["x1"] for w in sub)) / 2
-                            ci = bisect_right(boundaries, cx)
-                            col_lines[ci].append(sub)
-                        continue
+                    if split_at:
+                        split_at.sort()
+                        cuts = [0] + split_at + [len(sorted_w)]
+                        n_segs = len(cuts) - 1
+                        if all(cuts[k + 1] - cuts[k] >= 2
+                               for k in range(n_segs - 1)) and n_segs >= 1:
+                            for k in range(len(cuts) - 1):
+                                sub = sorted_w[cuts[k]:cuts[k + 1]]
+                                cx = (min(w["x0"] for w in sub)
+                                      + max(w["x1"] for w in sub)) / 2
+                                ci = bisect_right(boundaries, cx)
+                                col_lines[ci].append(sub)
+                            continue
 
-                cx = (x_min + x_max) / 2
-                ci = bisect_right(boundaries, cx)
-                col_lines[ci].append(sorted_w)
+                    cx = (x_min + x_max) / 2
+                    ci = bisect_right(boundaries, cx)
+                    col_lines[ci].append(sorted_w)
 
-            all_blocks = []
-            for ci, col in enumerate(col_lines):
-                col.sort(key=lambda line: min(w["top"] for w in line))
-                col_blocks = _lines_to_blocks(col)
-                for blk in col_blocks:
-                    blk["col"] = ci
+                all_blocks = []
+                for ci, col in enumerate(col_lines):
+                    col.sort(key=lambda line: min(w["top"] for w in line))
+                    col_blocks = _lines_to_blocks(col)
+                    for blk in col_blocks:
+                        blk["col"] = ci
+                        blk["flow_idx"] = 0
+                    all_blocks.extend(col_blocks)
+            else:
+                ordered_lines = []
+                for fline in flow_lines:
+                    sorted_w = sorted(fline, key=lambda w: w["x0"])
+                    ordered_lines.append(sorted_w)
+                all_blocks = _lines_to_blocks(ordered_lines)
+                for blk in all_blocks:
+                    blk["col"] = 0
                     blk["flow_idx"] = 0
-                all_blocks.extend(col_blocks)
 
             if not all_blocks:
                 continue
@@ -1036,7 +1141,7 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                 if len(_t) <= 3 and not re.match(r'^[•●▪]+$', _t):
                     continue
                 _alpha_words = re.findall(r'[A-Za-z]{2,}', _t)
-                _starts_with_letter = bool(re.match(r'[A-Z]', _t))
+                _starts_with_letter = bool(re.match(r'[A-Za-z]', _t))
                 _is_contact = bool(
                     re.search(r'@\S+\.\S+', _t)
                     or re.search(r'\+\d[\d\s]{6,}', _t)
