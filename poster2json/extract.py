@@ -50,12 +50,12 @@ MAX_INPUT_TOKENS = 15000
 # Schema URL
 SCHEMA_URL = "https://posters.science/schema/v0.2/poster_schema.json"
 
-# File extension → formats value (authoritative; never LLM-derived)
+# File extension → MIME type per DataCite metadata schema 4.7
 EXT_TO_FORMAT = {
-    ".pdf": "PDF",
-    ".png": "PNG",
-    ".jpg": "JPEG",
-    ".jpeg": "JPEG",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
 }
 
 # Find pdfalto executable
