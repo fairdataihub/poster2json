@@ -1397,14 +1397,10 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 
     streamer = ProgressStreamer(tokenizer, log_every=200)
     t0 = time.time()
-    input_len = inputs["input_ids"].shape[1]
-    min_out = max(500, input_len)
-
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
             max_new_tokens=max_tokens,
-            min_new_tokens=min_out,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
             streamer=streamer,
