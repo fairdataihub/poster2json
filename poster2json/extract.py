@@ -1453,14 +1453,13 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
-0. GROUNDING: Every value you output MUST come from text visibly present in the poster below. If a field's value cannot be found in the poster text, use null or []. NEVER invent, guess, or infer content that is not explicitly written on the poster.
 1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, publisher, conference, version
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
-5. Copy ALL text EXACTLY - do not paraphrase or summarize
+5. Copy ALL poster text EXACTLY into sections - do not paraphrase, summarize, or skip any text. Every line of the poster text below must appear in your output.
 6. "Key Findings" ≠ "References": Key Findings = discoveries/results; References = numbered citations with authors/years
-7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent. Only include captions for figures/tables that actually exist on the poster. If no figures or tables are present, use empty arrays.
+7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent.
 8. Text without a clear header (e.g. contact info, URLs, footer text) is still a section — use "sectionTitle": "" with the verbatim text as "sectionContent". Do NOT skip any poster text.
 
 JSON SCHEMA (all top-level fields are REQUIRED):
@@ -1478,9 +1477,9 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "version": null,
   "content": {{
     "sections": [
-      {{"sectionTitle": "Introduction", "sectionContent": "...verbatim text from poster..."}},
-      {{"sectionTitle": "Methods", "sectionContent": "...verbatim text from poster..."}},
-      {{"sectionTitle": "Results", "sectionContent": "...verbatim text from poster..."}}
+      {{"sectionTitle": "Introduction", "sectionContent": "Full verbatim text of this section from the poster..."}},
+      {{"sectionTitle": "Methods", "sectionContent": "Full verbatim text of this section from the poster..."}},
+      {{"sectionTitle": "Results", "sectionContent": "Full verbatim text of this section from the poster..."}}
     ]
   }},
   "imageCaptions": [],
@@ -1488,20 +1487,17 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 }}
 
 EXTRACTION NOTES:
-- publicationYear: Extract ONLY if a year is explicitly printed on the poster (e.g. in a date, conference name, or footer). If not found, set to null. NEVER guess or use the current year.
+- publicationYear: Extract if a year is printed on the poster. If not found, set to null.
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Summarize the poster content concisely; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
-- publisher: Extract the publisher, hosting institution, or repository name ONLY if the exact name appears as text on the poster. If not found, set to null. Do NOT copy any name from these instructions.
-- conference: Extract ONLY from text clearly visible on the poster (header, footer, logos). Every conference field value must be a direct quote from the poster text. If no conference information is found, output "conference": null. Do NOT invent or guess conference names, locations, dates, or URLs. Do NOT copy any example from these instructions.
-- imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be verbatim text from the poster. If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output placeholder text — just use an empty array.
-- version: Extract ONLY if a version number/string is explicitly printed on the poster (e.g. "v1.0", "Version 2"). If not found, set to null.
+- publisher: Extract if the name appears on the poster. If not found, set to null.
+- conference: Extract from text visible on the poster (header, footer, logos). If not found, set to null.
+- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
+- version: Extract if printed on the poster. If not found, set to null.
 - rightsList: OPTIONAL - include if license/copyright info found on poster
-- researchField: Top-level OpenAlex domain. MUST be EXACTLY one of:
-    "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences"
-  Pick the single best fit based on poster content (subjects, methods, findings).
-  If unclear, set to null. NEVER output "Other", "Unknown", "Research field",
-  empty string, or any other placeholder text.
+- researchField: MUST be exactly one of: "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences" — or null if unclear.
+- GROUNDING: For metadata fields (publisher, conference, publicationYear, version), only extract values that appear as text on the poster. If not found, use null. For section content, copy ALL text verbatim — do not skip or shorten.
 
 POSTER TEXT TO CONVERT:
 {raw_text}
@@ -1511,11 +1507,10 @@ OUTPUT VALID JSON ONLY:"""
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 1. creators, titles, publicationYear, subjects, descriptions, publisher, conference, version, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
-3. Copy ALL text EXACTLY verbatim
+3. Copy ALL text EXACTLY verbatim — every line of poster text must appear in a section
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
-5. conference/publisher: extract ONLY if clearly visible on the poster. If not found, set to null. NEVER invent names, locations, dates, URLs, or use generic placeholders.
-6. imageCaptions/tableCaptions: ONLY for figures/tables that exist on the poster. If none, use [].
-7. GROUNDING: Every value must come from text in the poster. If not found, use null or [].
+5. conference/publisher: extract if visible on the poster. If not found, set to null.
+6. imageCaptions/tableCaptions: for figures/tables on the poster. If none, use [].
 
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
@@ -1528,13 +1523,13 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "researchField": null,
   "version": null,
   "content": {{
-    "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
+    "sections": [{{"sectionTitle": "Header", "sectionContent": "Full verbatim text of this section..."}}]
   }},
   "imageCaptions": [],
   "tableCaptions": []
 }}
 
-researchField MUST be exactly one of: "Health Sciences", "Life Sciences", "Physical Sciences", "Social Sciences" — or null if unclear. NEVER output "Other", "Unknown", or placeholder text.
+researchField MUST be exactly one of: "Health Sciences", "Life Sciences", "Physical Sciences", "Social Sciences" — or null if unclear.
 
 TEXT:
 {raw_text}
@@ -2102,12 +2097,13 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                                 for w in v.lower().split():
                                     captured.add(w)
 
-                # Strip ## prefixes and find uncaptured lines
+                # Strip ## prefixes and find ALL uncaptured blocks
                 raw_lines = [
                     ln.lstrip("# ").strip() if ln.startswith("## ") else ln.strip()
                     for ln in raw_text.split("\n")
                 ]
-                uncaptured = []
+                all_uncaptured_blocks = []
+                current_block = []
                 for ln in raw_lines:
                     if not ln:
                         continue
@@ -2116,14 +2112,17 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                         continue
                     hit = sum(1 for w in words if w in captured)
                     if hit / len(words) < 0.5:
-                        uncaptured.append(ln)
+                        current_block.append(ln)
                     else:
-                        # Reset — only keep trailing uncaptured block
-                        uncaptured = []
+                        if current_block and len(" ".join(current_block)) > 10:
+                            all_uncaptured_blocks.append(current_block)
+                        current_block = []
+                if current_block and len(" ".join(current_block)) > 10:
+                    all_uncaptured_blocks.append(current_block)
 
-                if uncaptured and len(" ".join(uncaptured)) > 10:
+                for block in all_uncaptured_blocks:
                     cleaned_sections.append({
-                        "sectionContent": "\n".join(uncaptured),
+                        "sectionContent": "\n".join(block),
                     })
 
             result["content"]["sections"] = cleaned_sections
