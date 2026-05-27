@@ -2116,6 +2116,24 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         if not has_sections:
             if "content" not in result or not isinstance(result.get("content"), dict):
                 result["content"] = {}
+
+            # Collect words already captured in LLM metadata for dedup
+            meta_words = set()
+            for creator in result.get("creators", []):
+                if isinstance(creator, dict):
+                    for v in creator.values():
+                        if isinstance(v, str):
+                            meta_words.update(v.lower().split())
+                        elif isinstance(v, list):
+                            for item in v:
+                                if isinstance(item, str):
+                                    meta_words.update(item.lower().split())
+            for title_obj in result.get("titles", []):
+                if isinstance(title_obj, dict):
+                    for v in title_obj.values():
+                        if isinstance(v, str):
+                            meta_words.update(v.lower().split())
+
             raw_sections = []
             current_title = ""
             current_lines = []
@@ -2125,19 +2143,27 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                     continue
                 if ln.startswith("## "):
                     if current_lines:
-                        entry = {"sectionContent": "\n".join(current_lines)}
-                        if current_title:
-                            entry["sectionTitle"] = current_title
-                        raw_sections.append(entry)
+                        content = "\n".join(current_lines)
+                        words = content.lower().split()
+                        overlap = sum(1 for w in words if w in meta_words) / max(len(words), 1)
+                        if overlap < 0.7 and len(content) > 10:
+                            entry = {"sectionContent": content}
+                            if current_title:
+                                entry["sectionTitle"] = current_title
+                            raw_sections.append(entry)
                     current_title = ln[3:].strip()
                     current_lines = []
                 else:
                     current_lines.append(ln)
             if current_lines:
-                entry = {"sectionContent": "\n".join(current_lines)}
-                if current_title:
-                    entry["sectionTitle"] = current_title
-                raw_sections.append(entry)
+                content = "\n".join(current_lines)
+                words = content.lower().split()
+                overlap = sum(1 for w in words if w in meta_words) / max(len(words), 1)
+                if overlap < 0.7 and len(content) > 10:
+                    entry = {"sectionContent": content}
+                    if current_title:
+                        entry["sectionTitle"] = current_title
+                    raw_sections.append(entry)
             if raw_sections:
                 result["content"]["sections"] = raw_sections
 
