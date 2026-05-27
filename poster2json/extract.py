@@ -34,6 +34,8 @@ from transformers import (
     AutoProcessor,
     AutoTokenizer,
     BitsAndBytesConfig,
+    LogitsProcessor,
+    LogitsProcessorList,
     Qwen2VLForConditionalGeneration,
     TextStreamer,
 )
@@ -1027,7 +1029,15 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             from pdfplumber.utils.text import extract_words as _pw_extract_words
             chars = _filter_phantom_spaces(page.chars)
 
-            words = _pw_extract_words(chars, extra_attrs=["size"],
+            text_chars = [c for c in chars if c.get("text", "").strip()]
+            if text_chars:
+                median_fs = float(np.median([c["size"] for c in text_chars]))
+                x_tol = round(max(1.5, min(median_fs * 0.25, 3.0)), 2)
+            else:
+                x_tol = 3
+            log(f"   x_tolerance={x_tol} (median_font={median_fs if text_chars else '?'}pt)")
+            words = _pw_extract_words(chars, x_tolerance=x_tol,
+                                     extra_attrs=["size"],
                                      use_text_flow=True)
             _annotate_words_with_fonts(words, chars)
             if not words:
@@ -1387,13 +1397,89 @@ def unload_json_model():
     log("   ✓ JSON model unloaded, GPU memory cleared")
 
 
+def _get_eos_token_ids(tokenizer):
+    """Collect all EOS-like token IDs from the tokenizer."""
+    eos_ids = set()
+    eid = tokenizer.eos_token_id
+    if isinstance(eid, (list, tuple)):
+        eos_ids.update(eid)
+    elif eid is not None:
+        eos_ids.add(eid)
+    for tok in ("<|end_of_text|>", "<|eom_id|>", "<|eot_id|>"):
+        tid = tokenizer.convert_tokens_to_ids(tok)
+        if tid is not None and tid != tokenizer.unk_token_id:
+            eos_ids.add(tid)
+    return eos_ids
+
+
+class _JsonBraceProcessor(LogitsProcessor):
+    """Suppress EOS tokens until generated JSON has balanced braces.
+
+    Llama 3.1 has three EOS tokens (128001, 128008, 128009).
+    HuggingFace's min_new_tokens only suppresses the primary one,
+    so the model hits <|eot_id|> early and produces truncated JSON.
+    This processor suppresses all EOS tokens until the outermost
+    JSON object is closed (brace depth returns to 0).
+    """
+
+    def __init__(self, eos_token_ids, tokenizer, input_length):
+        self.eos_token_ids = eos_token_ids
+        self.tokenizer = tokenizer
+        self.input_length = input_length
+        self._prev_len = 0
+        self._depth = 0
+        self._in_string = False
+        self._escape = False
+        self._seen_brace = False
+
+    def _update_depth(self, text):
+        for ch in text:
+            if self._escape:
+                self._escape = False
+                continue
+            if ch == '\\' and self._in_string:
+                self._escape = True
+                continue
+            if ch == '"':
+                self._in_string = not self._in_string
+                continue
+            if not self._in_string:
+                if ch == '{':
+                    self._depth += 1
+                    self._seen_brace = True
+                elif ch == '}':
+                    self._depth -= 1
+
+    def __call__(self, input_ids, scores):
+        gen = input_ids[0, self.input_length :]
+        n = len(gen)
+        if n == 0:
+            for eid in self.eos_token_ids:
+                scores[:, eid] = float("-inf")
+            return scores
+        if n > self._prev_len:
+            new_text = self.tokenizer.decode(
+                gen[self._prev_len :], skip_special_tokens=True
+            )
+            self._update_depth(new_text)
+            self._prev_len = n
+        if not self._seen_brace or self._depth > 0:
+            for eid in self.eos_token_ids:
+                scores[:, eid] = float("-inf")
+        return scores
+
+
 def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
     """Generate response using the Llama model."""
     messages = [{"role": "user", "content": prompt}]
     input_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
+    input_length = inputs["input_ids"].shape[1]
 
-    log(f"Generating with max_tokens={max_tokens}, input_length={inputs['input_ids'].shape[1]}")
+    log(f"Generating with max_tokens={max_tokens}, input_length={input_length}")
+
+    eos_ids = _get_eos_token_ids(tokenizer)
+    processor = _JsonBraceProcessor(eos_ids, tokenizer, input_length)
 
     streamer = ProgressStreamer(tokenizer, log_every=200)
     t0 = time.time()
@@ -1404,14 +1490,15 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
             streamer=streamer,
+            logits_processor=LogitsProcessorList([processor]),
         )
     elapsed = time.time() - t0
-    tokens_generated = outputs.shape[1] - inputs["input_ids"].shape[1]
+    tokens_generated = outputs.shape[1] - input_length
     log(
         f"   Generated {tokens_generated} tokens in {elapsed:.2f}s ({tokens_generated/elapsed:.1f} tok/s)"
     )
 
-    return tokenizer.decode(outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
+    return tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
 
 
 # ============================
