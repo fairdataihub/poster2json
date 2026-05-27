@@ -97,8 +97,11 @@ def split_block(chars, depth=0) -> Block:
     min_gap = MIN_GAP_SIZE * min_fs
     min_chunk = MIN_CHUNK_WIDTH * avg_fs
 
+    is_single_line = block_h < 1.5 * avg_fs
+
     do_vsplit = (
-        max_v > min_gap
+        not is_single_line
+        and max_v > min_gap
         and max_v > gap_threshold_v
         and _min_chunk_width(chars, vgaps, max_v, avg_fs, bbox) > min_chunk
     )
