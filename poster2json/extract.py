@@ -2106,6 +2106,41 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
 
             result["content"]["sections"] = cleaned_sections
 
+    # Build sections from raw text when LLM produced none
+    if raw_text:
+        has_sections = (
+            "content" in result
+            and isinstance(result.get("content"), dict)
+            and result["content"].get("sections")
+        )
+        if not has_sections:
+            if "content" not in result or not isinstance(result.get("content"), dict):
+                result["content"] = {}
+            raw_sections = []
+            current_title = ""
+            current_lines = []
+            for ln in raw_text.split("\n"):
+                ln = ln.strip()
+                if not ln:
+                    continue
+                if ln.startswith("## "):
+                    if current_lines:
+                        entry = {"sectionContent": "\n".join(current_lines)}
+                        if current_title:
+                            entry["sectionTitle"] = current_title
+                        raw_sections.append(entry)
+                    current_title = ln[3:].strip()
+                    current_lines = []
+                else:
+                    current_lines.append(ln)
+            if current_lines:
+                entry = {"sectionContent": "\n".join(current_lines)}
+                if current_title:
+                    entry["sectionTitle"] = current_title
+                raw_sections.append(entry)
+            if raw_sections:
+                result["content"]["sections"] = raw_sections
+
     # Clean creators
     if "creators" in result and isinstance(result["creators"], list):
         for creator in result["creators"]:
