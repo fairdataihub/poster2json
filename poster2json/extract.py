@@ -1397,10 +1397,14 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 
     streamer = ProgressStreamer(tokenizer, log_every=200)
     t0 = time.time()
+    input_len = inputs["input_ids"].shape[1]
+    min_out = max(500, input_len)
+
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
             max_new_tokens=max_tokens,
+            min_new_tokens=min_out,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
             streamer=streamer,
@@ -1690,6 +1694,17 @@ def _repair_truncation(s: str) -> str:
         s = s[:-1].rstrip()
     if s.endswith(","):
         s = s[:-1]
+
+    partial_literals = {
+        "n": "null", "nu": "null", "nul": "null",
+        "t": "true", "tr": "true", "tru": "true",
+        "f": "false", "fa": "false", "fal": "false", "fals": "false",
+    }
+    for partial, full in partial_literals.items():
+        if s.endswith(": " + partial) or s.endswith(":" + partial):
+            s = s[:-(len(partial))] + full
+            break
+
     s += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
     return s
 
