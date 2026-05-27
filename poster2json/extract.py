@@ -936,22 +936,75 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
     return blocks
 
 
+def _chars_to_word_lines(char_lines, words):
+    """Map XY-cut char-level lines back to word-level lines.
+
+    For each char-level line, find the words whose characters
+    predominantly fall on that line (by spatial overlap).
+    """
+    from bisect import bisect_left, bisect_right
+
+    word_tops = sorted(set(w["top"] for w in words))
+    word_by_pos = {}
+    for w in words:
+        key = (round(w["top"], 1), round(w["x0"], 1))
+        word_by_pos[key] = w
+
+    assigned = set()
+    result = []
+    for char_line in char_lines:
+        if not char_line:
+            continue
+        line_y_min = min(c["top"] for c in char_line)
+        line_y_max = max(c["bottom"] for c in char_line)
+        line_x_min = min(c["x0"] for c in char_line)
+        line_x_max = max(c["x1"] for c in char_line)
+
+        line_words = []
+        for w in words:
+            if id(w) in assigned:
+                continue
+            w_cy = (w["top"] + w["bottom"]) / 2
+            w_cx = (w["x0"] + w["x1"]) / 2
+            if (line_y_min - 2 <= w_cy <= line_y_max + 2
+                    and line_x_min - 5 <= w_cx <= line_x_max + 5):
+                line_words.append(w)
+                assigned.add(id(w))
+
+        if line_words:
+            line_words.sort(key=lambda w: w["x0"])
+            result.append(line_words)
+
+    unassigned = [w for w in words if id(w) not in assigned]
+    if unassigned:
+        unassigned.sort(key=lambda w: (w["top"], w["x0"]))
+        cur = [unassigned[0]]
+        for w in unassigned[1:]:
+            if abs(w["top"] - cur[0]["top"]) <= 3:
+                cur.append(w)
+            else:
+                result.append(sorted(cur, key=lambda w: w["x0"]))
+                cur = [w]
+        if cur:
+            result.append(sorted(cur, key=lambda w: w["x0"]))
+
+    return result
+
+
 def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
     """Extract text from PDF using pdfplumber (layout-aware).
 
-    Mirrors the pdfalto pipeline: extracts words with font metadata,
-    detects columns from word positions, groups lines into blocks
-    within each column, and prefixes headers with '## ' based on
-    font size/style analysis.
+    Uses recursive XY-cut tree (ported from xpdf's splitChars algorithm)
+    to determine reading order, then groups words into blocks and
+    prefixes headers with '## ' based on font size/style analysis.
 
     Pipeline:
-      1. Extract words with (x0, y0, x1, y1, fontname, size)
-      2. Group words into lines by vertical proximity
-      3. Detect column boundaries from line center-x positions
-      4. Assign lines to columns
-      5. Within each column, group lines into blocks by vertical gaps
-      6. Read columns left-to-right, blocks top-to-bottom
-      7. Detect headers via font size/bold heuristics
+      1. Extract chars and words with (x0, y0, x1, y1, fontname, size)
+      2. Recursive XY-cut on chars to determine reading order
+      3. Map char-level lines back to word-level lines
+      4. Group word lines into blocks by vertical gaps
+      5. Classify blocks as header/meta/body/footer
+      6. Detect headers via font size/bold heuristics
     """
     import pdfplumber
 
@@ -980,102 +1033,17 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             if not words:
                 continue
 
-            det_lines = _group_words_into_lines(words)
-            if not det_lines:
+            from poster2json.xy_cut import chars_to_reading_order
+
+            reading_lines = chars_to_reading_order(chars)
+            if not reading_lines:
                 continue
-            line_cxs = []
-            for line in det_lines:
-                cx = (min(w["x0"] for w in line)
-                      + max(w["x1"] for w in line)) / 2
-                line_cxs.append(cx)
-            boundaries = _detect_column_boundaries(line_cxs, page_w)
-            boundaries = _validate_boundaries(boundaries, det_lines,
-                                              page_w)
 
-            from bisect import bisect_right
-
-            if boundaries:
-                counts = [0] * (len(boundaries) + 1)
-                for cx in line_cxs:
-                    counts[bisect_right(boundaries, cx)] += 1
-                if max(counts) / max(sum(counts), 1) > 0.85:
-                    boundaries = []
-
-            if not boundaries:
-                boundaries = _detect_column_boundaries_from_gaps(
-                    det_lines, page_w)
-                boundaries = _validate_boundaries(
-                    boundaries, det_lines, page_w)
-
-            flow_lines = []
-            current_line = [words[0]]
-            for w in words[1:]:
-                if abs(w["top"] - current_line[0]["top"]) <= 3:
-                    current_line.append(w)
-                else:
-                    flow_lines.append(current_line)
-                    current_line = [w]
-            if current_line:
-                flow_lines.append(current_line)
-
-            if boundaries:
-                boundary_tol = page_w * 0.05
-                col_lines = [[] for _ in range(len(boundaries) + 1)]
-                for fline in flow_lines:
-                    sorted_w = sorted(fline, key=lambda w: w["x0"])
-                    x_min = sorted_w[0]["x0"]
-                    x_max = sorted_w[-1]["x1"]
-
-                    split_at = []
-                    if len(sorted_w) >= 2:
-                        for b in boundaries:
-                            if x_min >= b or x_max <= b:
-                                continue
-                            for j in range(1, len(sorted_w)):
-                                gap = sorted_w[j]["x0"] - sorted_w[j - 1]["x1"]
-                                if gap < 15:
-                                    continue
-                                mid = (sorted_w[j - 1]["x1"]
-                                       + sorted_w[j]["x0"]) / 2
-                                if abs(mid - b) <= boundary_tol:
-                                    split_at.append(j)
-                                    break
-
-                    if split_at:
-                        split_at.sort()
-                        cuts = [0] + split_at + [len(sorted_w)]
-                        n_segs = len(cuts) - 1
-                        if all(cuts[k + 1] - cuts[k] >= 2
-                               for k in range(n_segs - 1)) and n_segs >= 1:
-                            for k in range(len(cuts) - 1):
-                                sub = sorted_w[cuts[k]:cuts[k + 1]]
-                                cx = (min(w["x0"] for w in sub)
-                                      + max(w["x1"] for w in sub)) / 2
-                                ci = bisect_right(boundaries, cx)
-                                col_lines[ci].append(sub)
-                            continue
-
-                    cx = (x_min + x_max) / 2
-                    ci = bisect_right(boundaries, cx)
-                    col_lines[ci].append(sorted_w)
-
-                all_blocks = []
-                for ci, col in enumerate(col_lines):
-                    col.sort(key=lambda line: min(w["top"] for w in line))
-                    col_blocks = _lines_to_blocks(col)
-                    for blk in col_blocks:
-                        blk["col"] = ci
-                        blk["flow_idx"] = 0
-                    all_blocks.extend(col_blocks)
-            else:
-                ordered_lines = []
-                for fline in flow_lines:
-                    sorted_w = sorted(fline, key=lambda w: w["x0"])
-                    ordered_lines.append(sorted_w)
-                all_blocks = _lines_to_blocks(ordered_lines)
-                for blk in all_blocks:
-                    blk["col"] = 0
-                    blk["flow_idx"] = 0
+            word_lines = _chars_to_word_lines(reading_lines, words)
+            all_blocks = _lines_to_blocks(word_lines)
+            for blk in all_blocks:
+                blk["col"] = 0
+                blk["flow_idx"] = 0
 
             if not all_blocks:
                 continue
@@ -1123,7 +1091,7 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             header_blocks.sort(key=lambda b: b["vpos"])
             meta_blocks.sort(key=lambda b: (b["vpos"], b["hpos"]))
-            body_blocks.sort(key=lambda b: (b["col"], b["vpos"]))
+            # Body blocks are already in XY-cut reading order — don't re-sort
             footer_blocks.sort(key=lambda b: b["vpos"])
             all_blocks = header_blocks + meta_blocks + body_blocks + footer_blocks
 
