@@ -75,6 +75,30 @@ _SECTION_KEYWORDS = frozenset({
     "contact", "contact information",
 })
 
+# Dense conference posters often cram several footer sections onto one
+# extracted line, marked by inline ALL-CAPS labels with a colon, e.g.
+# "...results REFERENCES: 1. ... ABBREVIATIONS: CCR, ... DISCLOSURES: ...".
+# Case-sensitive (uppercase only) so we don't split on the same word used
+# in normal prose. Splitting here lets the LLM isolate each footer section.
+_INLINE_LABELS = (
+    "REFERENCES", "REFERENCE", "BIBLIOGRAPHY", "ABBREVIATIONS",
+    "DISCLOSURES", "DISCLOSURE", "ACKNOWLEDGEMENTS", "ACKNOWLEDGMENTS",
+    "FUNDING", "CONFLICTS OF INTEREST", "CONFLICT OF INTEREST",
+    "COMPETING INTERESTS", "CORRESPONDING AUTHOR", "CONTACT",
+    "CONCLUSIONS", "CONCLUSION",
+)
+_INLINE_LABEL_RE = re.compile(
+    r"(?:(?<=[\s.;)])|^)(" + "|".join(_INLINE_LABELS) + r")\s*:\s+"
+)
+
+# Inline ALL-CAPS sub-header led by an em/en dash, e.g. "TWINS — Our second
+# sample ..." glued onto the end of a prior paragraph. Requires sentence-end
+# or line-start before, an uppercase letter after, to avoid matching inline
+# abbreviation definitions like "CCR — cetuximab" (lowercase after dash).
+_INLINE_DASH_HEAD_RE = re.compile(
+    r"(?:(?<=[.;])\s+|^)([A-Z][A-Z]{2,})\s*[—–]\s+(?=[A-Z])"
+)
+
 # Find pdfalto executable
 PDFALTO_PATH = os.environ.get("PDFALTO_PATH")
 if not PDFALTO_PATH:
@@ -1008,6 +1032,28 @@ def _chars_to_word_lines(char_lines, words):
     return result
 
 
+def _split_inline_sections(text: str):
+    """Split a run-on block at inline ALL-CAPS section labels and em-dash
+    sub-headers. Returns a list of (heading_or_None, body) segments, or None
+    if the block contains no inline boundary (the common case)."""
+    marks = []
+    for m in _INLINE_LABEL_RE.finditer(text):
+        marks.append((m.start(), m.end(), m.group(1).title()))
+    for m in _INLINE_DASH_HEAD_RE.finditer(text):
+        marks.append((m.start(), m.end(), m.group(1).title()))
+    if not marks:
+        return None
+    marks.sort()
+    segments = []
+    pre = text[:marks[0][0]].strip()
+    if pre:
+        segments.append((None, pre))
+    for i, (_s, end, heading) in enumerate(marks):
+        nxt = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+        segments.append((heading, text[end:nxt].strip()))
+    return segments
+
+
 def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
     """Extract text from PDF using pdfplumber (layout-aware).
 
@@ -1155,6 +1201,19 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                 # the LLM splits it out instead of merging it into the body.
                 if _t.rstrip(":.").strip().lower() in _SECTION_KEYWORDS:
                     all_output_lines.append(f"## {_add_bidi_markers(_t)}")
+                    continue
+
+                # Run-on block cramming multiple sections onto one line via
+                # inline ALL-CAPS labels ("...REFERENCES: ... ABBREVIATIONS: ...")
+                # or em-dash sub-headers ("265. TWINS — Our second sample ...").
+                # Split into labeled sections so the LLM doesn't merge them.
+                _segs = _split_inline_sections(_t)
+                if _segs:
+                    for _head, _body in _segs:
+                        if _head:
+                            all_output_lines.append(f"## {_head}")
+                        if _body:
+                            all_output_lines.append(_add_bidi_markers(_body))
                     continue
 
                 _words = _t.split()
