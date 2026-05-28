@@ -161,6 +161,70 @@ def _cluster_lines(chars):
     return lines
 
 
+def _promote_spanning_leaves(block, page_width):
+    """Promote wide leaves nested in vsplits to hsplit siblings.
+
+    Handles layouts where a spanning block (title, footnote, sidebar)
+    ends up inside a column split because its y-position overlaps the
+    column region. Promotes any leaf wider than 0.7 × page_width out
+    of its vsplit parent and re-wraps as an hsplit ordered by y.
+    """
+    if block.kind == "leaf":
+        return block
+    block.children = [_promote_spanning_leaves(c, page_width) for c in block.children]
+    if block.kind != "vsplit":
+        return block
+
+    wide_threshold = 0.7 * page_width
+    wide = []
+    narrow = []
+    for child in block.children:
+        child_w = child.bbox[2] - child.bbox[0]
+        if child.kind == "leaf" and child_w > wide_threshold:
+            wide.append(child)
+        else:
+            narrow.append(child)
+
+    if not wide or not narrow:
+        return block
+
+    all_children = sorted(block.children, key=lambda c: c.bbox[1])
+    new_children = []
+    col_group = []
+    for child in all_children:
+        if child in wide:
+            if col_group:
+                if len(col_group) == 1:
+                    new_children.append(col_group[0])
+                else:
+                    xs = [c.bbox[0] for c in col_group]
+                    ys = [c.bbox[1] for c in col_group]
+                    xe = [c.bbox[2] for c in col_group]
+                    ye = [c.bbox[3] for c in col_group]
+                    new_children.append(Block(
+                        "vsplit", (min(xs), min(ys), max(xe), max(ye)), [], col_group
+                    ))
+                col_group = []
+            new_children.append(child)
+        else:
+            col_group.append(child)
+    if col_group:
+        if len(col_group) == 1:
+            new_children.append(col_group[0])
+        else:
+            xs = [c.bbox[0] for c in col_group]
+            ys = [c.bbox[1] for c in col_group]
+            xe = [c.bbox[2] for c in col_group]
+            ye = [c.bbox[3] for c in col_group]
+            new_children.append(Block(
+                "vsplit", (min(xs), min(ys), max(xe), max(ye)), [], col_group
+            ))
+
+    if len(new_children) == 1:
+        return new_children[0]
+    return Block("hsplit", block.bbox, [], new_children)
+
+
 def traverse(block: Block) -> list:
     if block.kind == "leaf":
         return _cluster_lines(block.chars)
@@ -170,9 +234,11 @@ def traverse(block: Block) -> list:
     return out
 
 
-def chars_to_reading_order(raw_chars: list) -> list:
+def chars_to_reading_order(raw_chars: list, page_width: float = 0) -> list:
     chars = [c for c in raw_chars if c.get("text", "").strip()]
     if not chars:
         return []
     tree = split_block(chars)
+    if page_width > 0:
+        tree = _promote_spanning_leaves(tree, page_width)
     return traverse(tree)

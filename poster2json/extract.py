@@ -1045,7 +1045,7 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             from poster2json.xy_cut import chars_to_reading_order
 
-            reading_lines = chars_to_reading_order(chars)
+            reading_lines = chars_to_reading_order(chars, page_width=page_w)
             if not reading_lines:
                 continue
 
@@ -1057,6 +1057,9 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             if not all_blocks:
                 continue
+
+            all_fontsizes = [blk["fontsize"] for blk in all_blocks if blk["fontsize"] > 0]
+            page_median_fs = sorted(all_fontsizes)[len(all_fontsizes) // 2] if all_fontsizes else 0
 
             text_left = min(blk["hpos"] for blk in all_blocks)
             text_right = max(blk["hpos"] + blk["width"] for blk in all_blocks)
@@ -1088,7 +1091,8 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             footer_blocks = []
             for blk in all_blocks:
                 is_wide = blk["width"] > span_threshold
-                if is_wide and blk["vpos"] + blk["height"] <= col_start + page_h * 0.02:
+                is_title_font = page_median_fs > 0 and blk["fontsize"] >= page_median_fs * 1.4
+                if is_title_font and blk["vpos"] + blk["height"] <= col_start + page_h * 0.02:
                     header_blocks.append(blk)
                 elif is_wide and blk["vpos"] > col_end:
                     footer_blocks.append(blk)
@@ -1101,12 +1105,10 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             header_blocks.sort(key=lambda b: b["vpos"])
             meta_blocks.sort(key=lambda b: (b["vpos"], b["hpos"]))
-            # Body blocks are already in XY-cut reading order — don't re-sort
             footer_blocks.sort(key=lambda b: b["vpos"])
             all_blocks = header_blocks + meta_blocks + body_blocks + footer_blocks
 
-            body_sizes = [blk["fontsize"] for blk in all_blocks if blk["fontsize"] > 0]
-            median_fontsize = sorted(body_sizes)[len(body_sizes) // 2] if body_sizes else 0
+            median_fontsize = page_median_fs
 
             for blk in all_blocks:
                 _t = blk["text"].strip()
@@ -1138,7 +1140,7 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                     elif fs > median_fontsize * 1.3:
                         is_header = True
 
-                text = blk["text"]
+                text = _add_bidi_markers(blk["text"])
                 if is_header:
                     text = f"## {text}"
                 all_output_lines.append(text)
@@ -1869,6 +1871,32 @@ def _robust_json_parse(response: str) -> dict:
 # ============================
 # POST-PROCESSING
 # ============================
+
+
+def _add_bidi_markers(text: str) -> str:
+    """Wrap RTL character runs in bidi embedding markers.
+
+    pdfplumber strips the bidi markers that pdfalto/xpdf preserved around
+    Hebrew, Arabic, and other RTL words. Without them the LLM receives bare
+    RTL codepoints in an unstructured layout and fails to extract sections.
+    """
+    if not text:
+        return text
+    has_rtl = False
+    for ch in text:
+        if unicodedata.bidirectional(ch) in ("R", "AL"):
+            has_rtl = True
+            break
+    if not has_rtl:
+        return text
+    words = text.split(" ")
+    result = []
+    for word in words:
+        if any(unicodedata.bidirectional(c) in ("R", "AL") for c in word):
+            result.append(f"‫{word}‬")
+        else:
+            result.append(word)
+    return " ".join(result)
 
 
 def _clean_unicode_artifacts(text: str) -> str:
