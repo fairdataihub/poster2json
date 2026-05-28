@@ -11,7 +11,7 @@ VALID_POSTER_JSON = {
     "identifiers": [{"identifier": "10.5072/test.1", "identifierType": "DOI"}],
     "creators": [{"name": "Doe, John"}],
     "titles": [{"title": "Test Poster"}],
-    "publisher": {"name": "Test Publisher"},
+    "publisher": {"name": "Zenodo"},
     "publicationYear": 2025,
     "subjects": [{"subject": "Testing"}],
     "dates": [{"date": "2025", "dateType": "Created"}],

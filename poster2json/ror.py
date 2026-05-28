@@ -222,25 +222,6 @@ def enrich_persons(persons: list, client: RorClient) -> list:
     return persons
 
 
-def enrich_publisher(publisher, client: RorClient):
-    if not isinstance(publisher, dict):
-        return publisher
-    if publisher.get("publisherIdentifier"):
-        return publisher
-    name = publisher.get("name")
-    if not isinstance(name, str):
-        return publisher
-    m = client.lookup(name)
-    if m:
-        out = dict(publisher)
-        out["name"] = m["name"]
-        out["publisherIdentifier"] = m["id"]
-        out["publisherIdentifierScheme"] = "ROR"
-        out["schemeURI"] = "https://ror.org"
-        return out
-    return publisher
-
-
 _default_client: Optional[RorClient] = None
 
 
