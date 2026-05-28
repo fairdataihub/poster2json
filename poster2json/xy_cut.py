@@ -225,6 +225,26 @@ def _promote_spanning_leaves(block, page_width):
     return Block("hsplit", block.bbox, [], new_children)
 
 
+def _merge_bottom_region(block, page_height):
+    """Merge bottom portions of top-level vsplits into horizontal reading order.
+
+    In academic posters, the bottom region often has sections (Conclusion,
+    References, Acknowledgements) that should be read top-to-bottom across
+    the full width, not column-by-column.
+    """
+    if block.kind == "leaf":
+        return block
+    block.children = [_merge_bottom_region(c, page_height) for c in block.children]
+    if block.kind != "vsplit" or len(block.children) < 2:
+        return block
+
+    if block.bbox[1] < page_height * 0.65:
+        return block
+
+    reordered = sorted(block.children, key=lambda c: c.bbox[1])
+    return Block("hsplit", block.bbox, [], reordered)
+
+
 def traverse(block: Block) -> list:
     if block.kind == "leaf":
         return _cluster_lines(block.chars)
@@ -234,11 +254,14 @@ def traverse(block: Block) -> list:
     return out
 
 
-def chars_to_reading_order(raw_chars: list, page_width: float = 0) -> list:
+def chars_to_reading_order(raw_chars: list, page_width: float = 0,
+                           page_height: float = 0) -> list:
     chars = [c for c in raw_chars if c.get("text", "").strip()]
     if not chars:
         return []
     tree = split_block(chars)
     if page_width > 0:
         tree = _promote_spanning_leaves(tree, page_width)
+    if page_height > 0:
+        tree = _merge_bottom_region(tree, page_height)
     return traverse(tree)

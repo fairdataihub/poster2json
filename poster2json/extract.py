@@ -60,6 +60,21 @@ EXT_TO_FORMAT = {
     ".jpeg": "image/jpeg",
 }
 
+# Standalone section headings that posters print as a single bare word/phrase.
+# Small-caption/footer fonts mean the font-size header heuristic misses these,
+# so the LLM merges "References"/"Acknowledgements" into the adjacent body blob
+# and the buried section matches at ~0.15 instead of ~1.0 section-level ROUGE.
+_SECTION_KEYWORDS = frozenset({
+    "abstract", "introduction", "background", "objective", "objectives",
+    "aim", "aims", "hypothesis", "methods", "methodology",
+    "materials and methods", "results", "results and discussion",
+    "discussion", "conclusion", "conclusions", "summary",
+    "references", "reference", "bibliography",
+    "acknowledgements", "acknowledgments", "acknowledgement",
+    "funding", "limitations", "future work", "future directions",
+    "contact", "contact information",
+})
+
 # Find pdfalto executable
 PDFALTO_PATH = os.environ.get("PDFALTO_PATH")
 if not PDFALTO_PATH:
@@ -1033,6 +1048,10 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             if text_chars:
                 median_fs = float(np.median([c["size"] for c in text_chars]))
                 x_tol = round(max(1.5, min(median_fs * 0.25, 3.0)), 2)
+                space_chars = [c for c in chars if c.get("text") == " " and c["x1"] - c["x0"] > 0]
+                if space_chars:
+                    space_w = float(np.median([c["x1"] - c["x0"] for c in space_chars]))
+                    x_tol = round(min(x_tol, space_w * 0.7), 2)
             else:
                 x_tol = 3
             log(f"   x_tolerance={x_tol} (median_font={median_fs if text_chars else '?'}pt)")
@@ -1045,7 +1064,7 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             from poster2json.xy_cut import chars_to_reading_order
 
-            reading_lines = chars_to_reading_order(chars, page_width=page_w)
+            reading_lines = chars_to_reading_order(chars, page_width=page_w, page_height=page_h)
             if not reading_lines:
                 continue
 
@@ -1114,6 +1133,30 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                 _t = blk["text"].strip()
                 if not _t:
                     continue
+
+                # Figure/table caption: split the "Figure N"/"Table N" label
+                # onto its own header line so the LLM isolates the caption as a
+                # caption section instead of merging it into adjacent body text.
+                # Captions are small-font, so the font-size header heuristic
+                # below never catches them; a buried short caption tanks
+                # section-level ROUGE (matches at ~0.2 instead of ~1.0).
+                _cap = re.match(
+                    r"^[^A-Za-z]*(fig(?:ure)?|tab(?:le)?)\.?\s*(\d+)\s*[.:]\s*(\S.*)$",
+                    _t, re.IGNORECASE | re.DOTALL,
+                )
+                if _cap:
+                    _kind = "Figure" if _cap.group(1)[:3].lower() == "fig" else "Table"
+                    all_output_lines.append(f"## {_kind} {_cap.group(2)}")
+                    all_output_lines.append(_add_bidi_markers(_cap.group(3).strip()))
+                    continue
+
+                # Standalone section heading printed as a bare keyword line
+                # (e.g. "References", "Acknowledgements"). Force a ## header so
+                # the LLM splits it out instead of merging it into the body.
+                if _t.rstrip(":.").strip().lower() in _SECTION_KEYWORDS:
+                    all_output_lines.append(f"## {_add_bidi_markers(_t)}")
+                    continue
+
                 _words = _t.split()
                 _single_char = sum(1 for w in _words if len(w) <= 1)
                 if len(_words) >= 2 and _single_char > len(_words) * 0.6:
@@ -1130,15 +1173,21 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                 )
 
                 is_header = False
+                _is_continuation = bool(re.match(
+                    r'(?:to|and|or|the|a|an|in|of|for|with|by|from|that|which|when)\s', _t
+                ))
                 min_words = 1 if blk["bold"] else 2
                 if (median_fontsize > 0 and len(_t) <= 120
                         and _starts_with_letter and len(_alpha_words) >= min_words
-                        and not _is_contact):
+                        and not _is_contact and not _is_continuation):
                     fs = blk["fontsize"]
                     if blk["bold"] and fs >= median_fontsize:
                         is_header = True
                     elif fs > median_fontsize * 1.3:
-                        is_header = True
+                        if len(_alpha_words) == 1:
+                            is_header = _alpha_words[0].isupper()
+                        else:
+                            is_header = True
 
                 text = _add_bidi_markers(blk["text"])
                 if is_header:
