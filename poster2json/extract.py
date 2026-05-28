@@ -807,7 +807,7 @@ EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
 0. GROUNDING: Every value you output MUST come from text visibly present in the poster below. If a field's value cannot be found in the poster text, use null or []. NEVER invent, guess, or infer content that is not explicitly written on the poster.
-1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, publisher, conference, version
+1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, conference, version
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
@@ -825,7 +825,6 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
   "descriptions": [{{"description": "A concise summary of the poster content...", "descriptionType": "Abstract"}}],
-  "publisher": null,
   "conference": null,
   "researchField": null,
   "version": null,
@@ -845,7 +844,6 @@ EXTRACTION NOTES:
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Summarize the poster content concisely; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
-- publisher: Extract the publisher, hosting institution, or repository name ONLY if the exact name appears as text on the poster. If not found, set to null. Do NOT copy any name from these instructions.
 - conference: Extract ONLY from text clearly visible on the poster (header, footer, logos). Every conference field value must be a direct quote from the poster text. If no conference information is found, output "conference": null. Do NOT invent or guess conference names, locations, dates, or URLs. Do NOT copy any example from these instructions.
 - imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be verbatim text from the poster. If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output placeholder text — just use an empty array.
 - version: Extract ONLY if a version number/string is explicitly printed on the poster (e.g. "v1.0", "Version 2"). If not found, set to null.
@@ -862,11 +860,11 @@ POSTER TEXT TO CONVERT:
 OUTPUT VALID JSON ONLY:"""
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
-1. creators, titles, publicationYear, subjects, descriptions, publisher, conference, version, content
+1. creators, titles, publicationYear, subjects, descriptions, conference, version, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
-5. conference/publisher: extract ONLY if clearly visible on the poster. If not found, set to null. NEVER invent names, locations, dates, URLs, or use generic placeholders.
+5. conference: extract ONLY if clearly visible on the poster. If not found, set to null. NEVER invent names, locations, dates, URLs, or use generic placeholders.
 6. imageCaptions/tableCaptions: ONLY for figures/tables that exist on the poster. If none, use [].
 7. GROUNDING: Every value must come from text in the poster. If not found, use null or [].
 
@@ -876,7 +874,6 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
   "descriptions": [{{"description": "Concise poster summary", "descriptionType": "Abstract"}}],
-  "publisher": null,
   "conference": null,
   "researchField": null,
   "version": null,
@@ -1291,12 +1288,6 @@ def _needs_ror_enrichment(persons) -> bool:
     return False
 
 
-def _needs_publisher_ror(publisher) -> bool:
-    if not isinstance(publisher, dict):
-        return False
-    return bool(publisher.get("name")) and not publisher.get("publisherIdentifier")
-
-
 def _needs_orcid_enrichment(creators) -> bool:
     if not isinstance(creators, list):
         return False
@@ -1386,12 +1377,8 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             if not meaningful:
                 result["conference"] = None
 
-    # Strip placeholder/hallucinated publisher values
-    pub = result.get("publisher")
-    if isinstance(pub, dict):
-        pn = pub.get("name", "")
-        if isinstance(pn, str) and _is_placeholder(pn):
-            result["publisher"] = None
+    # Publisher is auto-set by posters.science — strip if the LLM emitted one
+    result.pop("publisher", None)
 
     # Filter bogus captions (hallucinated "not found" or template echoes)
     for key in ("imageCaptions", "tableCaptions"):
@@ -1520,18 +1507,15 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             # honest than guessing.
             result["language"] = None
 
-    # ROR enrichment -- skip if all affiliations/publisher already resolved
+    # ROR enrichment -- skip if all affiliations already resolved
     if (_needs_ror_enrichment(result.get("creators"))
-            or _needs_ror_enrichment(result.get("contributors"))
-            or _needs_publisher_ror(result.get("publisher"))):
-        from .ror import enrich_persons, enrich_publisher, get_default_client
+            or _needs_ror_enrichment(result.get("contributors"))):
+        from .ror import enrich_persons, get_default_client
         ror = get_default_client()
         if "creators" in result:
             result["creators"] = enrich_persons(result["creators"], ror)
         if "contributors" in result:
             result["contributors"] = enrich_persons(result["contributors"], ror)
-        if "publisher" in result:
-            result["publisher"] = enrich_publisher(result["publisher"], ror)
 
     # Funder + award normalization, then ROR funder lookup
     if "fundingReferences" in result:
@@ -1559,38 +1543,6 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         result["creators"] = enrich_creators_orcid(
             result["creators"], get_orcid_client()
         )
-
-    # Publisher-suspect detection: flag when publisher ROR matches a
-    # creator's affiliation ROR (user likely typed their institution
-    # as the publisher instead of the repository/platform).
-    pub_id = (
-        result.get("publisher", {}).get("publisherIdentifier")
-        if isinstance(result.get("publisher"), dict)
-        else None
-    )
-    if pub_id:
-        aff_ids = set()
-        for person_list in ("creators", "contributors"):
-            for person in result.get(person_list, []):
-                if not isinstance(person, dict):
-                    continue
-                for aff in person.get("affiliation") or []:
-                    if isinstance(aff, dict):
-                        aid = aff.get("affiliationIdentifier")
-                        if aid:
-                            aff_ids.add(aid)
-        if pub_id in aff_ids:
-            result.setdefault("_validation", [])
-            result["_validation"].append(
-                {
-                    "field": "publisher",
-                    "level": "warning",
-                    "message": (
-                        f"Publisher ROR ({pub_id}) matches a creator affiliation; "
-                        "the publisher may actually be a repository or platform."
-                    ),
-                }
-            )
 
     return result
 

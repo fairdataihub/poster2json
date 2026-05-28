@@ -9,7 +9,6 @@ from poster2json.ror import (
     RorClient,
     _enrich_affiliation_item,
     enrich_persons,
-    enrich_publisher,
 )
 
 
@@ -61,18 +60,6 @@ def test_enrich_persons_skips_missing_affiliation():
     persons = [{"name": "A"}, {"name": "B", "affiliation": []}]
     out = enrich_persons(persons, client)
     assert out == persons
-
-
-def test_enrich_publisher_replaces_name_and_adds_id():
-    client = StubClient({"Zenodo": {"id": "https://ror.org/04wxnsj81", "name": "Zenodo"}})
-    out = enrich_publisher({"name": "Zenodo"}, client)
-    assert out["publisherIdentifier"] == "https://ror.org/04wxnsj81"
-
-
-def test_enrich_publisher_preserves_existing_identifier():
-    client = StubClient({"X": {"id": "https://ror.org/new", "name": "Y"}})
-    pub = {"name": "X", "publisherIdentifier": "https://ror.org/preserved"}
-    assert enrich_publisher(pub, client) == pub
 
 
 def test_disabled_client_returns_none(tmp_path, monkeypatch):

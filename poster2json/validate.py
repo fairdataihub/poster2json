@@ -94,7 +94,6 @@ def validate_required_fields(data: dict) -> Tuple[bool, List[str]]:
     - publicationYear
     - subjects
     - descriptions
-    - publisher
     - conference
     - formats
 
@@ -110,7 +109,6 @@ def validate_required_fields(data: dict) -> Tuple[bool, List[str]]:
         "publicationYear",
         "subjects",
         "descriptions",
-        "publisher",
         "conference",
         "formats",
     ]
