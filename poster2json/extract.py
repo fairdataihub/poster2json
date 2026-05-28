@@ -824,7 +824,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "titles": [{{"title": "Main Poster Title"}}],
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
-  "descriptions": [{{"description": "A concise summary of the poster content...", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "A 3-4 sentence summary of the full poster...", "descriptionType": "Abstract"}}],
   "conference": null,
   "researchField": null,
   "version": null,
@@ -842,7 +842,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 EXTRACTION NOTES:
 - publicationYear: Extract ONLY if a year is explicitly printed on the poster (e.g. in a date, conference name, or footer). If not found, set to null. NEVER guess or use the current year.
 - subjects: Extract 3-5 keywords from poster content
-- descriptions: Summarize the poster content concisely; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
+- descriptions: Write a 3-4 sentence summary of the full poster; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
 - conference: Extract ONLY from text clearly visible on the poster (header, footer, logos). Every conference field value must be a direct quote from the poster text. If no conference information is found, output "conference": null. Do NOT invent or guess conference names, locations, dates, or URLs. Do NOT copy any example from these instructions.
 - imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be verbatim text from the poster. If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output placeholder text — just use an empty array.
@@ -873,7 +873,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "titles": [{{"title": "Poster Title"}}],
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
-  "descriptions": [{{"description": "Concise poster summary", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "3-4 sentence summary of the full poster", "descriptionType": "Abstract"}}],
   "conference": null,
   "researchField": null,
   "version": null,
