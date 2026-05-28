@@ -1527,7 +1527,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "titles": [{{"title": "Main Poster Title"}}],
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
-  "descriptions": [{{"description": "A concise summary of the poster content...", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "A 3-4 sentence summary of the full poster...", "descriptionType": "Abstract"}}],
   "conference": null,
   "researchField": null,
   "version": null,
@@ -1545,7 +1545,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 EXTRACTION NOTES:
 - publicationYear: Extract if a year is printed on the poster. If not found, set to null.
 - subjects: Extract 3-5 keywords from poster content
-- descriptions: Summarize the poster content concisely; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
+- descriptions: Write a 3-4 sentence summary of the full poster; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
 - conference: Extract from text visible on the poster (header, footer, logos). If not found, set to null.
 - imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
@@ -1572,7 +1572,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "titles": [{{"title": "Poster Title"}}],
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
-  "descriptions": [{{"description": "Concise poster summary", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "3-4 sentence summary of the full poster", "descriptionType": "Abstract"}}],
   "conference": null,
   "researchField": null,
   "version": null,
