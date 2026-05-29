@@ -8,9 +8,9 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 
 ## Features
 
-- **PDF Processing**: Layout-aware text extraction via pdfalto
+- **PDF Processing**: Layout-aware text extraction via pdfplumber
 - **Image Processing**: Vision-based OCR via Qwen2-VL-7B
-- **JSON Structuring**: Fine-tuned Llama 3.1 8B for poster-specific metadata
+- **JSON Structuring**: Llama 3.1 8B (instruct) for poster-specific metadata
 - **Schema Validation**: Built-in validation against poster-json-schema
 - **CLI & Python API**: Flexible usage options
 
@@ -50,7 +50,7 @@ is_valid = validate_poster(result)
 The pipeline processes posters in two stages:
 
 1. **Raw Text Extraction**
-   - PDF files → pdfalto (layout-aware XML)
+   - PDF files → pdfplumber (layout-aware text)
    - Image files → Qwen2-VL-7B (vision OCR)
 
 2. **JSON Structuring**
@@ -60,7 +60,7 @@ See [Architecture](architecture.md) for technical details.
 
 ## Performance
 
-Validated on 10 manually annotated scientific posters with 100% pass rate.
+Validated on 20 manually annotated scientific posters with a 95% pass rate (19/20).
 
 See [Evaluation](evaluation.md) for detailed metrics.
 
@@ -68,7 +68,6 @@ See [Evaluation](evaluation.md) for detailed metrics.
 
 - NVIDIA GPU with ≥16GB VRAM
 - Python 3.10+
-- pdfalto (for PDF processing)
 
 ## Links
 

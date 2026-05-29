@@ -9,7 +9,7 @@ Models:
 - Qwen2-VL-7B-Instruct: Vision OCR for images
 
 Requirements:
-- pdfalto: PDF layout analysis tool (https://github.com/kermitt2/pdfalto)
+- pdfplumber: layout-aware PDF text extraction (MIT-licensed)
 - CUDA-capable GPU with ≥16GB VRAM
 """
 
@@ -17,8 +17,6 @@ import gc
 import json
 import os
 import re
-import shutil
-import subprocess
 import tempfile
 import time
 import unicodedata
@@ -34,6 +32,8 @@ from transformers import (
     AutoProcessor,
     AutoTokenizer,
     BitsAndBytesConfig,
+    LogitsProcessor,
+    LogitsProcessorList,
     Qwen2VLForConditionalGeneration,
     TextStreamer,
 )
@@ -58,23 +58,44 @@ EXT_TO_FORMAT = {
     ".jpeg": "image/jpeg",
 }
 
-# Find pdfalto executable
-PDFALTO_PATH = os.environ.get("PDFALTO_PATH")
-if not PDFALTO_PATH:
-    known_paths = [
-        Path(__file__).parent / "executables" / "pdfalto",
-        Path.home() / "Downloads" / "pdfalto",
-        "/usr/local/bin/pdfalto",
-        "/usr/bin/pdfalto",
-    ]
-    for p in known_paths:
-        if Path(p).exists():
-            PDFALTO_PATH = str(p)
-            break
-    if not PDFALTO_PATH:
-        pdfalto_in_path = shutil.which("pdfalto")
-        if pdfalto_in_path:
-            PDFALTO_PATH = pdfalto_in_path
+# Standalone section headings that posters print as a single bare word/phrase.
+# Small-caption/footer fonts mean the font-size header heuristic misses these,
+# so the LLM merges "References"/"Acknowledgements" into the adjacent body blob
+# and the buried section matches at ~0.15 instead of ~1.0 section-level ROUGE.
+_SECTION_KEYWORDS = frozenset({
+    "abstract", "introduction", "background", "objective", "objectives",
+    "aim", "aims", "hypothesis", "methods", "methodology",
+    "materials and methods", "results", "results and discussion",
+    "discussion", "conclusion", "conclusions", "summary",
+    "references", "reference", "bibliography",
+    "acknowledgements", "acknowledgments", "acknowledgement",
+    "funding", "limitations", "future work", "future directions",
+    "contact", "contact information",
+})
+
+# Dense conference posters often cram several footer sections onto one
+# extracted line, marked by inline ALL-CAPS labels with a colon, e.g.
+# "...results REFERENCES: 1. ... ABBREVIATIONS: CCR, ... DISCLOSURES: ...".
+# Case-sensitive (uppercase only) so we don't split on the same word used
+# in normal prose. Splitting here lets the LLM isolate each footer section.
+_INLINE_LABELS = (
+    "REFERENCES", "REFERENCE", "BIBLIOGRAPHY", "ABBREVIATIONS",
+    "DISCLOSURES", "DISCLOSURE", "ACKNOWLEDGEMENTS", "ACKNOWLEDGMENTS",
+    "FUNDING", "CONFLICTS OF INTEREST", "CONFLICT OF INTEREST",
+    "COMPETING INTERESTS", "CORRESPONDING AUTHOR", "CONTACT",
+    "CONCLUSIONS", "CONCLUSION",
+)
+_INLINE_LABEL_RE = re.compile(
+    r"(?:(?<=[\s.;)])|^)(" + "|".join(_INLINE_LABELS) + r")\s*:\s+"
+)
+
+# Inline ALL-CAPS sub-header led by an em/en dash, e.g. "TWINS — Our second
+# sample ..." glued onto the end of a prior paragraph. Requires sentence-end
+# or line-start before, an uppercase letter after, to avoid matching inline
+# abbreviation definitions like "CCR — cetuximab" (lowercase after dash).
+_INLINE_DASH_HEAD_RE = re.compile(
+    r"(?:(?<=[.;])\s+|^)([A-Z][A-Z]{2,})\s*[—–]\s+(?=[A-Z])"
+)
 
 
 def log(msg: str):
@@ -267,80 +288,6 @@ Rules:
 # ============================
 
 
-def extract_text_with_pdfalto(pdf_path: str) -> Optional[str]:
-    """Extract text from PDF using pdfalto (layout-aware)."""
-    log(f"Attempting text extraction with pdfalto for: {pdf_path}")
-    if PDFALTO_PATH is None:
-        return None
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            xml_path = os.path.join(tmpdir, "output.xml")
-            t0 = time.time()
-            result = subprocess.run(
-                [PDFALTO_PATH, "-noImage", "-readingOrder", pdf_path, xml_path],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            elapsed = time.time() - t0
-            if result.returncode != 0:
-                raise RuntimeError(f"pdfalto returned code {result.returncode}: {result.stderr}")
-            if not os.path.exists(xml_path):
-                raise RuntimeError("pdfalto did not produce output XML")
-            text = _parse_alto_xml(xml_path)
-            if text is None:
-                log(f"pdfalto XML parsing failed for: {pdf_path}")
-            else:
-                log(f"pdfalto extracted {len(text)} characters in {elapsed:.2f} seconds")
-            return text
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"pdfalto timeout processing {pdf_path}")
-    except Exception as e:
-        raise RuntimeError(f"pdfalto error: {e}")
-
-
-def _parse_text_styles(root, ns: str) -> dict:
-    """Parse <TextStyle> definitions from ALTO <Styles> section.
-
-    Returns dict keyed by style ID with fontsize (float), bold (bool),
-    italic (bool) fields.
-    """
-    styles = {}
-    for ts in root.findall(f".//{ns}TextStyle"):
-        sid = ts.get("ID", "")
-        if not sid:
-            continue
-        fontsize = 0.0
-        try:
-            fontsize = float(ts.get("FONTSIZE", "0"))
-        except (ValueError, TypeError):
-            pass
-        fontstyle = (ts.get("FONTSTYLE") or "").lower()
-        styles[sid] = {
-            "fontsize": fontsize,
-            "bold": "bold" in fontstyle,
-            "italic": "italic" in fontstyle,
-        }
-    # Try without namespace if nothing found
-    if not styles:
-        for ts in root.findall(".//TextStyle"):
-            sid = ts.get("ID", "")
-            if not sid:
-                continue
-            fontsize = 0.0
-            try:
-                fontsize = float(ts.get("FONTSIZE", "0"))
-            except (ValueError, TypeError):
-                pass
-            fontstyle = (ts.get("FONTSTYLE") or "").lower()
-            styles[sid] = {
-                "fontsize": fontsize,
-                "bold": "bold" in fontstyle,
-                "italic": "italic" in fontstyle,
-            }
-    return styles
-
-
 def _detect_column_boundaries(cx_values: list, page_w: float) -> list:
     """Detect column boundaries from block center-x gap analysis.
 
@@ -383,153 +330,698 @@ def _detect_column_boundaries(cx_values: list, page_w: float) -> list:
     return sorted(valid)
 
 
-def _parse_alto_xml(xml_path: str) -> Optional[str]:
-    """Parse ALTO XML output from pdfalto.
+def _detect_column_boundaries_from_gaps(lines: list,
+                                        page_w: float) -> list:
+    """Detect column boundaries from consistent within-line X-gaps.
 
-    Preserves pdfalto's native reading order (-readingOrder flag),
-    deduplicates lines within blocks, and prefixes detected headers
-    with '## ' based on font size/style analysis.
+    For each wide line with body-text spacing, find gaps significantly
+    larger than the line's median gap. Cluster positions; a tight cluster
+    with 5+ supporting lines is a column boundary.
     """
-    from xml.etree import ElementTree as ET
+    gap_positions = []
+    for line in lines:
+        sw = sorted(line, key=lambda w: w["x0"])
+        if len(sw) < 4:
+            continue
+        width = sw[-1]["x1"] - sw[0]["x0"]
+        if width < page_w * 0.5:
+            continue
+
+        gaps = []
+        for j in range(1, len(sw)):
+            gap = sw[j]["x0"] - sw[j - 1]["x1"]
+            pos = (sw[j - 1]["x1"] + sw[j]["x0"]) / 2
+            gaps.append((gap, pos))
+
+        if not gaps:
+            continue
+
+        median_gap = sorted(g for g, _ in gaps)[len(gaps) // 2]
+        if median_gap > 20:
+            continue
+        threshold = max(median_gap * 1.8, 20)
+        for gap, pos in gaps:
+            if gap > threshold:
+                gap_positions.append(pos)
+
+    if len(gap_positions) < 3:
+        return []
+
+    sorted_pos = sorted(gap_positions)
+    cluster_tol = page_w * 0.02
+    clusters = [[sorted_pos[0]]]
+    for pos in sorted_pos[1:]:
+        if pos - clusters[-1][-1] < cluster_tol:
+            clusters[-1].append(pos)
+        else:
+            clusters.append([pos])
+
+    from bisect import bisect_right
+
+    max_range = cluster_tol * 2
+    candidates = sorted(
+        sum(c) / len(c) for c in clusters
+        if len(c) >= 5 and (max(c) - min(c)) <= max_range
+    )[:2]
+
+    line_cxs = []
+    for line in lines:
+        cx = (min(w["x0"] for w in line)
+              + max(w["x1"] for w in line)) / 2
+        line_cxs.append(cx)
+
+    min_blocks = 3
+    min_col_width = page_w * 0.08
+    valid = []
+    for b in candidates:
+        test = sorted(valid + [b])
+        counts = [0] * (len(test) + 1)
+        for cx in line_cxs:
+            counts[bisect_right(test, cx)] += 1
+        if not all(c >= min_blocks for c in counts):
+            continue
+        edges = [0] + test + [page_w]
+        widths_ok = all(
+            edges[i + 1] - edges[i] >= min_col_width
+            for i in range(len(edges) - 1)
+        )
+        if widths_ok:
+            valid.append(b)
+
+    return sorted(valid)
+
+
+def _validate_boundaries(boundaries: list, lines: list,
+                         page_w: float) -> list:
+    """Remove boundaries that lack word-gap support from actual text lines.
+
+    A boundary is valid only if multiple lines have a word gap (>= 15pt)
+    whose midpoint falls within 5% of page width of the boundary.
+    """
+    if not boundaries or not lines:
+        return boundaries
+
+    tolerance = page_w * 0.05
+    min_support = 3
+    validated = []
+
+    for b in boundaries:
+        support = 0
+        for line in lines:
+            sw = sorted(line, key=lambda w: w["x0"])
+            if len(sw) < 2:
+                continue
+            for j in range(1, len(sw)):
+                gap = sw[j]["x0"] - sw[j - 1]["x1"]
+                if gap < 15:
+                    continue
+                mid = (sw[j - 1]["x1"] + sw[j]["x0"]) / 2
+                if abs(mid - b) <= tolerance:
+                    support += 1
+                    break
+        if support >= min_support:
+            validated.append(b)
+
+    return validated
+
+
+def _parse_font_style(fontname: str) -> dict:
+    """Parse bold/italic from a pdfplumber fontname string.
+
+    Font names follow the pattern 'SUBSET+FamilyName-Style' where style
+    contains 'Bold', 'Italic', 'BoldItalic', etc.
+    """
+    lower = fontname.lower()
+    suffix = lower.rsplit("-", 1)[-1] if "-" in lower else ""
+    return {
+        "bold": ("bold" in lower or "black" in lower or "heavy" in lower
+                 or "bd" in suffix or "demi" in suffix),
+        "italic": ("italic" in lower or "oblique" in lower or "it" in suffix),
+    }
+
+
+def _filter_phantom_spaces(chars: list) -> list:
+    """Remove space characters fully contained within a non-space character.
+
+    Some PDFs embed invisible space glyphs on top of real characters, causing
+    pdfplumber's extract_words to split words at those phantom boundaries
+    (e.g. "For" → "F or").  A phantom space is one whose entire horizontal
+    extent [x0, x1] falls within a non-space character's [x0, x1] on the
+    same line.  Legitimate word-separating spaces extend beyond the adjacent
+    character's bounds and are preserved.
+    """
+    non_space = [(c["x0"], c["x1"], c["top"]) for c in chars if c["text"].strip()]
+    if not non_space:
+        return chars
+
+    from bisect import bisect_right
+
+    ns_by_row = {}
+    for x0, x1, top in non_space:
+        row = round(top)
+        ns_by_row.setdefault(row, []).append((x0, x1))
+    for row in ns_by_row:
+        ns_by_row[row].sort()
+
+    filtered = []
+    for c in chars:
+        if not c["text"].strip():
+            row = round(c["top"])
+            is_phantom = False
+            for r in (row - 1, row, row + 1):
+                intervals = ns_by_row.get(r)
+                if not intervals:
+                    continue
+                idx = bisect_right(intervals, (c["x0"], float("inf"))) - 1
+                if idx >= 0 and intervals[idx][0] <= c["x0"] + 1 and c["x1"] <= intervals[idx][1] + 1:
+                    is_phantom = True
+                    break
+            if is_phantom:
+                continue
+        filtered.append(c)
+    return filtered
+
+
+def _annotate_words_with_fonts(words: list, chars: list) -> None:
+    """Add fontname to each word from overlapping raw characters.
+
+    pdfplumber's extract_words groups chars by extra_attrs, which means
+    including fontname would break words at font-subset boundaries (e.g.
+    ligature ﬀ in a different subset splitting "different" → "di|ff|erent").
+    We extract with extra_attrs=["size"] only, then look up each word's
+    dominant fontname from the raw chars.
+    """
+    from bisect import bisect_left, bisect_right
+
+    non_space = [c for c in chars if c["text"].strip()]
+    if not non_space:
+        return
+    non_space.sort(key=lambda c: (round(c["top"]), c["x0"]))
+    tops = [round(c["top"]) for c in non_space]
+
+    for w in words:
+        w_top = round(w["top"])
+        lo = bisect_left(tops, w_top - 2)
+        hi = bisect_right(tops, w_top + 2)
+        matching = [
+            c for c in non_space[lo:hi]
+            if c["x0"] >= w["x0"] - 1 and c["x1"] <= w["x1"] + 1
+        ]
+        if matching:
+            fonts = [c["fontname"] for c in matching if c.get("fontname")]
+            w["fontname"] = max(set(fonts), key=fonts.count) if fonts else ""
+        else:
+            w["fontname"] = ""
+
+
+def _group_words_into_lines(words: list, vtol: float = 3.0) -> list:
+    """Group pdfplumber words into lines by vertical proximity.
+
+    Words within vtol points of each other vertically are on the same line.
+    Returns list of lines, each a list of words sorted left-to-right.
+    """
+    if not words:
+        return []
+
+    sorted_words = sorted(words, key=lambda w: (w["top"], w["x0"]))
+    lines = []
+    current_line = [sorted_words[0]]
+
+    for w in sorted_words[1:]:
+        if abs(w["top"] - current_line[0]["top"]) <= vtol:
+            current_line.append(w)
+        else:
+            current_line.sort(key=lambda w: w["x0"])
+            lines.append(current_line)
+            current_line = [w]
+    if current_line:
+        current_line.sort(key=lambda w: w["x0"])
+        lines.append(current_line)
+
+    return lines
+
+
+def _assign_lines_to_columns(lines: list, boundaries: list,
+                              page_width: float = 0) -> list:
+    """Assign lines to columns, splitting cross-column merges.
+
+    When words at the same y-position from different columns get grouped
+    into one line, this function detects the gutter gap (much wider than
+    normal word spacing) and splits them apart.  Titles that intentionally
+    span the full width are kept intact.
+    """
+    from bisect import bisect_right
+
+    abs_split_min = page_width * 0.05 if page_width else 100
+
+    columns = [[] for _ in range(len(boundaries) + 1)]
+    for line in lines:
+        sorted_words = sorted(line, key=lambda w: w["x0"])
+
+        if len(sorted_words) < 2:
+            cx = (sorted_words[0]["x0"] + sorted_words[0]["x1"]) / 2
+            columns[bisect_right(boundaries, cx)].append(line)
+            continue
+
+        word_gaps = [sorted_words[i]["x0"] - sorted_words[i - 1]["x1"]
+                     for i in range(1, len(sorted_words))]
+        median_gap = min(sorted(word_gaps)[len(word_gaps) // 2], 50)
+        gutter_min = max(median_gap * 4, 20)
+
+        split_indices = []
+        for i, gap in enumerate(word_gaps):
+            if gap < gutter_min:
+                continue
+            left_x1 = sorted_words[i]["x1"]
+            right_x0 = sorted_words[i + 1]["x0"]
+            mid = (left_x1 + right_x0) / 2
+            crosses = any(left_x1 <= b <= right_x0 for b in boundaries)
+            near = any(abs(mid - b) < gap * 1.5 for b in boundaries)
+            large = gap >= abs_split_min
+            if crosses or near or large:
+                split_indices.append(i + 1)
+
+        if not split_indices:
+            cx = (min(w["x0"] for w in line) + max(w["x1"] for w in line)) / 2
+            columns[bisect_right(boundaries, cx)].append(line)
+        else:
+            cuts = [0] + split_indices + [len(sorted_words)]
+            for j in range(len(cuts) - 1):
+                sub = sorted_words[cuts[j]:cuts[j + 1]]
+                cx = (min(w["x0"] for w in sub) + max(w["x1"] for w in sub)) / 2
+                columns[bisect_right(boundaries, cx)].append(sub)
+
+    for col in columns:
+        col.sort(key=lambda line: min(w["top"] for w in line))
+
+    return columns
+
+
+def _line_is_bold(line: list) -> bool:
+    """Check if a line's dominant font is bold."""
+    styles = [_parse_font_style(w.get("fontname", "")) for w in line]
+    bold_count = sum(1 for s in styles if s["bold"])
+    return bold_count > len(styles) / 2 if styles else False
+
+
+def _line_dominant_size(line: list) -> float:
+    """Get the most common font size in a line."""
+    sizes = [w["size"] for w in line if w.get("size", 0) > 0]
+    if not sizes:
+        return 0
+    return max(set(sizes), key=sizes.count)
+
+
+def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
+    """Group vertically-sorted lines within a single column into blocks.
+
+    A new block starts when:
+      - The vertical gap exceeds line_height_mult * median line height, OR
+      - The font style changes (bold to non-bold or vice versa), OR
+      - The font size jumps significantly (> 1.3x ratio)
+    """
+    if not lines:
+        return []
+
+    line_heights = []
+    for line in lines:
+        h = max(w["bottom"] for w in line) - min(w["top"] for w in line)
+        line_heights.append(max(h, 1.0))
+    median_lh = sorted(line_heights)[len(line_heights) // 2]
+    gap_threshold = median_lh * line_height_mult
+
+    block_groups = [[lines[0]]]
+    for i in range(1, len(lines)):
+        prev_bottom = max(w["bottom"] for w in lines[i - 1])
+        curr_top = min(w["top"] for w in lines[i])
+        gap = curr_top - prev_bottom
+
+        prev_bold = _line_is_bold(lines[i - 1])
+        curr_bold = _line_is_bold(lines[i])
+        prev_size = _line_dominant_size(lines[i - 1])
+        curr_size = _line_dominant_size(lines[i])
+        size_ratio = max(curr_size, prev_size) / max(min(curr_size, prev_size), 0.1)
+
+        style_break = False
+        if size_ratio > 1.3:
+            style_break = True
+        elif prev_bold != curr_bold and gap > 0:
+            curr_text = " ".join(w["text"] for w in lines[i])
+            prev_text = " ".join(w["text"] for w in lines[i - 1])
+            short_line = len(curr_text) <= 120 or len(prev_text) <= 120
+            if short_line:
+                style_break = True
+
+        if gap > gap_threshold or style_break:
+            block_groups.append([lines[i]])
+        else:
+            block_groups[-1].append(lines[i])
+
+    blocks = []
+    for group in block_groups:
+        all_words = [w for line in group for w in line]
+        x0 = min(w["x0"] for w in all_words)
+        top = min(w["top"] for w in all_words)
+        x1 = max(w["x1"] for w in all_words)
+        bottom = max(w["bottom"] for w in all_words)
+        bw = x1 - x0
+        bh = bottom - top
+        cx = x0 + bw / 2
+
+        seen_texts = []
+        deduped_lines = []
+        for line in group:
+            line_top = min(w["top"] for w in line)
+            line_words = set(w["text"] for w in line)
+            line_text = " ".join(w["text"] for w in line)
+
+            is_dup = False
+            for sv, sw, _ in seen_texts:
+                if abs(sv - line_top) < 2:
+                    if line_words and sw:
+                        overlap = len(line_words & sw) / max(len(line_words), len(sw))
+                        if overlap > 0.8:
+                            is_dup = True
+                            break
+            if not is_dup:
+                seen_texts.append((line_top, line_words, line_text))
+                deduped_lines.append(line_text)
+
+        if not deduped_lines:
+            continue
+
+        block_text = " ".join(deduped_lines)
+
+        fontsizes = [w["size"] for w in all_words if w.get("size", 0) > 0]
+        fontnames = [w["fontname"] for w in all_words if w.get("fontname")]
+
+        dominant_size = max(set(fontsizes), key=fontsizes.count) if fontsizes else 0
+        styles = [_parse_font_style(fn) for fn in fontnames]
+        bold_count = sum(1 for s in styles if s["bold"])
+        is_bold = bold_count > len(styles) / 2 if styles else False
+
+        blocks.append({
+            "hpos": x0,
+            "vpos": top,
+            "width": bw,
+            "height": bh,
+            "cx": cx,
+            "text": block_text,
+            "fontsize": dominant_size,
+            "bold": is_bold,
+        })
+
+    return blocks
+
+
+def _chars_to_word_lines(char_lines, words):
+    """Map XY-cut char-level lines back to word-level lines.
+
+    For each char-level line, find the words whose characters
+    predominantly fall on that line (by spatial overlap).
+    """
+    from bisect import bisect_left, bisect_right
+
+    word_tops = sorted(set(w["top"] for w in words))
+    word_by_pos = {}
+    for w in words:
+        key = (round(w["top"], 1), round(w["x0"], 1))
+        word_by_pos[key] = w
+
+    assigned = set()
+    result = []
+    for char_line in char_lines:
+        if not char_line:
+            continue
+        line_y_min = min(c["top"] for c in char_line)
+        line_y_max = max(c["bottom"] for c in char_line)
+        line_x_min = min(c["x0"] for c in char_line)
+        line_x_max = max(c["x1"] for c in char_line)
+
+        line_words = []
+        for w in words:
+            if id(w) in assigned:
+                continue
+            w_cy = (w["top"] + w["bottom"]) / 2
+            w_cx = (w["x0"] + w["x1"]) / 2
+            if (line_y_min - 2 <= w_cy <= line_y_max + 2
+                    and line_x_min - 5 <= w_cx <= line_x_max + 5):
+                line_words.append(w)
+                assigned.add(id(w))
+
+        if line_words:
+            line_words.sort(key=lambda w: w["x0"])
+            result.append(line_words)
+
+    unassigned = [w for w in words if id(w) not in assigned]
+    if unassigned:
+        unassigned.sort(key=lambda w: (w["top"], w["x0"]))
+        cur = [unassigned[0]]
+        for w in unassigned[1:]:
+            if abs(w["top"] - cur[0]["top"]) <= 3:
+                cur.append(w)
+            else:
+                result.append(sorted(cur, key=lambda w: w["x0"]))
+                cur = [w]
+        if cur:
+            result.append(sorted(cur, key=lambda w: w["x0"]))
+
+    return result
+
+
+def _split_inline_sections(text: str):
+    """Split a run-on block at inline ALL-CAPS section labels and em-dash
+    sub-headers. Returns a list of (heading_or_None, body) segments, or None
+    if the block contains no inline boundary (the common case)."""
+    marks = []
+    for m in _INLINE_LABEL_RE.finditer(text):
+        marks.append((m.start(), m.end(), m.group(1).title()))
+    for m in _INLINE_DASH_HEAD_RE.finditer(text):
+        marks.append((m.start(), m.end(), m.group(1).title()))
+    if not marks:
+        return None
+    marks.sort()
+    segments = []
+    pre = text[:marks[0][0]].strip()
+    if pre:
+        segments.append((None, pre))
+    for i, (_s, end, heading) in enumerate(marks):
+        nxt = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+        segments.append((heading, text[end:nxt].strip()))
+    return segments
+
+
+def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
+    """Extract text from PDF using pdfplumber (layout-aware).
+
+    Uses recursive XY-cut tree (ported from xpdf's splitChars algorithm)
+    to determine reading order, then groups words into blocks and
+    prefixes headers with '## ' based on font size/style analysis.
+
+    Pipeline:
+      1. Extract chars and words with (x0, y0, x1, y1, fontname, size)
+      2. Recursive XY-cut on chars to determine reading order
+      3. Map char-level lines back to word-level lines
+      4. Group word lines into blocks by vertical gaps
+      5. Classify blocks as header/meta/body/footer
+      6. Detect headers via font size/bold heuristics
+    """
+    import pdfplumber
+
+    log(f"Attempting text extraction with pdfplumber for: {pdf_path}")
+    t0 = time.time()
 
     try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
+        pdf = pdfplumber.open(pdf_path)
+    except Exception as e:
+        log(f"pdfplumber failed to open {pdf_path}: {e}")
+        return None
 
-        # Detect namespace
-        ns = "{http://www.loc.gov/standards/alto/ns-v3#}"
-        if not root.findall(f".//{ns}TextBlock"):
-            ns = ""
+    all_output_lines = []
 
-        # Parse text styles for header detection
-        styles = _parse_text_styles(root, ns)
+    try:
+        for page in pdf.pages:
+            page_w = page.width
+            page_h = page.height
 
-        # Get page dimensions
-        page = root.find(f".//{ns}Page")
-        page_w = float(page.get("WIDTH", "1")) if page is not None else 1.0
-        page_h = float(page.get("HEIGHT", "1")) if page is not None else 1.0
+            from pdfplumber.utils.text import extract_words as _pw_extract_words
+            chars = _filter_phantom_spaces(page.chars)
 
-        # Extract blocks with spatial info
-        blocks = []
-        for tb in root.findall(f".//{ns}TextBlock"):
-            hpos = float(tb.get("HPOS", "0"))
-            vpos = float(tb.get("VPOS", "0"))
-            bw = float(tb.get("WIDTH", "0"))
-            bh = float(tb.get("HEIGHT", "0"))
-
-            # Collect TextLines, deduplicating within the block
-            seen_lines = []  # list of (vpos, words_set, text)
-            for tl in tb.findall(f".//{ns}TextLine"):
-                line_vpos = float(tl.get("VPOS", "0"))
-                strings = tl.findall(f".//{ns}String")
-                words = [s.get("CONTENT", "") for s in strings if s.get("CONTENT")]
-                if not words:
-                    continue
-                line_text = " ".join(words)
-                word_set = set(words)
-
-                # Skip duplicate lines: same VPOS and >80% word overlap
-                is_dup = False
-                for sv, sw, st in seen_lines:
-                    if abs(sv - line_vpos) < 2:  # same vertical position
-                        if len(word_set) > 0 and len(sw) > 0:
-                            overlap = len(word_set & sw) / max(len(word_set), len(sw))
-                            if overlap > 0.8:
-                                is_dup = True
-                                break
-                if not is_dup:
-                    seen_lines.append((line_vpos, word_set, line_text))
-
-            if not seen_lines:
+            text_chars = [c for c in chars if c.get("text", "").strip()]
+            if text_chars:
+                median_fs = float(np.median([c["size"] for c in text_chars]))
+                x_tol = round(max(1.5, min(median_fs * 0.25, 3.0)), 2)
+                space_chars = [c for c in chars if c.get("text") == " " and c["x1"] - c["x0"] > 0]
+                if space_chars:
+                    space_w = float(np.median([c["x1"] - c["x0"] for c in space_chars]))
+                    x_tol = round(min(x_tol, space_w * 0.7), 2)
+            else:
+                x_tol = 3
+            log(f"   x_tolerance={x_tol} (median_font={median_fs if text_chars else '?'}pt)")
+            words = _pw_extract_words(chars, x_tolerance=x_tol,
+                                     extra_attrs=["size"],
+                                     use_text_flow=True)
+            _annotate_words_with_fonts(words, chars)
+            if not words:
                 continue
 
-            # Join all lines into a single line per block (like the old parser).
-            # Preserving PDF line breaks splits sentences and confuses the LLM.
-            block_text = " ".join(text for _, _, text in seen_lines)
+            from poster2json.xy_cut import chars_to_reading_order
 
-            # Collect style refs for header detection
-            style_refs = set()
-            for s in tb.findall(f".//{ns}String"):
-                sr = s.get("STYLEREFS", "")
-                if sr:
-                    style_refs.update(sr.split())
+            reading_lines = chars_to_reading_order(chars, page_width=page_w, page_height=page_h)
+            if not reading_lines:
+                continue
 
-            cx = hpos + bw / 2
-            blocks.append({
-                "hpos": hpos,
-                "vpos": vpos,
-                "width": bw,
-                "height": bh,
-                "cx": cx,
-                "text": block_text,
-                "style_refs": style_refs,
-            })
+            word_lines = _chars_to_word_lines(reading_lines, words)
+            all_blocks = _lines_to_blocks(word_lines)
+            for blk in all_blocks:
+                blk["col"] = 0
+                blk["flow_idx"] = 0
 
-        if not blocks:
-            return None
+            if not all_blocks:
+                continue
 
-        # NOTE: Block-level dedup removed — pdfalto with -readingOrder already
-        # handles duplicates. The dedup was dropping legitimate blocks that had
-        # similar text at similar vpos (e.g. "724 words" vs "755 words").
+            all_fontsizes = [blk["fontsize"] for blk in all_blocks if blk["fontsize"] > 0]
+            page_median_fs = sorted(all_fontsizes)[len(all_fontsizes) // 2] if all_fontsizes else 0
 
-        # Determine median body font size for header detection
-        body_sizes = []
-        for blk in blocks:
-            for sr in blk["style_refs"]:
-                if sr in styles and styles[sr]["fontsize"] > 0:
-                    body_sizes.append(styles[sr]["fontsize"])
-        median_fontsize = sorted(body_sizes)[len(body_sizes) // 2] if body_sizes else 0
+            text_left = min(blk["hpos"] for blk in all_blocks)
+            text_right = max(blk["hpos"] + blk["width"] for blk in all_blocks)
+            text_span = text_right - text_left
+            span_threshold = text_span * 0.5
 
-        # Preserve pdfalto's reading order (from -readingOrder flag).
-        # Do NOT sort by vpos — pdfalto already handles column layout
-        # and reading order correctly. Sorting by vpos overrides that
-        # and scrambles multi-column poster content.
+            min_col_block_len = 10
+            col_tops = {}
+            for blk in all_blocks:
+                c = blk["col"]
+                if blk["width"] <= span_threshold and len(blk["text"].strip()) >= min_col_block_len:
+                    col_tops[c] = min(col_tops.get(c, float("inf")), blk["vpos"])
+            if not col_tops:
+                for blk in all_blocks:
+                    c = blk["col"]
+                    if blk["width"] <= span_threshold:
+                        col_tops[c] = min(col_tops.get(c, float("inf")), blk["vpos"])
+            col_start = min(col_tops.values()) if col_tops else 0
+            col_end = max(blk["vpos"] + blk["height"] for blk in all_blocks
+                         if blk["width"] <= span_threshold) if col_tops else page_h
 
-        # Build output — one line per block, no gap markers.
-        # Gap markers (blank lines) were removed because they change how
-        # the LLM segments content vs the reference annotations.
-        output_lines = []
-
-        for blk in blocks:
-
-            # Detect header: bold font >= median body size, or any font > 1.3x median
-            # Conservative filters to avoid false positives:
-            #   - Short blocks only (≤120 chars)
-            #   - Must start with a letter (skip bullets, numbers, symbols)
-            #   - Must contain ≥2 alphabetic words
-            #   - Skip contact-like text (emails, phones, URLs)
-            is_header = False
-            _t = blk["text"].strip()
-            _alpha_words = re.findall(r'[A-Za-z]{2,}', _t)
-            _starts_with_letter = bool(re.match(r'[A-Za-z]', _t))
-            _is_contact = bool(
-                re.search(r'@\S+\.\S+', _t)       # email
-                or re.search(r'\+\d[\d\s]{6,}', _t)  # phone
-                or re.search(r'www\.', _t, re.I)    # URL
-                or re.search(r'https?://', _t, re.I)
+            _meta_re = re.compile(
+                r'@\S+\.\S+|orcid\.org|ORCID:\s*\d|^Authors?\b',
             )
-            if (median_fontsize > 0 and len(_t) <= 120
-                    and _starts_with_letter and len(_alpha_words) >= 2
-                    and not _is_contact):
-                for sr in blk["style_refs"]:
-                    st = styles.get(sr, {})
-                    fs = st.get("fontsize", 0)
-                    if st.get("bold") and fs >= median_fontsize:
+            top_zone = page_h * 0.12
+            header_blocks = []
+            meta_blocks = []
+            body_blocks = []
+            footer_blocks = []
+            for blk in all_blocks:
+                is_wide = blk["width"] > span_threshold
+                is_title_font = page_median_fs > 0 and blk["fontsize"] >= page_median_fs * 1.4
+                if is_title_font and blk["vpos"] + blk["height"] <= col_start + page_h * 0.02:
+                    header_blocks.append(blk)
+                elif is_wide and blk["vpos"] > col_end:
+                    footer_blocks.append(blk)
+                elif (not is_wide
+                      and blk["vpos"] + blk["height"] <= top_zone
+                      and _meta_re.search(blk["text"])):
+                    meta_blocks.append(blk)
+                else:
+                    body_blocks.append(blk)
+
+            header_blocks.sort(key=lambda b: b["vpos"])
+            meta_blocks.sort(key=lambda b: (b["vpos"], b["hpos"]))
+            footer_blocks.sort(key=lambda b: b["vpos"])
+            all_blocks = header_blocks + meta_blocks + body_blocks + footer_blocks
+
+            median_fontsize = page_median_fs
+
+            for blk in all_blocks:
+                _t = blk["text"].strip()
+                if not _t:
+                    continue
+
+                # Figure/table caption: split the "Figure N"/"Table N" label
+                # onto its own header line so the LLM isolates the caption as a
+                # caption section instead of merging it into adjacent body text.
+                # Captions are small-font, so the font-size header heuristic
+                # below never catches them; a buried short caption tanks
+                # section-level ROUGE (matches at ~0.2 instead of ~1.0).
+                _cap = re.match(
+                    r"^[^A-Za-z]*(fig(?:ure)?|tab(?:le)?)\.?\s*(\d+)\s*[.:]\s*(\S.*)$",
+                    _t, re.IGNORECASE | re.DOTALL,
+                )
+                if _cap:
+                    _kind = "Figure" if _cap.group(1)[:3].lower() == "fig" else "Table"
+                    all_output_lines.append(f"## {_kind} {_cap.group(2)}")
+                    all_output_lines.append(_add_bidi_markers(_cap.group(3).strip()))
+                    continue
+
+                # Standalone section heading printed as a bare keyword line
+                # (e.g. "References", "Acknowledgements"). Force a ## header so
+                # the LLM splits it out instead of merging it into the body.
+                if _t.rstrip(":.").strip().lower() in _SECTION_KEYWORDS:
+                    all_output_lines.append(f"## {_add_bidi_markers(_t)}")
+                    continue
+
+                # Run-on block cramming multiple sections onto one line via
+                # inline ALL-CAPS labels ("...REFERENCES: ... ABBREVIATIONS: ...")
+                # or em-dash sub-headers ("265. TWINS — Our second sample ...").
+                # Split into labeled sections so the LLM doesn't merge them.
+                _segs = _split_inline_sections(_t)
+                if _segs:
+                    for _head, _body in _segs:
+                        if _head:
+                            all_output_lines.append(f"## {_head}")
+                        if _body:
+                            all_output_lines.append(_add_bidi_markers(_body))
+                    continue
+
+                _words = _t.split()
+                _single_char = sum(1 for w in _words if len(w) <= 1)
+                if len(_words) >= 2 and _single_char > len(_words) * 0.6:
+                    continue
+                if len(_t) <= 3 and not re.match(r'^[•●▪]+$', _t):
+                    continue
+                _alpha_words = re.findall(r'[A-Za-z]{2,}', _t)
+                _starts_with_letter = bool(re.match(r'[A-Za-z]', _t))
+                _is_contact = bool(
+                    re.search(r'@\S+\.\S+', _t)
+                    or re.search(r'\+\d[\d\s]{6,}', _t)
+                    or re.search(r'www\.', _t, re.I)
+                    or re.search(r'https?://', _t, re.I)
+                )
+
+                is_header = False
+                _is_continuation = bool(re.match(
+                    r'(?:to|and|or|the|a|an|in|of|for|with|by|from|that|which|when)\s', _t
+                ))
+                min_words = 1 if blk["bold"] else 2
+                if (median_fontsize > 0 and len(_t) <= 120
+                        and _starts_with_letter and len(_alpha_words) >= min_words
+                        and not _is_contact and not _is_continuation):
+                    fs = blk["fontsize"]
+                    if blk["bold"] and fs >= median_fontsize:
                         is_header = True
-                        break
-                    if fs > median_fontsize * 1.3:
-                        is_header = True
-                        break
+                    elif fs > median_fontsize * 1.3:
+                        if len(_alpha_words) == 1:
+                            is_header = _alpha_words[0].isupper()
+                        else:
+                            is_header = True
 
-            text = blk["text"]
-            if is_header:
-                text = f"## {text}"
+                text = _add_bidi_markers(blk["text"])
+                if is_header:
+                    text = f"## {text}"
+                all_output_lines.append(text)
 
-            output_lines.append(text)
+    finally:
+        pdf.close()
 
-        return "\n".join(output_lines)
-    except Exception:
+    elapsed = time.time() - t0
+
+    if not all_output_lines:
+        log(f"pdfplumber produced no text for: {pdf_path}")
         return None
+
+    result = "\n".join(all_output_lines)
+    log(f"pdfplumber extracted {len(result)} characters in {elapsed:.2f} seconds")
+    return result
 
 
 def extract_text_with_pymupdf(pdf_path: str) -> str:
@@ -632,10 +1124,10 @@ def get_raw_text(
         return text, "qwen_vision"
 
     if ext == ".pdf":
-        text = extract_text_with_pdfalto(poster_path)
-        if text and len(text) > 500:
-            log(f"Using pdfalto output ({len(text)} characters)")
-            return text, "pdfalto"
+        text = extract_text_with_pdfplumber(poster_path)
+        if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
+            log(f"Using pdfplumber output ({len(text)} characters)")
+            return text, "pdfplumber"
         text = extract_text_with_pymupdf(poster_path)
         if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
             log(f"Using PyMuPDF fallback ({len(text)} characters)")
@@ -772,13 +1264,89 @@ def unload_json_model():
     log("   ✓ JSON model unloaded, GPU memory cleared")
 
 
+def _get_eos_token_ids(tokenizer):
+    """Collect all EOS-like token IDs from the tokenizer."""
+    eos_ids = set()
+    eid = tokenizer.eos_token_id
+    if isinstance(eid, (list, tuple)):
+        eos_ids.update(eid)
+    elif eid is not None:
+        eos_ids.add(eid)
+    for tok in ("<|end_of_text|>", "<|eom_id|>", "<|eot_id|>"):
+        tid = tokenizer.convert_tokens_to_ids(tok)
+        if tid is not None and tid != tokenizer.unk_token_id:
+            eos_ids.add(tid)
+    return eos_ids
+
+
+class _JsonBraceProcessor(LogitsProcessor):
+    """Suppress EOS tokens until generated JSON has balanced braces.
+
+    Llama 3.1 has three EOS tokens (128001, 128008, 128009).
+    HuggingFace's min_new_tokens only suppresses the primary one,
+    so the model hits <|eot_id|> early and produces truncated JSON.
+    This processor suppresses all EOS tokens until the outermost
+    JSON object is closed (brace depth returns to 0).
+    """
+
+    def __init__(self, eos_token_ids, tokenizer, input_length):
+        self.eos_token_ids = eos_token_ids
+        self.tokenizer = tokenizer
+        self.input_length = input_length
+        self._prev_len = 0
+        self._depth = 0
+        self._in_string = False
+        self._escape = False
+        self._seen_brace = False
+
+    def _update_depth(self, text):
+        for ch in text:
+            if self._escape:
+                self._escape = False
+                continue
+            if ch == '\\' and self._in_string:
+                self._escape = True
+                continue
+            if ch == '"':
+                self._in_string = not self._in_string
+                continue
+            if not self._in_string:
+                if ch == '{':
+                    self._depth += 1
+                    self._seen_brace = True
+                elif ch == '}':
+                    self._depth -= 1
+
+    def __call__(self, input_ids, scores):
+        gen = input_ids[0, self.input_length :]
+        n = len(gen)
+        if n == 0:
+            for eid in self.eos_token_ids:
+                scores[:, eid] = float("-inf")
+            return scores
+        if n > self._prev_len:
+            new_text = self.tokenizer.decode(
+                gen[self._prev_len :], skip_special_tokens=True
+            )
+            self._update_depth(new_text)
+            self._prev_len = n
+        if not self._seen_brace or self._depth > 0:
+            for eid in self.eos_token_ids:
+                scores[:, eid] = float("-inf")
+        return scores
+
+
 def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
     """Generate response using the Llama model."""
     messages = [{"role": "user", "content": prompt}]
     input_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
+    input_length = inputs["input_ids"].shape[1]
 
-    log(f"Generating with max_tokens={max_tokens}, input_length={inputs['input_ids'].shape[1]}")
+    log(f"Generating with max_tokens={max_tokens}, input_length={input_length}")
+
+    eos_ids = _get_eos_token_ids(tokenizer)
+    processor = _JsonBraceProcessor(eos_ids, tokenizer, input_length)
 
     streamer = ProgressStreamer(tokenizer, log_every=200)
     t0 = time.time()
@@ -789,14 +1357,15 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
             streamer=streamer,
+            logits_processor=LogitsProcessorList([processor]),
         )
     elapsed = time.time() - t0
-    tokens_generated = outputs.shape[1] - inputs["input_ids"].shape[1]
+    tokens_generated = outputs.shape[1] - input_length
     log(
         f"   Generated {tokens_generated} tokens in {elapsed:.2f}s ({tokens_generated/elapsed:.1f} tok/s)"
     )
 
-    return tokenizer.decode(outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
+    return tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
 
 
 # ============================
@@ -806,14 +1375,13 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
-0. GROUNDING: Every value you output MUST come from text visibly present in the poster below. If a field's value cannot be found in the poster text, use null or []. NEVER invent, guess, or infer content that is not explicitly written on the poster.
 1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, conference, version
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
-5. Copy ALL text EXACTLY - do not paraphrase or summarize
+5. Copy ALL poster text EXACTLY into sections - do not paraphrase, summarize, or skip any text. Every line of the poster text below must appear in your output.
 6. "Key Findings" ≠ "References": Key Findings = discoveries/results; References = numbered citations with authors/years
-7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent. Only include captions for figures/tables that actually exist on the poster. If no figures or tables are present, use empty arrays.
+7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent.
 8. Text without a clear header (e.g. contact info, URLs, footer text) is still a section — use "sectionTitle": "" with the verbatim text as "sectionContent". Do NOT skip any poster text.
 
 JSON SCHEMA (all top-level fields are REQUIRED):
@@ -830,9 +1398,9 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "version": null,
   "content": {{
     "sections": [
-      {{"sectionTitle": "Introduction", "sectionContent": "...verbatim text from poster..."}},
-      {{"sectionTitle": "Methods", "sectionContent": "...verbatim text from poster..."}},
-      {{"sectionTitle": "Results", "sectionContent": "...verbatim text from poster..."}}
+      {{"sectionTitle": "Introduction", "sectionContent": "Full verbatim text of this section from the poster..."}},
+      {{"sectionTitle": "Methods", "sectionContent": "Full verbatim text of this section from the poster..."}},
+      {{"sectionTitle": "Results", "sectionContent": "Full verbatim text of this section from the poster..."}}
     ]
   }},
   "imageCaptions": [],
@@ -840,19 +1408,16 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 }}
 
 EXTRACTION NOTES:
-- publicationYear: Extract ONLY if a year is explicitly printed on the poster (e.g. in a date, conference name, or footer). If not found, set to null. NEVER guess or use the current year.
+- publicationYear: Extract if a year is printed on the poster. If not found, set to null.
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Write a 3-4 sentence summary of the full poster; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
-- conference: Extract ONLY from text clearly visible on the poster (header, footer, logos). Every conference field value must be a direct quote from the poster text. If no conference information is found, output "conference": null. Do NOT invent or guess conference names, locations, dates, or URLs. Do NOT copy any example from these instructions.
-- imageCaptions/tableCaptions: Include ONLY captions for figures/tables that actually exist on the poster. Each caption must be verbatim text from the poster. If the poster has NO figures, use []. If the poster has NO tables, use []. NEVER output placeholder text — just use an empty array.
-- version: Extract ONLY if a version number/string is explicitly printed on the poster (e.g. "v1.0", "Version 2"). If not found, set to null.
+- conference: Extract from text visible on the poster (header, footer, logos). If not found, set to null.
+- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
+- version: Extract if printed on the poster. If not found, set to null.
 - rightsList: OPTIONAL - include if license/copyright info found on poster
-- researchField: Top-level OpenAlex domain. MUST be EXACTLY one of:
-    "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences"
-  Pick the single best fit based on poster content (subjects, methods, findings).
-  If unclear, set to null. NEVER output "Other", "Unknown", "Research field",
-  empty string, or any other placeholder text.
+- researchField: MUST be exactly one of: "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences" — or null if unclear.
+- GROUNDING: For metadata fields (conference, publicationYear, version), only extract values that appear as text on the poster. If not found, use null. For section content, copy ALL text verbatim — do not skip or shorten.
 
 POSTER TEXT TO CONVERT:
 {raw_text}
@@ -862,11 +1427,10 @@ OUTPUT VALID JSON ONLY:"""
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 1. creators, titles, publicationYear, subjects, descriptions, conference, version, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
-3. Copy ALL text EXACTLY verbatim
+3. Copy ALL text EXACTLY verbatim — every line of poster text must appear in a section
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
-5. conference: extract ONLY if clearly visible on the poster. If not found, set to null. NEVER invent names, locations, dates, URLs, or use generic placeholders.
-6. imageCaptions/tableCaptions: ONLY for figures/tables that exist on the poster. If none, use [].
-7. GROUNDING: Every value must come from text in the poster. If not found, use null or [].
+5. conference: extract if visible on the poster. If not found, set to null.
+6. imageCaptions/tableCaptions: for figures/tables on the poster. If none, use [].
 
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
@@ -878,13 +1442,13 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "researchField": null,
   "version": null,
   "content": {{
-    "sections": [{{"sectionTitle": "Header", "sectionContent": "verbatim text"}}]
+    "sections": [{{"sectionTitle": "Header", "sectionContent": "Full verbatim text of this section..."}}]
   }},
   "imageCaptions": [],
   "tableCaptions": []
 }}
 
-researchField MUST be exactly one of: "Health Sciences", "Life Sciences", "Physical Sciences", "Social Sciences" — or null if unclear. NEVER output "Other", "Unknown", or placeholder text.
+researchField MUST be exactly one of: "Health Sciences", "Life Sciences", "Physical Sciences", "Social Sciences" — or null if unclear.
 
 TEXT:
 {raw_text}
@@ -1077,6 +1641,17 @@ def _repair_truncation(s: str) -> str:
         s = s[:-1].rstrip()
     if s.endswith(","):
         s = s[:-1]
+
+    partial_literals = {
+        "n": "null", "nu": "null", "nul": "null",
+        "t": "true", "tr": "true", "tru": "true",
+        "f": "false", "fa": "false", "fal": "false", "fals": "false",
+    }
+    for partial, full in partial_literals.items():
+        if s.endswith(": " + partial) or s.endswith(":" + partial):
+            s = s[:-(len(partial))] + full
+            break
+
     s += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
     return s
 
@@ -1158,6 +1733,32 @@ def _robust_json_parse(response: str) -> dict:
 # ============================
 # POST-PROCESSING
 # ============================
+
+
+def _add_bidi_markers(text: str) -> str:
+    """Wrap RTL character runs in bidi embedding markers.
+
+    pdfplumber does not emit bidi markers around Hebrew, Arabic, and other
+    RTL words. Without them the LLM receives bare RTL codepoints in an
+    unstructured layout and fails to extract sections.
+    """
+    if not text:
+        return text
+    has_rtl = False
+    for ch in text:
+        if unicodedata.bidirectional(ch) in ("R", "AL"):
+            has_rtl = True
+            break
+    if not has_rtl:
+        return text
+    words = text.split(" ")
+    result = []
+    for word in words:
+        if any(unicodedata.bidirectional(c) in ("R", "AL") for c in word):
+            result.append(f"‫{word}‬")
+        else:
+            result.append(word)
+    return " ".join(result)
 
 
 def _clean_unicode_artifacts(text: str) -> str:
@@ -1442,12 +2043,13 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                                 for w in v.lower().split():
                                     captured.add(w)
 
-                # Strip ## prefixes and find uncaptured lines
+                # Strip ## prefixes and find ALL uncaptured blocks
                 raw_lines = [
                     ln.lstrip("# ").strip() if ln.startswith("## ") else ln.strip()
                     for ln in raw_text.split("\n")
                 ]
-                uncaptured = []
+                all_uncaptured_blocks = []
+                current_block = []
                 for ln in raw_lines:
                     if not ln:
                         continue
@@ -1456,17 +2058,81 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                         continue
                     hit = sum(1 for w in words if w in captured)
                     if hit / len(words) < 0.5:
-                        uncaptured.append(ln)
+                        current_block.append(ln)
                     else:
-                        # Reset — only keep trailing uncaptured block
-                        uncaptured = []
+                        if current_block and len(" ".join(current_block)) > 10:
+                            all_uncaptured_blocks.append(current_block)
+                        current_block = []
+                if current_block and len(" ".join(current_block)) > 10:
+                    all_uncaptured_blocks.append(current_block)
 
-                if uncaptured and len(" ".join(uncaptured)) > 10:
+                for block in all_uncaptured_blocks:
                     cleaned_sections.append({
-                        "sectionContent": "\n".join(uncaptured),
+                        "sectionContent": "\n".join(block),
                     })
 
             result["content"]["sections"] = cleaned_sections
+
+    # Build sections from raw text when LLM produced none
+    if raw_text:
+        has_sections = (
+            "content" in result
+            and isinstance(result.get("content"), dict)
+            and result["content"].get("sections")
+        )
+        if not has_sections:
+            if "content" not in result or not isinstance(result.get("content"), dict):
+                result["content"] = {}
+
+            # Collect words already captured in LLM metadata for dedup
+            meta_words = set()
+            for creator in result.get("creators", []):
+                if isinstance(creator, dict):
+                    for v in creator.values():
+                        if isinstance(v, str):
+                            meta_words.update(v.lower().split())
+                        elif isinstance(v, list):
+                            for item in v:
+                                if isinstance(item, str):
+                                    meta_words.update(item.lower().split())
+            for title_obj in result.get("titles", []):
+                if isinstance(title_obj, dict):
+                    for v in title_obj.values():
+                        if isinstance(v, str):
+                            meta_words.update(v.lower().split())
+
+            raw_sections = []
+            current_title = ""
+            current_lines = []
+            for ln in raw_text.split("\n"):
+                ln = ln.strip()
+                if not ln:
+                    continue
+                if ln.startswith("## "):
+                    if current_lines:
+                        content = "\n".join(current_lines)
+                        words = content.lower().split()
+                        overlap = sum(1 for w in words if w in meta_words) / max(len(words), 1)
+                        if overlap < 0.7 and len(content) > 10:
+                            entry = {"sectionContent": content}
+                            if current_title:
+                                entry["sectionTitle"] = current_title
+                            raw_sections.append(entry)
+                    current_title = ln[3:].strip()
+                    current_lines = []
+                else:
+                    current_lines.append(ln)
+            if current_lines:
+                content = "\n".join(current_lines)
+                words = content.lower().split()
+                overlap = sum(1 for w in words if w in meta_words) / max(len(words), 1)
+                if overlap < 0.7 and len(content) > 10:
+                    entry = {"sectionContent": content}
+                    if current_title:
+                        entry["sectionTitle"] = current_title
+                    raw_sections.append(entry)
+            if raw_sections:
+                result["content"]["sections"] = raw_sections
 
     # Clean creators
     if "creators" in result and isinstance(result["creators"], list):
@@ -1691,8 +2357,8 @@ def extract_poster(
         generated = extract_json_with_retry(raw_text, model, tokenizer)
         t_json_elapsed = time.time() - t_json_start
 
-        if "error" in generated and source == "pdfalto":
-            log(f"pdfalto text failed after {t_json_elapsed:.2f}s, retrying with PyMuPDF")
+        if "error" in generated and source == "pdfplumber":
+            log(f"pdfplumber text failed after {t_json_elapsed:.2f}s, retrying with PyMuPDF")
             pymupdf_text = extract_text_with_pymupdf(poster_path)
             if pymupdf_text and len(pymupdf_text) > 500:
                 t_retry_start = time.time()

@@ -61,7 +61,7 @@ The pipeline uses:
 
 - [**Llama-3.1-8B-Instruct**](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) (a verbatim mirror of Meta's release; swap with any HuggingFace instruct model via `--model`) for JSON structuring
 - **Qwen2-VL-7B** for vision-based OCR of image posters
-- **pdfalto** for layout-aware PDF text extraction
+- **pdfplumber** for layout-aware PDF text extraction
 - **lingua-language-detector** for ISO 639-1 language detection on body text (overrides any value the model emits — body text beats metadata-fragment guessing)
 - **ROR** (`https://api.ror.org`) for affiliation and publisher canonicalisation; matched names get a ROR identifier attached
 - **SPDX** matching (with integer-exact version handling) for license normalisation in `rightsList`
@@ -181,16 +181,16 @@ Notes on the auto-populated fields:
 
 ## Performance
 
-Validated on 10 manually annotated scientific posters:
+Validated on 20 manually annotated scientific posters (19 PDF via pdfplumber, 1 image via vision OCR):
 
 | Metric           | Score | Threshold |
 | ---------------- | ----- | --------- |
-| Word Capture     | 0.96  | ≥0.75     |
-| ROUGE-L          | 0.89  | ≥0.75     |
-| Number Capture   | 0.93  | ≥0.75     |
-| Field Proportion | 0.99  | 0.50–2.00 |
+| Word Capture     | 0.92  | ≥0.75     |
+| ROUGE-L          | 0.85  | ≥0.75     |
+| Number Capture   | 0.97  | ≥0.75     |
+| Field Proportion | 0.88  | 0.50–1.50 |
 
-**Pass Rate**: 10/10 (100%)
+**Pass Rate**: 19/20 (95%). The single failure is a dense table/flowchart poster whose reference annotation splits one visual region into many fine-grained sections.
 
 ## Documentation
 
@@ -245,7 +245,7 @@ MIT License - see [LICENSE](LICENSE.md) for details.
   title = {poster2json: Scientific Poster to JSON Metadata Extraction},
   author = {O'Neill, James and Soundarajan, Sanjay and Portillo, Dorian and Patel, Bhavesh},
   year = {2026},
-  version = {0.4.3},
+  version = {0.8.0},
   url = {https://github.com/fairdataihub/poster2json},
   doi = {10.5281/zenodo.18320010}
 }
