@@ -5,6 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.0 (2026-05-29)
+
+
+### Features
+
+* :sparkles: trigger redeploy upon succesful python publish ([2c30ddd](https://github.com/fairdataihub/poster2json/commit/2c30ddde2fc74f47b7bbec49976d91c51526f384))
+* add json-repair as last-resort JSON parse fallback (0.5.8) ([54b542f](https://github.com/fairdataihub/poster2json/commit/54b542fe59a6423a0a680f330cfffd2cc6ac665f))
+* add pdfplumber text extraction as pdfalto replacement ([5b29572](https://github.com/fairdataihub/poster2json/commit/5b29572be69410b5cbc3e7bc9dbe49818ce2b2e9))
+* add sync_schema.py for canonical schema fetching ([8933b23](https://github.com/fairdataihub/poster2json/commit/8933b238e644731d445954c02cdde5932e27679d))
+* add tests ([1e04dc0](https://github.com/fairdataihub/poster2json/commit/1e04dc0706b0efafbc24d3a6898b19232a05ad9b))
+* authenticated ORCID API via OAuth client_credentials (0.5.10) ([d61a268](https://github.com/fairdataihub/poster2json/commit/d61a26811d17960e1e5907c898690b91fb4b5475))
+* bidi embedding markers and font-size header detection (v0.6.5) ([193d663](https://github.com/fairdataihub/poster2json/commit/193d663332f3616db488c2ac9ac1a02245d05594))
+* default JSON model to 4bit and document custom --model flag ([f730bfc](https://github.com/fairdataihub/poster2json/commit/f730bfc3e798e8d809b5c88591175b09b506d257))
+* enhanced license normalization + junk filtering ([c169cad](https://github.com/fairdataihub/poster2json/commit/c169cad86aba91bdcfc3809cbac4461ae5181dcf))
+* EOS brace-balance processor and adaptive x_tolerance ([84bbd2a](https://github.com/fairdataihub/poster2json/commit/84bbd2a2bb1abcef9ea441b8066d52b34643d96e))
+* extract PDF link annotations into identifiers and relatedIdentifiers ([06863d0](https://github.com/fairdataihub/poster2json/commit/06863d0012ff37f2a1f2db01f292ef6158b3640c))
+* ground researchField on the OpenAlex 4 domains ([bee8a41](https://github.com/fairdataihub/poster2json/commit/bee8a4126836cffa1491dc24710aa51b350ef7fe))
+* heuristic language detection on raw poster text ([6ba04cb](https://github.com/fairdataihub/poster2json/commit/6ba04cb3dd42ae6217168f6e6f21251595bebbe3))
+* improve pdfplumber column detection and reading order ([c9afd35](https://github.com/fairdataihub/poster2json/commit/c9afd35a19444fd45e117285ef9d29050dbeb9e3))
+* improve pdfplumber section segmentation (v0.7.1) ([5422d9c](https://github.com/fairdataihub/poster2json/commit/5422d9c9d8796a6e631c8f2c2d0a77bde3f05c62))
+* Phase 1 — DOI / funder / award normalization (0.5.0) ([e4c67bc](https://github.com/fairdataihub/poster2json/commit/e4c67bc0ab2fb7c1957eea5433b047b75899e1e8))
+* Phase 2 — ORCID enrichment via public API (0.5.1) ([04c9350](https://github.com/fairdataihub/poster2json/commit/04c9350a40181f487cc2c8a5eebf0ef1242bd18e))
+* Phase 3 — publisher-suspect _validation warning (0.5.2) ([34382a9](https://github.com/fairdataihub/poster2json/commit/34382a9935f7e958565caa67d2872b00f2ecbfab))
+* regex identifier extraction and caption ID auto-generation ([a5a3518](https://github.com/fairdataihub/poster2json/commit/a5a3518852b52038c7bcbcc8ad2c811c43f5c741))
+* reject oversized inputs before GPU inference (MAX_INPUT_TOKENS) ([157bcc9](https://github.com/fairdataihub/poster2json/commit/157bcc91a56c4b08da67ac98232df81e9b49867c))
+* remove pdfalto code, finalize pdfplumber pipeline (v0.8.0) ([edd7828](https://github.com/fairdataihub/poster2json/commit/edd7828655b49291d780774236aa429a244b4785))
+* replace column-major sort with recursive XY-cut reading order ([8080621](https://github.com/fairdataihub/poster2json/commit/80806216c8b8654eb9ce3b5005ea7fc0e10cdb4b))
+* request 3-4 sentence poster description in extraction prompts ([4092f4a](https://github.com/fairdataihub/poster2json/commit/4092f4a13d8bfccd3cdf588d07772c46100cdb23))
+* request 3-4 sentence poster description in extraction prompts ([843f6c0](https://github.com/fairdataihub/poster2json/commit/843f6c0a2a19d8d3aadcc6316963e7edf9698c48))
+* SPDX license, subject, and ROR normalization on output ([096d281](https://github.com/fairdataihub/poster2json/commit/096d2811fb8c266792cf0e755b6c2787c707935e))
+* split run-on blocks at inline section labels (v0.7.2) ([f04b8a7](https://github.com/fairdataihub/poster2json/commit/f04b8a7e25aeda11c82129ec167166bfb3976089))
+* update poster_schema.json to v0.2 (DataCite 4.7) ([11af839](https://github.com/fairdataihub/poster2json/commit/11af839544166ff3d815606bc74e3352f8fbe8a4))
+* vision OCR fallback for image-only PDFs ([1e3e3f6](https://github.com/fairdataihub/poster2json/commit/1e3e3f67e2920ca56139362827ba9ce611154bce))
+
+
+### Bug Fixes
+
+* add min_new_tokens to prevent early EOS + repair partial JSON literals ([e10d8dc](https://github.com/fairdataihub/poster2json/commit/e10d8dc4acba49781881f19a8a017f082c605eed))
+* anti-hallucination safety nets + prompt grounding rule (0.5.4) ([5dbca4d](https://github.com/fairdataihub/poster2json/commit/5dbca4dfc0f1e61a81246c9080550601f4e7d98f))
+* build sections from raw text when LLM truncates before content ([e0810e7](https://github.com/fairdataihub/poster2json/commit/e0810e716bc1e795af27e22c0315a4b79af1386d))
+* dedup section fallback against LLM metadata to avoid duplicates ([862c535](https://github.com/fairdataihub/poster2json/commit/862c535923176f95a0f1a14af93e9693dd44d724))
+* **deps:** bump nltk 3.9.2 -&gt; 3.9.4 to clear CVE-2025-14009 (critical) ([610f73c](https://github.com/fairdataihub/poster2json/commit/610f73c87a33a614846017ba420acb409e807bbf))
+* **deps:** bump pillow 12.1.0 -&gt; 12.2.0 and black 22.12.0 -> 26.3.1 ([943d07e](https://github.com/fairdataihub/poster2json/commit/943d07e1895fe22c178e72602811a629b09f4bd7))
+* derive formats from file extension instead of LLM extraction ([ce3d707](https://github.com/fairdataihub/poster2json/commit/ce3d70781776e5b32954b931eca2130d98070803))
+* fix dependencies ([6c6fc67](https://github.com/fairdataihub/poster2json/commit/6c6fc67e1b9c55332fe48321388fcaf4b9643424))
+* funder identifiers use URL format everywhere, update tests ([b4cf8ca](https://github.com/fairdataihub/poster2json/commit/b4cf8ca9b7b6b6c2a7275a50a3cf4809f8a0fdaf))
+* license canonical display name + version field extraction (0.5.9) ([84d4b63](https://github.com/fairdataihub/poster2json/commit/84d4b639c137b02d1547d36efd9446ac0bd15ce0))
+* normalize identifiers to URL format for Zenodo validation ([bd34144](https://github.com/fairdataihub/poster2json/commit/bd34144822116572915fb9c9e8a71c4f701e1a16))
+* prevent XY-cut vertical splits on single-line blocks ([ede75ff](https://github.com/fairdataihub/poster2json/commit/ede75ff8280d166fadc6c4f09c276e24206393ab))
+* Prompt updates for title casing and placeholder hallucinations (v0.1.9) ([53b39e6](https://github.com/fairdataihub/poster2json/commit/53b39e64e504a259d671ed02ac4827524fcdcc0f))
+* PyMuPDF fallback when pdfalto text causes JSON parse failure (0.5.5) ([3100b63](https://github.com/fairdataihub/poster2json/commit/3100b63a133bfbed6eeeffc26121035fd061fc61))
+* reduce prompt prohibition language to recover LLM output length ([a9f40bf](https://github.com/fairdataihub/poster2json/commit/a9f40bf713d88801cf7145ff7199d37d92b5d0fc))
+* remove concrete example values from prompts to prevent echoing (0.5.6) ([0254d9c](https://github.com/fairdataihub/poster2json/commit/0254d9c73de8521e93a76f49784cb506711fd69b))
+* Revert ALTO XML column reordering that caused validation regression (v0.1.12) ([5795520](https://github.com/fairdataihub/poster2json/commit/5795520c83ec9e411812b004343f9f61aa91bdfb))
+* rewrite _repair_unescaped_quotes as character-walking JSON repair ([aff3980](https://github.com/fairdataihub/poster2json/commit/aff398058c158612a1ae481bdfad88d5ccc1b59d))
+* ROR rate limit 6 req/s, retry with backoff, 25-failure circuit breaker ([005776a](https://github.com/fairdataihub/poster2json/commit/005776a9c0f9c3d64601345d83c9b4dd76406d32))
+* Smart title-case for ALL-CAPS poster titles (v0.1.9) ([97f3c4d](https://github.com/fairdataihub/poster2json/commit/97f3c4d8e3c38a02bf30afd70b402e506191ab42))
+* stop conference field hallucination at the prompt level ([33289f0](https://github.com/fairdataihub/poster2json/commit/33289f0a0b4a40d73022b4a0d811081a6d591ebb))
+* stop hallucinating publicationYear in extraction prompts ([6ab31af](https://github.com/fairdataihub/poster2json/commit/6ab31af33f5d9444bc2b528e8eead4872435d5a1))
+* stop hardcoding descriptionType to Other, default to Abstract ([74536e8](https://github.com/fairdataihub/poster2json/commit/74536e8d6a67fdd98a3830901c9b649e285cfb75))
+* Strip empty-string conference metadata values (v0.1.11) ([22357dc](https://github.com/fairdataihub/poster2json/commit/22357dc57dc7ac082234959ad8540e633411b4f8))
+* strip mailto: links from PDF link annotations ([56b9020](https://github.com/fairdataihub/poster2json/commit/56b9020e82c1bb33280859f591ba36f8fb75c128))
+* Strip prompt-placeholder hallucinations from conference metadata ([1a41d29](https://github.com/fairdataihub/poster2json/commit/1a41d2920bbc507cf366cb2f16830d48d533998a))
+* suppress invalid escape sequence warning in repair function ([a48c493](https://github.com/fairdataihub/poster2json/commit/a48c493a9790b02d74bed27cf18493529872849c))
+* tag auto-generated descriptions as Other instead of Abstract ([3945d81](https://github.com/fairdataihub/poster2json/commit/3945d810acea66a64f693d0ba7e446b35c845391))
+* unload JSON model before vision load on image posters ([b85c08c](https://github.com/fairdataihub/poster2json/commit/b85c08c9e4ae0def7122f5c39e9762013917b9d5))
+* update code and docs for poster_schema v0.2 (DataCite 4.7) ([01cc762](https://github.com/fairdataihub/poster2json/commit/01cc762474551be8c0fe487b8955b668cf6c2397))
+* update markdownlint configuration and improve README.md content ([f06e74c](https://github.com/fairdataihub/poster2json/commit/f06e74cc83db1c92cae75561c2a5f25f7c5b5f05))
+* update README.md by removing unnecessary brackets from URLs ([45e12d0](https://github.com/fairdataihub/poster2json/commit/45e12d0e54d2e046da18c85d115aa4aeea9d74a8))
+* use MIME types for formats per DataCite schema 4.7 ([e3f82ae](https://github.com/fairdataihub/poster2json/commit/e3f82aefa149955838bac370b36523d846af2fc0))
+
+
+### Reverts
+
+* remove min_new_tokens (model ignores it for multi-EOS configs) ([f2fcbbc](https://github.com/fairdataihub/poster2json/commit/f2fcbbcf4f8c71d40ddb8238abc6c349abad1136))
+
+
+### Documentation
+
+* add AI-generated image attribution hover to logo ([077617b](https://github.com/fairdataihub/poster2json/commit/077617b8b7dad682e2a9c708e553e1d1be7ecb83))
+* add funding section, version to citation, remove acknowledgements ([8223b35](https://github.com/fairdataihub/poster2json/commit/8223b354532662dbaf02d1f5d4ddc3570a29471b))
+* add normalization and enrichment pipeline to architecture ([4e305d4](https://github.com/fairdataihub/poster2json/commit/4e305d49f017d344ad245bdbb305964bba383040))
+* correct model description and surface 0.4.x features in README ([80827e6](https://github.com/fairdataihub/poster2json/commit/80827e6daea664f2a58a35451cdf361d92f35f9a))
+* pdfalto parameter inventory and migration plan ([f68dd7c](https://github.com/fairdataihub/poster2json/commit/f68dd7c3fa59589c62c5679901fbce6f4f6de3ca))
+
 ## [0.8.0] - 2026-05-28
 
 Migrate PDF text extraction from pdfalto to pdfplumber, removing the last GPL-licensed
