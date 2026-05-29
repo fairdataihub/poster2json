@@ -14,8 +14,8 @@ Technical architecture and methodology for poster2json.
                     │                   │    │                 │
                [PDF Files]        [Image Files]    [Transformers]
                     │                   │         Llama 3.1 8B
-               [pdfalto]         [Qwen2-VL-7B]   Section-aware
-               XML Layout        Vision OCR      JSON Generation
+               [pdfplumber]      [Qwen2-VL-7B]   Section-aware
+               Text Layout       Vision OCR      JSON Generation
 ```
 
 ## Models
@@ -43,19 +43,24 @@ Vision-language model for image-based poster OCR:
 
 ## Stage 1: Raw Text Extraction
 
-### PDF Processing (pdfalto)
+### PDF Processing (pdfplumber)
 
-For PDF files, the pipeline uses `pdfalto` to:
+For PDF files, the pipeline uses `pdfplumber` to:
 
-1. Convert PDF to ALTO XML format
-2. Preserve layout structure and spatial coordinates
-3. Extract text blocks maintaining reading order
-4. Handle multi-column layouts
+1. Extract character-level text with positional coordinates and font metadata
+2. Reconstruct reading order from layout geometry (handles multi-column posters)
+3. Detect section headers from font-size and weight cues
+4. Emit Markdown-style headed text for downstream prompting
 
 ```python
 # Simplified extraction flow
-pdf_path → pdfalto → ALTO XML → parse_text_blocks() → raw_text
+pdf_path → pdfplumber chars → reading-order reconstruction (xy_cut) → raw_text
 ```
+
+Reading order is reconstructed by `poster2json/xy_cut.py`, which clusters characters
+into lines and blocks and orders them top-to-bottom, left-to-right within detected
+columns. PyMuPDF is retained as a secondary fallback when pdfplumber yields too little
+text.
 
 ### Image Processing (Qwen2-VL)
 
@@ -130,7 +135,7 @@ If a publisher name is extracted, it is also looked up against ROR to populate `
 
 ### Language detection
 
-The `language` field is detected from the raw poster text using `langdetect`, overwriting any value the LLM may have produced. The result is an ISO 639-3 code (e.g., "eng").
+The `language` field is detected from the raw poster text using the `lingua` language detector, overwriting any value the LLM may have produced. The result is an ISO 639-1 code (e.g., "en"), or null when the text is too short (<200 chars / <50 non-ASCII codepoints) or the detector is unsure.
 
 ### Description type
 
@@ -192,14 +197,22 @@ Outputs conform to [poster-json-schema](https://github.com/fairdataihub/poster-j
 
 ```
 poster2json/
-├── poster_extraction.py    # Main pipeline
-│   ├── get_raw_text()      # Stage 1: Text extraction
-│   ├── extract_json_with_retry()  # Stage 2: JSON structuring
-│   ├── postprocess_json()  # Post-processing
-│   └── calculate_metrics() # Evaluation
-├── api.py                  # Flask REST API
-├── Dockerfile              # Container definition
-└── docker-compose.yml      # Orchestration
+├── extract.py        # Core pipeline: text extraction + JSON structuring + post-processing
+│   ├── get_raw_text()                  # Stage 1 dispatch: PDF / image
+│   ├── extract_text_with_pdfplumber()  # Layout-aware PDF extraction
+│   ├── extract_json_with_retry()       # Stage 2: JSON structuring
+│   └── _postprocess_json()             # Post-processing + normalization hooks
+├── xy_cut.py         # Reading-order reconstruction for multi-column layouts
+├── cli.py            # Command-line interface
+├── gui.py            # Optional graphical interface
+├── identifiers.py    # DOI / arXiv / URL extraction
+├── orcid.py          # ORCID enrichment
+├── ror.py            # ROR affiliation/publisher enrichment
+├── funders.py        # Crossref Funder Registry matching
+├── language.py       # lingua language detection
+├── standards.py      # SPDX rights normalization
+├── normalize.py      # Field normalization helpers
+└── validate.py       # Schema validation
 ```
 
 ## Configuration
@@ -208,8 +221,8 @@ poster2json/
 
 | Variable | Description |
 |----------|-------------|
-| `PDFALTO_PATH` | Path to pdfalto binary |
 | `CUDA_VISIBLE_DEVICES` | GPU device(s) to use |
+| `POSTER2JSON_ROR` | Set to `0` to disable ROR affiliation/publisher enrichment |
 
 ### Model Configuration
 
@@ -222,7 +235,6 @@ MAX_RETRY_TOKENS = 24000
 
 ## See Also
 
-- [Evaluation](EVALUATION.md) - Validation metrics and results
-- [API Reference](API.md) - REST API documentation
-- [Installation](INSTALLATION.md) - Setup instructions
+- [Evaluation](evaluation.md) - Validation metrics and results
+- [Overview](index.md) - Quick start and feature summary
 

@@ -1,5 +1,7 @@
 # PDFAlto Custom Parameters & Heuristics in poster2json
 
+> **Historical — describes the removed pdfalto pipeline.** Kept as the source inventory that [crosswalk.md](crosswalk.md) maps to the current pdfplumber / XY-cut implementation. The pdfalto code described here no longer exists in `extract.py` (removed in v0.8.0).
+
 Every numerical cutoff, heuristic, and custom parameter in the poster2json pdfalto pipeline. These were tuned empirically against our poster corpus and are load-bearing — any migration target must replicate or improve on each one.
 
 Source file: `poster2json/extract.py`

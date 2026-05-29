@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-05-28
+
+Migrate PDF text extraction from pdfalto to pdfplumber, removing the last GPL-licensed
+dependency. Consolidates the 0.6.x–0.7.x migration line into one release.
+
+### Changed
+
+- **pdfplumber is now the default (and only) PDF text extractor.** PDF posters are extracted with `pdfplumber` (MIT, pure Python) instead of the `pdfalto` binary (Xpdf / GPLv2). PyMuPDF remains the low-text fallback. This removes the project's only GPL-licensed dependency and the platform-specific binary requirement; no binary install, no subprocess, no ALTO XML.
+- **Minimum-text quality gate** in `get_raw_text` lowered to `MIN_PDF_TEXT_CHARS = 200` (was a shared `>500` gate across two extractors). With a single primary extractor, output below the threshold falls back to PyMuPDF.
+
+### Added
+
+- **Recursive XY-cut reading-order engine** (`poster2json/xy_cut.py`): a port of xpdf's largest-gap XY-cut tree that reconstructs multi-column reading order directly from `page.chars`. Replaces the migration-era flow-ordering + column-assignment pipeline, and handles spanning titles/footnotes/footers that the old column-major sort could not interleave (`_promote_spanning_leaves`, `_merge_bottom_region`).
+- **Inline section/caption splitter**: figure/table captions and bare section-keyword headers in the extracted text are promoted to `## ` headers so the LLM isolates them as distinct sections.
+- `pdfplumber >=0.10.0` dependency.
+
+### Removed
+
+- All pdfalto code: `extract_text_with_pdfalto()`, `_parse_alto_xml()`, `_parse_text_styles()`, the `PDFALTO_PATH` binary lookup, and the `subprocess`-based invocation. The `pdfalto` (for PDF processing) line in CLI `--version`/info output is gone.
+
+### Documentation
+
+- `README.md`, `docs/index.md`, `docs/architecture.md`, `docs/evaluation.md` updated for the pdfplumber pipeline; `crosswalk.md` annotated for migration completion and the XY-cut rewrite; new `llama_generation_settings.md` documenting the JSON-model generation knobs.
+- Validation: **19/20 (95%)** on the 20-poster annotated set (word 0.92 / ROUGE-L 0.85 / numbers 0.97 / fields 0.88). The lone failure is a dense table/flowchart poster whose reference annotation splits one visual region into many fine-grained sections.
+
 ## [0.5.9] - 2026-05-08
 
 License display name normalization + version field extraction.

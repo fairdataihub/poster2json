@@ -1,5 +1,7 @@
 # PDFAlto Migration Plan
 
+> **Historical — migration complete as of v0.8.0.** pdfplumber won and is now the default; pdfalto is fully removed. This planning doc is kept as the decision record. For the implemented pipeline see [crosswalk.md](crosswalk.md) and [docs/architecture.md](docs/architecture.md).
+
 poster2json is MIT-licensed. pdfalto is licensed under Apache 2.0 but statically links Xpdf (GPLv2), creating a license compatibility problem for distribution. We need to migrate to a fully MIT/Apache-compatible PDF text extraction tool.
 
 ## Candidates

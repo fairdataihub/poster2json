@@ -2,9 +2,16 @@
 
 Parameter-by-parameter crosswalk from the pdfalto extraction pipeline to pdfplumber. Every cutoff, heuristic, and architectural decision from `pdfalto_poster_params.md` is mapped to its pdfplumber equivalent, with rationale for changes.
 
-Source files: `poster2json/extract.py`
-- pdfalto path: `_parse_alto_xml()`, `_parse_text_styles()`
+> **Status (v0.8.0): migration complete.** pdfplumber is the default and only PDF text extractor; PyMuPDF remains as a low-text fallback. All pdfalto code is removed — `_parse_alto_xml()`, `_parse_text_styles()`, `extract_text_with_pdfalto()`, the `PDFALTO_PATH` lookup, and the `subprocess`/ALTO-XML machinery no longer exist in `extract.py`. This document is retained as the migration record and a parameter reference.
+>
+> **Reading order has since been rewritten.** §§5–7 and §10 describe the *initial* migration design (geometric line grouping → column-boundary detection → column-major ordering). That subsystem was superseded by a recursive **XY-cut** splitter in `poster2json/xy_cut.py` (see §7). The column-detection helpers (`_detect_column_boundaries`, `_detect_column_boundaries_from_gaps`, `_validate_boundaries`, `_group_words_into_lines`, `_assign_lines_to_columns`) remain defined in `extract.py` but are **no longer called**. For the current pipeline see [docs/architecture.md](docs/architecture.md); for current validation scores see [docs/evaluation.md](docs/evaluation.md).
+>
+> Line numbers below are approximate as of the migration commit. Function names are the stable anchors.
+
+Source files: `poster2json/extract.py`, `poster2json/xy_cut.py`
+- pdfalto path: removed (was `_parse_alto_xml()`, `_parse_text_styles()`)
 - pdfplumber path: `extract_text_with_pdfplumber()` and helpers
+- reading order: `xy_cut.chars_to_reading_order()` (replaced the column-assignment helpers)
 
 ---
 
@@ -111,7 +118,9 @@ Instead, we extract words with `extra_attrs=["size"]` only, then retroactively a
 
 ## 5. Line Grouping (NEW — replaces ALTO TextLine)
 
-**Location:** `_group_words_into_lines()`, line 650
+> **Superseded by XY-cut (§7).** `_group_words_into_lines()` is no longer called. Lines now come from the XY-cut leaf clustering in `xy_cut._cluster_lines()` (baseline tolerance `BASELINE_RANGE = 0.5 × avg font size`), then re-aggregated to word level by `_chars_to_word_lines()`. The parameters below describe the original geometric grouper, kept here as a reference.
+
+**Location:** `_group_words_into_lines()`, line 650 (retained, uncalled)
 
 pdfalto provides `<TextLine>` elements directly. pdfplumber gives raw words that we must group into lines.
 
@@ -123,6 +132,8 @@ pdfalto provides `<TextLine>` elements directly. pdfplumber gives raw words that
 ---
 
 ## 6. Column Boundary Detection
+
+> **Superseded by XY-cut (§7).** Explicit column-boundary detection is gone. The XY-cut splitter discovers column structure implicitly as vertical gaps in the recursion, so there is no boundary list to compute or validate. `_detect_column_boundaries()`, `_detect_column_boundaries_from_gaps()`, and `_validate_boundaries()` remain defined but are uncalled. The original design is documented below.
 
 ### pdfalto
 
@@ -160,47 +171,36 @@ An additional validation pass not present in pdfalto. Checks that detected colum
 
 ---
 
-## 7. Reading Order & Column Assignment
+## 7. Reading Order (recursive XY-cut)
 
 ### pdfalto
 
 pdfalto's `-readingOrder` flag handled this internally. The ALTO XML output was already in reading order. poster2json deliberately **did not** sort by vpos to preserve pdfalto's ordering.
 
-### pdfplumber
+### pdfplumber (current)
 
-A two-phase approach combining text-flow ordering with column structure:
+The flow-order + column-assignment approach originally written for the migration could not represent layouts where spanning blocks (titles, footnotes, sidebars) interleave between column groups — the column-major `(col, vpos)` sort always grouped a whole column together. It was replaced by a port of xpdf's recursive **XY-cut** tree, the same algorithm behind pdfalto's `-readingOrder`.
 
-**Phase 1: Flow-ordered line grouping** (line 906)
+**Location:** `poster2json/xy_cut.py`, `chars_to_reading_order(chars, page_width, page_height)`, called from `extract_text_with_pdfplumber()` (line 870).
 
-Words arrive from `_pw_extract_words()` in PDF text-flow order (the order characters appear in the PDF content stream). We group consecutive words with `top` within 3pt into flow lines.
+The splitter works on `page.chars` directly (not pre-grouped lines). At each level it finds the largest vertical and horizontal gaps among the character bounding boxes; if a gap clears a font-size-relative threshold it cuts there and recurses, preferring column (vertical) cuts. Equally-large gaps at the same level are co-cut. Leaf chunks are clustered into lines by baseline proximity, then the tree is walked in reading order (vertical-split children left-to-right, horizontal-split children top-to-bottom).
 
-| Parameter | Value | Purpose | Sensitivity |
-|-----------|-------|---------|-------------|
-| Flow line vtol | `3pt` | Same as line grouping tolerance | **HIGH** |
+| Constant | Value | Purpose | Sensitivity |
+|----------|-------|---------|-------------|
+| `MIN_GAP_AREA` | `3.0` | A candidate gap must satisfy `gap_width × block_height ≥ MIN_GAP_AREA × avg_font_size²` to be a split point | **HIGH** — the primary cut gate; too low over-splits prose, too high merges columns |
+| `MIN_GAP_SIZE` | `0.2` | Floor on gap width as a fraction of `avg_font_size` before a gap is even considered | **MEDIUM** |
+| `SPLIT_GAP_SLACK` | `0.2` | Gaps within `SPLIT_GAP_SLACK × avg_font_size` of the largest are co-cut at the same level (handles evenly-spaced multi-column grids) | **MEDIUM** |
+| `MIN_CHUNK_WIDTH` | `2.0` | Each child chunk must exceed `MIN_CHUNK_WIDTH × avg_font_size` wide, else the split is rejected | **MEDIUM** — prevents slivering off single-glyph columns |
+| `BASELINE_RANGE` | `0.5` | Leaf chars within `BASELINE_RANGE × avg_font_size` vertically are clustered onto one line | **HIGH** — too small splits sub/superscripts; too large merges adjacent lines |
+| `DESCENT_ADJUST` | `0.35` | Char center used for containment is shifted toward the baseline by this fraction of height (matches xpdf's `descentAdjustFactor`) | **LOW** |
 
-**Phase 2: Targeted cross-column line splitting** (line 920)
+**Spanning-block promotion:** after the tree is built, `_promote_spanning_leaves()` lifts full-width leaves (titles, banners, footnotes that cross the whole text span) out of any single column so they emit in their true top-to-bottom position rather than being trapped inside the first column. `_merge_bottom_region()` does the same for a full-width footer band. This is the specific capability the old column-major sort lacked.
 
-Flow-ordered lines that span multiple columns are split at validated boundaries.
+**Bridge to the block builder:** `_chars_to_word_lines(reading_lines, words)` (line 737) maps the char-level XY-cut lines back onto the already-extracted word boxes (a word goes to the line where most of its chars land), so `_lines_to_blocks()` keeps its word-level input contract. Blocks are emitted in XY-cut order and tagged `col = 0` (line 877) — there is no longer any column index to sort on.
 
-| Parameter | Value | Purpose | Sensitivity |
-|-----------|-------|---------|-------------|
-| Boundary tolerance | `page_width * 0.05` | Gap midpoint must be near a validated boundary | **MEDIUM** |
-| Min gap for split | `15pt` | Only split where a ≥15pt gap exists near a boundary | **HIGH** — prevents splitting lines that legitimately span columns (titles, table rows with no gutter) |
-| Min words per segment | `≥ 2` (non-rightmost segments) | Non-rightmost segments must have ≥2 words; rightmost segment can have 1 | **HIGH** — prevents splitting Hebrew+English mixed lines where text in different scripts appears near column boundaries. The rightmost-exemption allows table rows ending with single values (e.g. "Dominated") |
+**`use_text_flow=True` is still set** on `_pw_extract_words()` (line 863), but only to get stable word bounding boxes; it is no longer the reading-order driver. Reading order comes entirely from the XY-cut tree.
 
-**Phase 3: Column assignment** (line 954)
-
-Unsplit lines are assigned to columns by center-x position using `bisect_right` against validated boundaries.
-
-**Phase 4: Within-column y-sort** (line 960)
-
-After assignment, lines within each column are sorted by vertical position. This ensures `_lines_to_blocks()` receives y-sorted input regardless of text-flow order.
-
-| Parameter | Value | Purpose | Sensitivity |
-|-----------|-------|---------|-------------|
-| Sort key | `min(w["top"] for w in line)` | Top of line's topmost word | **HIGH** — removing this was the cause of the v18 4564017 regression (r=0.55) |
-
-**Key architectural difference:** pdfalto gave us reading order for free. pdfplumber requires us to use text-flow order as the primary signal, then reconcile it with detected column structure. The `use_text_flow=True` parameter is the critical enabler — without it, pdfplumber's default geometric sort scrambles multi-column content exactly the way pdfalto's `-readingOrder` flag was designed to prevent.
+**Key architectural difference:** pdfalto gave us reading order for free via xpdf's XY-cut. pdfplumber gives us raw chars, so we run that same XY-cut ourselves in `xy_cut.py` rather than approximating it with a column-major sort.
 
 ---
 
@@ -268,26 +268,27 @@ We build blocks from y-sorted lines within each column. A new block starts when 
 
 ## 10. Layout Zoning (NEW — pdfplumber only)
 
-**Location:** `extract_text_with_pdfplumber()`, line 970
+**Location:** `extract_text_with_pdfplumber()`, line 914
 
-pdfplumber adds a layout zoning pass not present in pdfalto. Blocks are classified into zones for ordering:
+pdfplumber adds a layout zoning pass not present in pdfalto. The XY-cut tree (§7) already produces correct reading order; zoning then hoists page-level furniture (title banner, author/affiliation metadata, footer) out of the body flow so the LLM sees them in their conventional positions. Blocks are classified into four zones:
 
 | Zone | Criterion | Sort Order |
 |------|-----------|------------|
-| Header | Wide block (`width > 50% text span`) above column content start | By vpos (top to bottom) |
-| Meta | Narrow block in top 12% of page containing email/ORCID patterns | By (vpos, hpos) |
-| Body | Everything else | By (column index, vpos) |
-| Footer | Wide block below column content end | By vpos |
+| Header | Title-font block (`fontsize ≥ 1.4 × page-median font`) in the top region (`vpos + height ≤ col_start + 2% page height`) | By vpos (top to bottom) |
+| Meta | Narrow block in top 12% of page containing email/ORCID/`Authors` patterns | By (vpos, hpos) |
+| Footer | Wide block (`width > 50% text span`) below column content end | By vpos |
+| Body | Everything else | **Untouched — kept in XY-cut reading order** |
 
 | Parameter | Value | Purpose | Sensitivity |
 |-----------|-------|---------|-------------|
-| Wide threshold | `> 50%` of text span | Distinguishes full-width headers/footers from column content | **MEDIUM** — some posters have column-width headers that won't be classified as "wide" |
+| Title-font threshold | `fontsize ≥ 1.4 ×` page-median font size | Identifies the spanning title/banner. **Changed from the original width-based test** — large headers in asymmetric layouts aren't always wider than 50% of the span, but they are reliably larger-font | **MEDIUM** |
+| Wide threshold | `> 50%` of text span | Now used only for the footer test | **MEDIUM** |
 | Top zone | `12%` of page height | Meta content (author affiliations, ORCIDs) region | **LOW** |
 | Column start tolerance | `+ 2%` page height | Header blocks can extend slightly into column region | **LOW** |
 | Min column block length | `10` characters | Blocks shorter than 10 chars don't count when computing column start position | **LOW** |
 | Meta pattern | `@\S+\.\S+`, `orcid.org`, `ORCID:\s*\d`, `^Authors?\b` | Identifies affiliation/contact metadata blocks | **LOW** |
 
-**Final sort order:** header → meta → body → footer. Body blocks use `(col, vpos)` ordering — column-major, top-to-bottom within columns.
+**Final sort order:** header → meta → body → footer. Header, meta, and footer are each vpos-sorted; **body blocks are not re-sorted** — they retain the XY-cut reading order from §7. (The old column-major `(col, vpos)` body sort was removed; re-sorting would undo the spanning-block interleaving the XY-cut tree produces.)
 
 ---
 
@@ -326,13 +327,13 @@ pdfplumber adds a layout zoning pass not present in pdfalto. Blocks are classifi
 
 ## 13. Minimum Text Quality Gate
 
-**Location:** `get_raw_text()`, line 575
+**Location:** `get_raw_text()`, line 1093 (`MIN_PDF_TEXT_CHARS`, line 1041)
 
-**Unchanged.** Both extractors fall back to PyMuPDF if output is ≤500 characters:
+**Changed.** pdfplumber is now the primary PDF extractor; PyMuPDF is the fallback. `get_raw_text()` runs pdfplumber first and accepts its output if it has at least `MIN_PDF_TEXT_CHARS` characters, otherwise it falls back to PyMuPDF. (During the migration both pdfalto and pdfplumber shared a `> 500`-char gate; with pdfalto gone there is a single extractor and the gate dropped to 200.)
 
 | Parameter | Value | Sensitivity |
 |-----------|-------|-------------|
-| Min output | `> 500` characters | **LOW** — catches scanned-image PDFs and extraction failures |
+| `MIN_PDF_TEXT_CHARS` | `200` characters | **LOW** — catches scanned-image PDFs and extraction failures; below this, fall back to PyMuPDF |
 
 ---
 
@@ -365,6 +366,8 @@ pdfplumber adds a layout zoning pass not present in pdfalto. Blocks are classifi
 ---
 
 ## Validation Scores (5-Poster Canary Set, 4bit quantization)
+
+> **Interim numbers, kept for the migration record.** This 5-poster canary (build `v19c`) is what justified the cutover from pdfalto to pdfplumber — it shows pdfplumber matching or beating pdfalto on the same posters. It is **not** the final result. After the reading-order rewrite (§7) and the inline-section splitter, the full 20-poster set reaches **19/20 (95%)**. For current per-poster scores and aggregates see [docs/evaluation.md](docs/evaluation.md).
 
 ### pdfplumber v19c
 
@@ -416,10 +419,8 @@ pdfplumber adds a layout zoning pass not present in pdfalto. Blocks are classifi
 New stages added by pdfplumber:
 - Phantom space filtering (§2) — handles a PDF artifact pdfalto didn't encounter
 - Font annotation strategy (§3) — works around font subsetting in `extract_words`
-- Line grouping (§5) — replaces ALTO `<TextLine>` structure
-- Boundary validation (§6) — additional column boundary quality check
-- Cross-column line splitting (§7) — handles flow-ordered lines spanning columns
-- Layout zoning (§10) — classifies blocks into header/meta/body/footer for ordering
+- Recursive XY-cut reading order (§7, `xy_cut.py`) — the current reading-order engine; replaced the migration-era line-grouping (§5) and column-detection (§6) stages, which are now uncalled
+- Layout zoning (§10) — hoists header/meta/footer out of the XY-cut body flow
 
 Stages identical between extractors: §11–§15 (text normalization, Unicode cleanup, quality gate, uncaptured text recovery, JSON repair). These operate downstream of extraction and are extractor-agnostic.
 

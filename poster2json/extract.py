@@ -9,7 +9,7 @@ Models:
 - Qwen2-VL-7B-Instruct: Vision OCR for images
 
 Requirements:
-- pdfalto: PDF layout analysis tool (https://github.com/kermitt2/pdfalto)
+- pdfplumber: layout-aware PDF text extraction (MIT-licensed)
 - CUDA-capable GPU with ≥16GB VRAM
 """
 
@@ -17,8 +17,6 @@ import gc
 import json
 import os
 import re
-import shutil
-import subprocess
 import tempfile
 import time
 import unicodedata
@@ -98,24 +96,6 @@ _INLINE_LABEL_RE = re.compile(
 _INLINE_DASH_HEAD_RE = re.compile(
     r"(?:(?<=[.;])\s+|^)([A-Z][A-Z]{2,})\s*[—–]\s+(?=[A-Z])"
 )
-
-# Find pdfalto executable
-PDFALTO_PATH = os.environ.get("PDFALTO_PATH")
-if not PDFALTO_PATH:
-    known_paths = [
-        Path(__file__).parent / "executables" / "pdfalto",
-        Path.home() / "Downloads" / "pdfalto",
-        "/usr/local/bin/pdfalto",
-        "/usr/bin/pdfalto",
-    ]
-    for p in known_paths:
-        if Path(p).exists():
-            PDFALTO_PATH = str(p)
-            break
-    if not PDFALTO_PATH:
-        pdfalto_in_path = shutil.which("pdfalto")
-        if pdfalto_in_path:
-            PDFALTO_PATH = pdfalto_in_path
 
 
 def log(msg: str):
@@ -308,80 +288,6 @@ Rules:
 # ============================
 
 
-def extract_text_with_pdfalto(pdf_path: str) -> Optional[str]:
-    """Extract text from PDF using pdfalto (layout-aware)."""
-    log(f"Attempting text extraction with pdfalto for: {pdf_path}")
-    if PDFALTO_PATH is None:
-        return None
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            xml_path = os.path.join(tmpdir, "output.xml")
-            t0 = time.time()
-            result = subprocess.run(
-                [PDFALTO_PATH, "-noImage", "-readingOrder", pdf_path, xml_path],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            elapsed = time.time() - t0
-            if result.returncode != 0:
-                raise RuntimeError(f"pdfalto returned code {result.returncode}: {result.stderr}")
-            if not os.path.exists(xml_path):
-                raise RuntimeError("pdfalto did not produce output XML")
-            text = _parse_alto_xml(xml_path)
-            if text is None:
-                log(f"pdfalto XML parsing failed for: {pdf_path}")
-            else:
-                log(f"pdfalto extracted {len(text)} characters in {elapsed:.2f} seconds")
-            return text
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"pdfalto timeout processing {pdf_path}")
-    except Exception as e:
-        raise RuntimeError(f"pdfalto error: {e}")
-
-
-def _parse_text_styles(root, ns: str) -> dict:
-    """Parse <TextStyle> definitions from ALTO <Styles> section.
-
-    Returns dict keyed by style ID with fontsize (float), bold (bool),
-    italic (bool) fields.
-    """
-    styles = {}
-    for ts in root.findall(f".//{ns}TextStyle"):
-        sid = ts.get("ID", "")
-        if not sid:
-            continue
-        fontsize = 0.0
-        try:
-            fontsize = float(ts.get("FONTSIZE", "0"))
-        except (ValueError, TypeError):
-            pass
-        fontstyle = (ts.get("FONTSTYLE") or "").lower()
-        styles[sid] = {
-            "fontsize": fontsize,
-            "bold": "bold" in fontstyle,
-            "italic": "italic" in fontstyle,
-        }
-    # Try without namespace if nothing found
-    if not styles:
-        for ts in root.findall(".//TextStyle"):
-            sid = ts.get("ID", "")
-            if not sid:
-                continue
-            fontsize = 0.0
-            try:
-                fontsize = float(ts.get("FONTSIZE", "0"))
-            except (ValueError, TypeError):
-                pass
-            fontstyle = (ts.get("FONTSTYLE") or "").lower()
-            styles[sid] = {
-                "fontsize": fontsize,
-                "bold": "bold" in fontstyle,
-                "italic": "italic" in fontstyle,
-            }
-    return styles
-
-
 def _detect_column_boundaries(cx_values: list, page_w: float) -> list:
     """Detect column boundaries from block center-x gap analysis.
 
@@ -537,155 +443,6 @@ def _validate_boundaries(boundaries: list, lines: list,
             validated.append(b)
 
     return validated
-
-
-def _parse_alto_xml(xml_path: str) -> Optional[str]:
-    """Parse ALTO XML output from pdfalto.
-
-    Preserves pdfalto's native reading order (-readingOrder flag),
-    deduplicates lines within blocks, and prefixes detected headers
-    with '## ' based on font size/style analysis.
-    """
-    from xml.etree import ElementTree as ET
-
-    try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-
-        # Detect namespace
-        ns = "{http://www.loc.gov/standards/alto/ns-v3#}"
-        if not root.findall(f".//{ns}TextBlock"):
-            ns = ""
-
-        # Parse text styles for header detection
-        styles = _parse_text_styles(root, ns)
-
-        # Get page dimensions
-        page = root.find(f".//{ns}Page")
-        page_w = float(page.get("WIDTH", "1")) if page is not None else 1.0
-        page_h = float(page.get("HEIGHT", "1")) if page is not None else 1.0
-
-        # Extract blocks with spatial info
-        blocks = []
-        for tb in root.findall(f".//{ns}TextBlock"):
-            hpos = float(tb.get("HPOS", "0"))
-            vpos = float(tb.get("VPOS", "0"))
-            bw = float(tb.get("WIDTH", "0"))
-            bh = float(tb.get("HEIGHT", "0"))
-
-            # Collect TextLines, deduplicating within the block
-            seen_lines = []  # list of (vpos, words_set, text)
-            for tl in tb.findall(f".//{ns}TextLine"):
-                line_vpos = float(tl.get("VPOS", "0"))
-                strings = tl.findall(f".//{ns}String")
-                words = [s.get("CONTENT", "") for s in strings if s.get("CONTENT")]
-                if not words:
-                    continue
-                line_text = " ".join(words)
-                word_set = set(words)
-
-                # Skip duplicate lines: same VPOS and >80% word overlap
-                is_dup = False
-                for sv, sw, st in seen_lines:
-                    if abs(sv - line_vpos) < 2:  # same vertical position
-                        if len(word_set) > 0 and len(sw) > 0:
-                            overlap = len(word_set & sw) / max(len(word_set), len(sw))
-                            if overlap > 0.8:
-                                is_dup = True
-                                break
-                if not is_dup:
-                    seen_lines.append((line_vpos, word_set, line_text))
-
-            if not seen_lines:
-                continue
-
-            # Join all lines into a single line per block (like the old parser).
-            # Preserving PDF line breaks splits sentences and confuses the LLM.
-            block_text = " ".join(text for _, _, text in seen_lines)
-
-            # Collect style refs for header detection
-            style_refs = set()
-            for s in tb.findall(f".//{ns}String"):
-                sr = s.get("STYLEREFS", "")
-                if sr:
-                    style_refs.update(sr.split())
-
-            cx = hpos + bw / 2
-            blocks.append({
-                "hpos": hpos,
-                "vpos": vpos,
-                "width": bw,
-                "height": bh,
-                "cx": cx,
-                "text": block_text,
-                "style_refs": style_refs,
-            })
-
-        if not blocks:
-            return None
-
-        # NOTE: Block-level dedup removed — pdfalto with -readingOrder already
-        # handles duplicates. The dedup was dropping legitimate blocks that had
-        # similar text at similar vpos (e.g. "724 words" vs "755 words").
-
-        # Determine median body font size for header detection
-        body_sizes = []
-        for blk in blocks:
-            for sr in blk["style_refs"]:
-                if sr in styles and styles[sr]["fontsize"] > 0:
-                    body_sizes.append(styles[sr]["fontsize"])
-        median_fontsize = sorted(body_sizes)[len(body_sizes) // 2] if body_sizes else 0
-
-        # Preserve pdfalto's reading order (from -readingOrder flag).
-        # Do NOT sort by vpos — pdfalto already handles column layout
-        # and reading order correctly. Sorting by vpos overrides that
-        # and scrambles multi-column poster content.
-
-        # Build output — one line per block, no gap markers.
-        # Gap markers (blank lines) were removed because they change how
-        # the LLM segments content vs the reference annotations.
-        output_lines = []
-
-        for blk in blocks:
-
-            # Detect header: bold font >= median body size, or any font > 1.3x median
-            # Conservative filters to avoid false positives:
-            #   - Short blocks only (≤120 chars)
-            #   - Must start with a letter (skip bullets, numbers, symbols)
-            #   - Must contain ≥2 alphabetic words
-            #   - Skip contact-like text (emails, phones, URLs)
-            is_header = False
-            _t = blk["text"].strip()
-            _alpha_words = re.findall(r'[A-Za-z]{2,}', _t)
-            _starts_with_letter = bool(re.match(r'[A-Za-z]', _t))
-            _is_contact = bool(
-                re.search(r'@\S+\.\S+', _t)       # email
-                or re.search(r'\+\d[\d\s]{6,}', _t)  # phone
-                or re.search(r'www\.', _t, re.I)    # URL
-                or re.search(r'https?://', _t, re.I)
-            )
-            if (median_fontsize > 0 and len(_t) <= 120
-                    and _starts_with_letter and len(_alpha_words) >= 2
-                    and not _is_contact):
-                for sr in blk["style_refs"]:
-                    st = styles.get(sr, {})
-                    fs = st.get("fontsize", 0)
-                    if st.get("bold") and fs >= median_fontsize:
-                        is_header = True
-                        break
-                    if fs > median_fontsize * 1.3:
-                        is_header = True
-                        break
-
-            text = blk["text"]
-            if is_header:
-                text = f"## {text}"
-
-            output_lines.append(text)
-
-        return "\n".join(output_lines)
-    except Exception:
-        return None
 
 
 def _parse_font_style(fontname: str) -> dict:
@@ -1367,10 +1124,10 @@ def get_raw_text(
         return text, "qwen_vision"
 
     if ext == ".pdf":
-        text = extract_text_with_pdfalto(poster_path)
-        if text and len(text) > 500:
-            log(f"Using pdfalto output ({len(text)} characters)")
-            return text, "pdfalto"
+        text = extract_text_with_pdfplumber(poster_path)
+        if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
+            log(f"Using pdfplumber output ({len(text)} characters)")
+            return text, "pdfplumber"
         text = extract_text_with_pymupdf(poster_path)
         if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
             log(f"Using PyMuPDF fallback ({len(text)} characters)")
@@ -1981,9 +1738,9 @@ def _robust_json_parse(response: str) -> dict:
 def _add_bidi_markers(text: str) -> str:
     """Wrap RTL character runs in bidi embedding markers.
 
-    pdfplumber strips the bidi markers that pdfalto/xpdf preserved around
-    Hebrew, Arabic, and other RTL words. Without them the LLM receives bare
-    RTL codepoints in an unstructured layout and fails to extract sections.
+    pdfplumber does not emit bidi markers around Hebrew, Arabic, and other
+    RTL words. Without them the LLM receives bare RTL codepoints in an
+    unstructured layout and fails to extract sections.
     """
     if not text:
         return text
@@ -2600,8 +2357,8 @@ def extract_poster(
         generated = extract_json_with_retry(raw_text, model, tokenizer)
         t_json_elapsed = time.time() - t_json_start
 
-        if "error" in generated and source == "pdfalto":
-            log(f"pdfalto text failed after {t_json_elapsed:.2f}s, retrying with PyMuPDF")
+        if "error" in generated and source == "pdfplumber":
+            log(f"pdfplumber text failed after {t_json_elapsed:.2f}s, retrying with PyMuPDF")
             pymupdf_text = extract_text_with_pymupdf(poster_path)
             if pymupdf_text and len(pymupdf_text) > 500:
                 t_retry_start = time.time()

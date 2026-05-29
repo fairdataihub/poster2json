@@ -291,7 +291,6 @@ def info():
     click.echo("  - Qwen2-VL-7B-Instruct (Vision OCR for images)")
     click.echo("\nRequirements:")
     click.echo("  - CUDA-capable GPU with ≥16GB VRAM")
-    click.echo("  - pdfalto (for PDF processing)")
 
 
 if __name__ == "__main__":
