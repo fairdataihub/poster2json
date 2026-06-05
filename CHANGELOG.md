@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-06-05
+
+### Fixed
+
+- **pdfplumber memory blow-up on high character-count pages**: `get_raw_text` now probes the page character count with PyMuPDF first and skips the pdfplumber XY-cut path for pages above `MAX_PDFPLUMBER_CHARS` (30000), falling back to the bounded PyMuPDF extractor. Previously a single pathological PDF (tens of thousands of glyphs, sub-1pt fonts) could grow resident memory without bound until the process was OOM killed.
+- **Ghost "lone header" and title/author sections**: the uncaptured-text recovery in `_postprocess_json` now also counts section titles and the words already parsed into titles, creators, descriptions, and subjects as captured, and skips bare section-label lines. It no longer re-imports the title and author banner or duplicate section-name headers as empty content sections. Legitimate footer recovery (for example a Contact block) is preserved.
+
 ## [0.8.0] - 2026-05-28
 
 Migrate PDF text extraction from pdfalto to pdfplumber, removing the last GPL-licensed
