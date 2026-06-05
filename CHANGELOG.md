@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-06-05
+
+### Fixed
+
+- **XY-cut reading-order blow-up on dense pages**: `split_block` now partitions characters into child blocks in a single pass (`_partition`) instead of re-scanning the full character list for every child. The old per-child scan applied a 0.5pt boundary slack that could place a character into two adjacent children on dense pages, which made the recursion grow super-linearly in time and memory and exhaust RAM (tens of GB) on pages with very high glyph counts. A 49,713-character page that previously could not finish now completes in under a second, and reading-order output is byte-identical to the previous engine across a 40-poster sample. The `MAX_PDFPLUMBER_CHARS` guard added in 0.8.2 remains as a backstop.
+
 ## [0.9.0] - 2026-06-05
 
 ### Changed

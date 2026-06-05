@@ -7,6 +7,7 @@ from the same source, expressed in fractions of average font size.
 
 from __future__ import annotations
 
+import bisect
 import statistics
 from dataclasses import dataclass, field
 from typing import List, Tuple
@@ -62,6 +63,35 @@ def _chars_in(chars, x0, y0, x1, y1):
     return out
 
 
+def _partition(chars, bounds, axis):
+    """Split `chars` into one list per [bounds[i], bounds[i+1]) interval in a
+    single pass, keyed by the same center coordinate `_chars_in` uses.
+
+    Equivalent to calling `_chars_in` once per interval, because cut positions
+    always land inside whitespace gaps and no char center is within the old
+    0.5pt boundary slack of a cut, so assignment is unambiguous. Runs in
+    O(n log k) instead of O(n*k), and assigns each char to exactly one child
+    (the old per-interval slack could place a char into two children, which is
+    what made the recursion blow up on dense pages)."""
+    n_intervals = len(bounds) - 1
+    buckets = [[] for _ in range(n_intervals)]
+    if n_intervals == 1:
+        buckets[0].extend(chars)
+        return buckets
+    for c in chars:
+        if axis == "x":
+            coord = (c["x0"] + c["x1"]) / 2.0
+        else:
+            coord = c["bottom"] - DESCENT_ADJUST * (c["bottom"] - c["top"])
+        i = bisect.bisect_right(bounds, coord) - 1
+        if i < 0:
+            i = 0
+        elif i >= n_intervals:
+            i = n_intervals - 1
+        buckets[i].append(c)
+    return buckets
+
+
 def _min_chunk_width(chars, gaps, max_g, avg_fs, bbox):
     x0, _, x1, _ = bbox
     slack = SPLIT_GAP_SLACK * avg_fs
@@ -114,8 +144,7 @@ def split_block(chars, depth=0) -> Block:
         cuts = sorted(g[0] for g in vgaps if g[1] > max_v - slack)
         bounds = [x0] + cuts + [x1]
         children = []
-        for a, b in zip(bounds[:-1], bounds[1:]):
-            sub = _chars_in(chars, a, y0, b, y1)
+        for sub in _partition(chars, bounds, "x"):
             if sub:
                 children.append(split_block(sub, depth + 1))
         if len(children) <= 1:
@@ -127,8 +156,7 @@ def split_block(chars, depth=0) -> Block:
         cuts = sorted(g[0] for g in hgaps if g[1] > max_h - slack)
         bounds = [y0] + cuts + [y1]
         children = []
-        for a, b in zip(bounds[:-1], bounds[1:]):
-            sub = _chars_in(chars, x0, a, x1, b)
+        for sub in _partition(chars, bounds, "y"):
             if sub:
                 children.append(split_block(sub, depth + 1))
         if len(children) <= 1:
