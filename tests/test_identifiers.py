@@ -337,8 +337,9 @@ class TestEnrichJson:
         }
         result = enrich_json_with_identifiers(data, "")
         ni = result["creators"][0]["nameIdentifiers"][0]
-        assert ni["nameIdentifierScheme"] == "ORCID"
-        assert ni["schemeURI"] == "https://orcid.org"
+        assert ni["nameIdentifier"] == "https://orcid.org/0000-0002-1825-0097"
+        assert "nameIdentifierScheme" not in ni
+        assert "schemeURI" not in ni
 
     def test_infers_funder_scheme(self):
         data = {
@@ -441,8 +442,9 @@ class TestIdentifiersGatedByDefault:
         }
         result = enrich_json_with_identifiers(data, "")
         ni = result["creators"][0]["nameIdentifiers"][0]
-        assert ni["nameIdentifierScheme"] == "ORCID"
-        assert ni["schemeURI"] == "https://orcid.org"
+        assert ni["nameIdentifier"] == "https://orcid.org/0000-0002-1825-0097"
+        assert "nameIdentifierScheme" not in ni
+        assert "schemeURI" not in ni
 
     def test_explicit_flag_enables_doi(self):
         data = {"creators": [{"name": "Doe, John"}]}

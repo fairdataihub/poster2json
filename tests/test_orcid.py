@@ -117,8 +117,8 @@ def test_enrich_attaches_orcid():
     ni = out[0]["nameIdentifiers"]
     assert len(ni) == 1
     assert ni[0]["nameIdentifier"] == "https://orcid.org/0000-0001-2345-6789"
-    assert ni[0]["nameIdentifierScheme"] == "ORCID"
-    assert ni[0]["schemeURI"] == "https://orcid.org"
+    assert "nameIdentifierScheme" not in ni[0]
+    assert "schemeURI" not in ni[0]
 
 
 def test_enrich_skips_existing_orcid():
