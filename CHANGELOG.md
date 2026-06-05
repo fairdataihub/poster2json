@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-06-05
+
+### Changed
+
+- **`creators[].nameIdentifiers[]` now carry only `nameIdentifier`.** poster2json no longer writes `nameIdentifierScheme` or `schemeURI` onto name identifiers. The schema requires only `nameIdentifier`, and both fields are derivable from the identifier URL downstream. ORCID detection and dedup now key off the `orcid.org` URL instead of the scheme field, so name + affiliation ORCID enrichment is unchanged. Any scheme/schemeURI the model emits on name identifiers is stripped.
+
 ## [0.9.1] - 2026-06-05
 
 ### Fixed

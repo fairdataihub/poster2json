@@ -198,7 +198,14 @@ class OrcidClient:
 
 def _creator_has_orcid(creator: dict) -> bool:
     for ni in creator.get("nameIdentifiers", []):
-        if isinstance(ni, dict) and ni.get("nameIdentifierScheme") == "ORCID":
+        if not isinstance(ni, dict):
+            continue
+        # Detect by the identifier URL, since we no longer write
+        # nameIdentifierScheme onto nameIdentifiers.
+        if ni.get("nameIdentifierScheme") == "ORCID":
+            return True
+        nid = ni.get("nameIdentifier", "")
+        if isinstance(nid, str) and "orcid.org" in nid.lower():
             return True
     return False
 
@@ -234,11 +241,7 @@ def enrich_creators_orcid(creators: list, client: OrcidClient) -> list:
             continue
         creator.setdefault("nameIdentifiers", [])
         creator["nameIdentifiers"].append(
-            {
-                "nameIdentifier": f"https://orcid.org/{orcid}",
-                "nameIdentifierScheme": "ORCID",
-                "schemeURI": "https://orcid.org",
-            }
+            {"nameIdentifier": f"https://orcid.org/{orcid}"}
         )
     return creators
 

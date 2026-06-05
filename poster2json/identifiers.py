@@ -235,18 +235,15 @@ def _enrich_existing_identifiers(data: dict) -> dict:
             if not isinstance(ni, dict):
                 continue
             value = ni.get("nameIdentifier", "")
-            result = infer_identifier_scheme(value)
-            if result:
-                scheme, uri = result
-                if "nameIdentifierScheme" not in ni or not ni["nameIdentifierScheme"]:
-                    ni["nameIdentifierScheme"] = scheme
-                if "schemeURI" not in ni or not ni["schemeURI"]:
-                    ni["schemeURI"] = uri
-                # Fix 1: bare ORCIDs -> full URL format
-                if scheme == "ORCID":
-                    m = ORCID_RE.search(value)
-                    if m and not value.startswith("http"):
-                        ni["nameIdentifier"] = f"https://orcid.org/{m.group(1)}"
+            # nameIdentifiers carry only `nameIdentifier`; drop any scheme /
+            # schemeURI the model emitted (schema requires only nameIdentifier).
+            ni.pop("nameIdentifierScheme", None)
+            ni.pop("schemeURI", None)
+            # Normalize a bare ORCID to full URL form.
+            if isinstance(value, str):
+                m = ORCID_RE.search(value)
+                if m and not value.startswith("http"):
+                    ni["nameIdentifier"] = f"https://orcid.org/{m.group(1)}"
 
     # creators[*].affiliation[*].affiliationIdentifier -- normalize bare ROR IDs
     for creator in data.get("creators", []):
@@ -358,8 +355,6 @@ def _add_extracted_identifiers(
                         creators[i].setdefault("nameIdentifiers", [])
                         creators[i]["nameIdentifiers"].append({
                             "nameIdentifier": f"https://orcid.org/{orcid}",
-                            "nameIdentifierScheme": "ORCID",
-                            "schemeURI": "https://orcid.org",
                         })
             else:
                 # Attach all to first creator
@@ -368,8 +363,6 @@ def _add_extracted_identifiers(
                     for orcid in new_orcids:
                         creators[0]["nameIdentifiers"].append({
                             "nameIdentifier": f"https://orcid.org/{orcid}",
-                            "nameIdentifierScheme": "ORCID",
-                            "schemeURI": "https://orcid.org",
                         })
 
     # --- Crossref Funder IDs → fundingReferences[*].funderIdentifier ---

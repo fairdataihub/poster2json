@@ -1946,7 +1946,10 @@ def _needs_orcid_enrichment(creators) -> bool:
         if not has_aff:
             continue
         has_orcid = any(
-            isinstance(ni, dict) and ni.get("nameIdentifierScheme") == "ORCID"
+            isinstance(ni, dict) and (
+                ni.get("nameIdentifierScheme") == "ORCID"
+                or "orcid.org" in str(ni.get("nameIdentifier", "")).lower()
+            )
             for ni in c.get("nameIdentifiers") or []
         )
         if not has_orcid:
