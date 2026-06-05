@@ -515,13 +515,44 @@ def normalize_award_number(s: str) -> Optional[str]:
     return cleaned.upper()
 
 
+# Scheme base URL for each funderIdentifierType. Lets us populate schemeUri
+# deterministically so the frontend never has to ask for it (except for
+# "Other"). Values match the ones funders.py / identifiers.py already emit.
+_FUNDER_SCHEME_URIS = {
+    "ROR": "https://ror.org",
+    "Crossref Funder ID": "https://doi.org/10.13039",
+    "GRID": "https://www.grid.ac",
+    "ISNI": "https://isni.org",
+}
+
+# Canonical key order for a fundingReferences entry. schemeUri belongs with the
+# funder identifier fields (it describes funderIdentifier, not the award), then
+# the award fields follow.
+_FUNDING_KEY_ORDER = (
+    "funderName", "funderIdentifier", "funderIdentifierType", "schemeUri",
+    "awardTitle", "awardNumber", "awardUri",
+)
+
+
+def _order_funding_keys(fr: dict) -> dict:
+    ordered = {k: fr[k] for k in _FUNDING_KEY_ORDER if k in fr}
+    for k, v in fr.items():  # keep any unexpected keys, appended at the end
+        if k not in ordered:
+            ordered[k] = v
+    return ordered
+
+
 def normalize_funding_references(funding_refs: list) -> list:
-    """Cleanup awardNumber + funderName whitespace on each entry.
-    Strip awardUri/schemeUri values that are not valid URLs."""
+    """Cleanup awardNumber + funderName whitespace on each entry, strip
+    award/scheme URIs that are not valid URLs, derive schemeUri from the funder
+    identifier type when it is missing, and order the keys so schemeUri sits
+    with the funder identifier fields rather than the award fields."""
     if not isinstance(funding_refs, list):
         return funding_refs
+    out = []
     for fr in funding_refs:
         if not isinstance(fr, dict):
+            out.append(fr)
             continue
         if "awardNumber" in fr:
             fixed = normalize_award_number(fr["awardNumber"])
@@ -537,7 +568,13 @@ def normalize_funding_references(funding_refs: list) -> list:
             val = fr.get(uri_key, "")
             if isinstance(val, str) and val and not val.startswith(("http://", "https://")):
                 fr.pop(uri_key, None)
-    return funding_refs
+        # Derive schemeUri from the funder identifier type when it is missing,
+        # so the frontend can drop the field unless the type is "Other".
+        fit = fr.get("funderIdentifierType")
+        if fr.get("funderIdentifier") and not fr.get("schemeUri") and fit in _FUNDER_SCHEME_URIS:
+            fr["schemeUri"] = _FUNDER_SCHEME_URIS[fit]
+        out.append(_order_funding_keys(fr))
+    return out
 
 
 def normalize_subjects(subjects: list) -> list:

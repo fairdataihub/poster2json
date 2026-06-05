@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-06-05
+
+### Changed
+
+- **fundingReferences output**: `normalize_funding_references` now derives `schemeUri` from `funderIdentifierType` (ROR, Crossref Funder ID, GRID, ISNI) when it is missing, so callers do not need to collect it unless the type is Other. It also orders each entry's keys so `schemeUri` sits with the funder identifier fields (funderName, funderIdentifier, funderIdentifierType, schemeUri) ahead of the award fields (awardTitle, awardNumber, awardUri), instead of appearing next to awardUri.
+
 ## [0.8.2] - 2026-06-05
 
 ### Fixed
