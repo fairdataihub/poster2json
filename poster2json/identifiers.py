@@ -295,34 +295,45 @@ def _enrich_existing_identifiers(data: dict) -> dict:
     return data
 
 
-def _add_extracted_identifiers(data: dict, extracted: Dict[str, List[str]]) -> dict:
-    """Place regex-extracted identifiers into the correct schema locations."""
+def _add_extracted_identifiers(
+    data: dict, extracted: Dict[str, List[str]], extract_identifiers: bool = False
+) -> dict:
+    """Place regex-extracted identifiers into the correct schema locations.
+
+    ORCID (``creators[*].nameIdentifiers[]``) is always applied. The remaining
+    publication/funder identifiers — top-level ``identifiers[]`` (DOI/arXiv) and
+    ``fundingReferences[*].funderIdentifier`` — are scraped from the poster body
+    and frequently capture reference-list citations rather than the poster's own
+    identifiers, so they are only emitted when ``extract_identifiers`` is True.
+    By default that responsibility is handled upstream.
+    """
     if not extracted:
         return data
 
-    # --- DOIs and arXiv → identifiers[] ---
-    existing_ids = _existing_identifier_values(data, "identifiers")
-    if "identifiers" not in data:
-        data["identifiers"] = []
+    # --- DOIs and arXiv → identifiers[] (gated: handled upstream by default) ---
+    if extract_identifiers:
+        existing_ids = _existing_identifier_values(data, "identifiers")
+        if "identifiers" not in data:
+            data["identifiers"] = []
 
-    for doi in extracted.get("doi", []):
-        if doi.lower() not in existing_ids:
-            data["identifiers"].append({
-                "identifier": doi,
-                "identifierType": "DOI",
-            })
-            existing_ids.add(doi.lower())
+        for doi in extracted.get("doi", []):
+            if doi.lower() not in existing_ids:
+                data["identifiers"].append({
+                    "identifier": doi,
+                    "identifierType": "DOI",
+                })
+                existing_ids.add(doi.lower())
 
-    for arxiv_id in extracted.get("arxiv", []):
-        full_id = f"arXiv:{arxiv_id}"
-        if full_id.lower() not in existing_ids and arxiv_id.lower() not in existing_ids:
-            data["identifiers"].append({
-                "identifier": full_id,
-                "identifierType": "arXiv",
-            })
-            existing_ids.add(full_id.lower())
+        for arxiv_id in extracted.get("arxiv", []):
+            full_id = f"arXiv:{arxiv_id}"
+            if full_id.lower() not in existing_ids and arxiv_id.lower() not in existing_ids:
+                data["identifiers"].append({
+                    "identifier": full_id,
+                    "identifierType": "arXiv",
+                })
+                existing_ids.add(full_id.lower())
 
-    # --- ORCIDs → creators[*].nameIdentifiers[] ---
+    # --- ORCIDs → creators[*].nameIdentifiers[] (always applied) ---
     orcids = extracted.get("orcid", [])
     if orcids:
         creators = data.get("creators", [])
@@ -362,8 +373,10 @@ def _add_extracted_identifiers(data: dict, extracted: Dict[str, List[str]]) -> d
                         })
 
     # --- Crossref Funder IDs → fundingReferences[*].funderIdentifier ---
+    # Gated: funder identifiers scraped from poster text are handled upstream
+    # by default (ORCID and ROR enrichment are the exceptions that always run).
     funder_ids = extracted.get("crossref_funder", [])
-    if funder_ids:
+    if extract_identifiers and funder_ids:
         if "fundingReferences" not in data:
             data["fundingReferences"] = []
 
@@ -409,17 +422,22 @@ _LICENSE_URL_RE = re.compile(
 )
 
 
-def merge_pdf_link_annotations(data: dict, pdf_links: List[str]) -> dict:
+def merge_pdf_link_annotations(
+    data: dict, pdf_links: List[str], extract_identifiers: bool = False
+) -> dict:
     """Merge PDF link annotations into the JSON output.
 
     Classifies each URI and places it in the correct schema field:
-    - DOIs -> identifiers[]
-    - arXiv -> identifiers[]
-    - ORCIDs -> creators[*].nameIdentifiers[]
-    - Other scholarly URLs -> relatedIdentifiers[] with relationType "References"
+    - ORCIDs -> creators[*].nameIdentifiers[]  (always applied)
+    - DOIs -> identifiers[]                     (gated by extract_identifiers)
+    - arXiv -> identifiers[]                    (gated by extract_identifiers)
+    - Other scholarly URLs -> relatedIdentifiers[] with relationType
+      "References"                             (gated by extract_identifiers)
 
-    Skips license URLs (creativecommons.org, spdx.org) since those are
-    handled by normalize_rights_list.
+    By default only ORCID is merged; the publication/related identifiers from
+    the PDF link layer are handled upstream. Skips license URLs
+    (creativecommons.org, spdx.org) since those are handled by
+    normalize_rights_list.
     """
     if not pdf_links:
         return data
@@ -429,7 +447,11 @@ def merge_pdf_link_annotations(data: dict, pdf_links: List[str]) -> dict:
     scholarly_text = "\n".join(pdf_links)
     extracted = extract_identifiers_from_text(scholarly_text)
     if extracted:
-        result = _add_extracted_identifiers(result, extracted)
+        result = _add_extracted_identifiers(result, extracted, extract_identifiers)
+
+    # ORCID (above) is the only PDF-link identifier applied by default.
+    if not extract_identifiers:
+        return result
 
     scholarly_uris = set()
     for vals in extracted.values():
@@ -480,30 +502,43 @@ def merge_pdf_link_annotations(data: dict, pdf_links: List[str]) -> dict:
     return result
 
 
-def enrich_json_with_identifiers(data: dict, raw_text: str) -> dict:
+def enrich_json_with_identifiers(
+    data: dict, raw_text: str, extract_identifiers: bool = False
+) -> dict:
     """
     Main entry point for identifier enrichment.
 
-    1. Infers scheme/schemeURI for identifiers already in the Llama JSON.
-    2. Extracts new identifiers from raw poster text via regex.
-    3. Places them in correct schema locations (no duplicates).
+    ORCID (``creators[*].nameIdentifiers[]``) and ROR (affiliation identifiers)
+    are always enriched. Publication and related identifiers scraped from the
+    poster body — top-level ``identifiers[]`` (DOI/arXiv) and
+    ``relatedIdentifiers[]`` — are only emitted when ``extract_identifiers`` is
+    True. By default that responsibility is handled upstream, so any such
+    identifiers (including ones the model emitted) are dropped.
 
     Args:
         data: The Llama-generated JSON dict.
         raw_text: The raw OCR text from the poster.
+        extract_identifiers: When True, also scrape and emit DOI/arXiv/funder
+            identifiers and relatedIdentifiers from the poster text.
 
     Returns:
         Enriched copy of the data dict.
     """
     result = data.copy()
 
-    # Step 1: enrich what's already there
+    # Step 1: enrich what's already there (ORCID/ROR/scheme normalization)
     result = _enrich_existing_identifiers(result)
 
     # Step 2: extract from raw text
     extracted = extract_identifiers_from_text(raw_text)
 
-    # Step 3: add new identifiers
-    result = _add_extracted_identifiers(result, extracted)
+    # Step 3: add new identifiers (ORCID always; the rest only when enabled)
+    result = _add_extracted_identifiers(result, extracted, extract_identifiers)
+
+    # By default the model is not allowed to contribute publication/related
+    # identifiers — that is resolved upstream. Drop any that are present.
+    if not extract_identifiers:
+        result.pop("identifiers", None)
+        result.pop("relatedIdentifiers", None)
 
     return result

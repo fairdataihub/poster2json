@@ -71,7 +71,25 @@ def main(ctx):
     default=None,
     help="Precision mode for the JSON model. Defaults to 4bit (NF4)."
 )
-def extract(input_file: str, output: str, pretty: bool, model_id: str, quantization: str):
+@click.option(
+    "--identifiers/--no-identifiers",
+    "extract_identifiers",
+    default=None,
+    help=(
+        "Emit publication/funder identifiers scraped from the poster text "
+        "(top-level identifiers[], funder identifiers, relatedIdentifiers). "
+        "Off by default — handled upstream. ORCID and ROR are always emitted. "
+        "When unset, falls back to POSTER2JSON_EXTRACT_IDENTIFIERS."
+    )
+)
+def extract(
+    input_file: str,
+    output: str,
+    pretty: bool,
+    model_id: str,
+    quantization: str,
+    extract_identifiers: bool,
+):
     """
     Extract structured JSON from a scientific poster.
 
@@ -99,7 +117,12 @@ def extract(input_file: str, output: str, pretty: bool, model_id: str, quantizat
         click.echo(f"Quantization: {quantization}", err=True)
 
     try:
-        result = extract_poster(input_file, model_id=model_id, quantization=quantization)
+        result = extract_poster(
+            input_file,
+            model_id=model_id,
+            quantization=quantization,
+            extract_identifiers=extract_identifiers,
+        )
         
         if "error" in result:
             click.echo(f"Error during extraction: {result['error']}", err=True)

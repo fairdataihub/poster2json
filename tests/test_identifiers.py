@@ -40,22 +40,23 @@ class TestCanonicalizeDOI:
 class TestEnrichCanonicalizesDOIs:
     def test_canonicalizes_top_level_doi_identifier(self):
         data = {"identifiers": [{"identifier": "https://doi.org/10.5281/zenodo.99", "identifierType": "DOI"}]}
-        out = enrich_json_with_identifiers(data, "")
+        out = enrich_json_with_identifiers(data, "", extract_identifiers=True)
         assert out["identifiers"][0]["identifier"] == "10.5281/zenodo.99"
 
     def test_keeps_funder_crossref_doi_as_url(self):
+        # funderIdentifier scheme normalization runs regardless of the flag.
         data = {"fundingReferences": [{"funderName": "NIH", "funderIdentifier": "https://doi.org/10.13039/100000002"}]}
         out = enrich_json_with_identifiers(data, "")
         assert out["fundingReferences"][0]["funderIdentifier"] == "https://doi.org/10.13039/100000002"
 
     def test_canonicalizes_related_identifier_doi(self):
         data = {"relatedIdentifiers": [{"relatedIdentifier": "doi:10.21384/foo", "relatedIdentifierType": "DOI"}]}
-        out = enrich_json_with_identifiers(data, "")
+        out = enrich_json_with_identifiers(data, "", extract_identifiers=True)
         assert out["relatedIdentifiers"][0]["relatedIdentifier"] == "10.21384/foo"
 
     def test_arxiv_identifier_unchanged(self):
         data = {"identifiers": [{"identifier": "arXiv:2501.12345", "identifierType": "arXiv"}]}
-        out = enrich_json_with_identifiers(data, "")
+        out = enrich_json_with_identifiers(data, "", extract_identifiers=True)
         assert out["identifiers"][0]["identifier"] == "arXiv:2501.12345"
 
 
@@ -249,7 +250,7 @@ class TestEnrichJson:
     def test_adds_doi_from_text(self):
         data = {"creators": [{"name": "Doe, John"}]}
         text = "doi:10.1234/example"
-        result = enrich_json_with_identifiers(data, text)
+        result = enrich_json_with_identifiers(data, text, extract_identifiers=True)
         assert any(
             i.get("identifier") == "10.1234/example"
             for i in result.get("identifiers", [])
@@ -262,7 +263,7 @@ class TestEnrichJson:
             ]
         }
         text = "doi:10.1234/example"
-        result = enrich_json_with_identifiers(data, text)
+        result = enrich_json_with_identifiers(data, text, extract_identifiers=True)
         dois = [
             i
             for i in result["identifiers"]
@@ -320,7 +321,7 @@ class TestEnrichJson:
         data = {
             "identifiers": [{"identifier": "10.1234/foo", "identifierType": ""}]
         }
-        result = enrich_json_with_identifiers(data, "")
+        result = enrich_json_with_identifiers(data, "", extract_identifiers=True)
         assert result["identifiers"][0]["identifierType"] == "DOI"
 
     def test_infers_scheme_for_existing_name_identifier(self):
@@ -359,13 +360,13 @@ class TestEnrichJson:
             "fundingReferences": [{"funderName": "DFG"}]
         }
         text = "Funded by https://doi.org/10.13039/501100001659"
-        result = enrich_json_with_identifiers(data, text)
+        result = enrich_json_with_identifiers(data, text, extract_identifiers=True)
         assert result["fundingReferences"][0]["funderIdentifier"] == "https://doi.org/10.13039/501100001659"
 
     def test_arxiv_from_text(self):
         data = {}
         text = "arXiv:2301.12345"
-        result = enrich_json_with_identifiers(data, text)
+        result = enrich_json_with_identifiers(data, text, extract_identifiers=True)
         assert any(
             i.get("identifierType") == "arXiv"
             for i in result.get("identifiers", [])
@@ -382,6 +383,95 @@ class TestEnrichJson:
         enrich_json_with_identifiers(data, "doi:10.1234/foo")
         # Top-level dict should not have been mutated
         assert "identifiers" not in data
+
+
+# ============================
+# Identifiers gated by default
+# ============================
+
+
+class TestIdentifiersGatedByDefault:
+    """By default, publication/funder identifiers are handled upstream and not
+    emitted by poster2json. ORCID and ROR enrichment always run."""
+
+    def test_doi_from_text_suppressed_by_default(self):
+        data = {"creators": [{"name": "Doe, John"}]}
+        result = enrich_json_with_identifiers(data, "doi:10.1234/example")
+        assert "identifiers" not in result
+
+    def test_arxiv_from_text_suppressed_by_default(self):
+        result = enrich_json_with_identifiers({}, "arXiv:2301.12345")
+        assert "identifiers" not in result
+
+    def test_llm_emitted_identifiers_dropped_by_default(self):
+        # A reference-list arXiv id the model wrongly attached as a top-level
+        # identifier must not survive the default path.
+        data = {"identifiers": [{"identifier": "arXiv:1706.01859", "identifierType": "arXiv"}]}
+        result = enrich_json_with_identifiers(data, "")
+        assert "identifiers" not in result
+
+    def test_related_identifiers_dropped_by_default(self):
+        data = {"relatedIdentifiers": [{"relatedIdentifier": "10.21384/foo", "relatedIdentifierType": "DOI"}]}
+        result = enrich_json_with_identifiers(data, "")
+        assert "relatedIdentifiers" not in result
+
+    def test_funder_id_from_text_suppressed_by_default(self):
+        data = {"fundingReferences": [{"funderName": "DFG"}]}
+        text = "Funded by https://doi.org/10.13039/501100001659"
+        result = enrich_json_with_identifiers(data, text)
+        assert not result["fundingReferences"][0].get("funderIdentifier")
+
+    def test_orcid_still_added_by_default(self):
+        data = {"creators": [{"name": "Doe, John"}]}
+        result = enrich_json_with_identifiers(data, "0000-0002-1825-0097")
+        nis = result["creators"][0].get("nameIdentifiers", [])
+        assert len(nis) == 1
+        assert nis[0]["nameIdentifier"].endswith("0000-0002-1825-0097")
+
+    def test_existing_orcid_normalized_by_default(self):
+        data = {
+            "creators": [
+                {
+                    "name": "Doe, John",
+                    "nameIdentifiers": [
+                        {"nameIdentifier": "https://orcid.org/0000-0002-1825-0097"}
+                    ],
+                }
+            ]
+        }
+        result = enrich_json_with_identifiers(data, "")
+        ni = result["creators"][0]["nameIdentifiers"][0]
+        assert ni["nameIdentifierScheme"] == "ORCID"
+        assert ni["schemeURI"] == "https://orcid.org"
+
+    def test_explicit_flag_enables_doi(self):
+        data = {"creators": [{"name": "Doe, John"}]}
+        result = enrich_json_with_identifiers(
+            data, "doi:10.1234/example", extract_identifiers=True
+        )
+        assert any(
+            i.get("identifier") == "10.1234/example"
+            for i in result.get("identifiers", [])
+        )
+
+    def test_merge_pdf_links_suppressed_by_default(self):
+        from poster2json.identifiers import merge_pdf_link_annotations
+
+        data = {"creators": [{"name": "Doe, John"}]}
+        out = merge_pdf_link_annotations(
+            data, ["https://doi.org/10.1/x", "https://example.com/paper"]
+        )
+        assert "identifiers" not in out
+        assert "relatedIdentifiers" not in out
+
+    def test_merge_pdf_links_orcid_kept_by_default(self):
+        from poster2json.identifiers import merge_pdf_link_annotations
+
+        data = {"creators": [{"name": "Doe, John"}]}
+        out = merge_pdf_link_annotations(data, ["https://orcid.org/0000-0002-1825-0097"])
+        nis = out["creators"][0].get("nameIdentifiers", [])
+        assert len(nis) == 1
+        assert nis[0]["nameIdentifier"].endswith("0000-0002-1825-0097")
 
 
 # ============================

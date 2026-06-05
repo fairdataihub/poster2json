@@ -58,6 +58,18 @@ EXT_TO_FORMAT = {
     ".jpeg": "image/jpeg",
 }
 
+# Scraping publication/funder identifiers out of poster text (top-level
+# identifiers[], funder identifiers, relatedIdentifiers) is OFF by default —
+# that responsibility is handled upstream. ORCID and ROR enrichment always run.
+# Toggle per call via the extract_identifiers argument, or set the default for a
+# deployment with the POSTER2JSON_EXTRACT_IDENTIFIERS environment variable.
+_TRUTHY_ENV = {"1", "true", "yes", "on"}
+
+
+def _identifiers_flag_default() -> bool:
+    """Default for extract_identifiers, read from the environment."""
+    return os.environ.get("POSTER2JSON_EXTRACT_IDENTIFIERS", "").strip().lower() in _TRUTHY_ENV
+
 # Standalone section headings that posters print as a single bare word/phrase.
 # Small-caption/footer fonts mean the font-size header heuristic misses these,
 # so the LLM merges "References"/"Acknowledgements" into the adjacent body blob
@@ -1970,8 +1982,15 @@ def _is_section_label_only(text: str) -> bool:
     return bool(toks) and all(w in _SECTION_LABELS for w in toks)
 
 
-def _postprocess_json(data: dict, raw_text: str = "") -> dict:
-    """Comprehensive post-processing for extracted JSON."""
+def _postprocess_json(
+    data: dict, raw_text: str = "", extract_identifiers: bool = False
+) -> dict:
+    """Comprehensive post-processing for extracted JSON.
+
+    ORCID and ROR enrichment always run. Publication/funder identifier
+    extraction (top-level identifiers[], funder identifiers, relatedIdentifiers)
+    only runs when extract_identifiers is True; otherwise it is handled upstream.
+    """
     result = data.copy()
 
     # Add schema
@@ -2270,18 +2289,19 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
         result["fundingReferences"] = normalize_funding_references(
             result["fundingReferences"]
         )
-        if _needs_funder_enrichment(result["fundingReferences"]):
+        if extract_identifiers and _needs_funder_enrichment(result["fundingReferences"]):
             from .funders import enrich_funding_references
             from .funders import get_default_client as get_funder_client
             result["fundingReferences"] = enrich_funding_references(
                 result["fundingReferences"], get_funder_client()
             )
 
-    # Enrich with identifiers from raw text
+    # Enrich with identifiers from raw text. ORCID/ROR always run; the rest is
+    # gated by extract_identifiers (handled upstream by default).
     if raw_text:
         from .identifiers import enrich_json_with_identifiers
 
-        result = enrich_json_with_identifiers(result, raw_text)
+        result = enrich_json_with_identifiers(result, raw_text, extract_identifiers)
 
     # ORCID lookup -- skip if all creators already have ORCID
     if _needs_orcid_enrichment(result.get("creators")):
@@ -2329,7 +2349,9 @@ def _normalize_raw_text_for_model(text: str) -> str:
     return text
 
 
-def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
+def extract_json_with_retry(
+    raw_text: str, model, tokenizer, extract_identifiers: bool = False
+) -> dict:
     """
     Send raw poster text to the LLM and robustly parse the JSON response.
 
@@ -2377,7 +2399,9 @@ def extract_json_with_retry(raw_text: str, model, tokenizer) -> dict:
         response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
         result = _robust_json_parse(response)
 
-    result = _postprocess_json(result, raw_text=raw_text)
+    result = _postprocess_json(
+        result, raw_text=raw_text, extract_identifiers=extract_identifiers
+    )
     return result
 
 
@@ -2385,6 +2409,7 @@ def extract_poster(
     poster_path: str,
     model_id: Optional[str] = None,
     quantization: Optional[str] = None,
+    extract_identifiers: Optional[bool] = None,
 ) -> dict:
     """
     Extract structured JSON metadata from a scientific poster.
@@ -2396,7 +2421,14 @@ def extract_poster(
             (e.g. google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct).
         quantization: Precision mode: "fp16", "8bit", or "4bit".
             Defaults to "4bit" (NF4) when unset.
+        extract_identifiers: Emit publication/funder identifiers scraped from
+            the poster text — top-level identifiers[] (DOI/arXiv), funder
+            identifiers, and relatedIdentifiers. Off by default (handled
+            upstream); ORCID and ROR enrichment always run. When None, the
+            default comes from the POSTER2JSON_EXTRACT_IDENTIFIERS env var.
     """
+    if extract_identifiers is None:
+        extract_identifiers = _identifiers_flag_default()
     log(f"Processing poster: {poster_path}")
 
     # For image posters (and PDFs that may need vision OCR fallback):
@@ -2435,7 +2467,9 @@ def extract_poster(
 
     try:
         t_json_start = time.time()
-        generated = extract_json_with_retry(raw_text, model, tokenizer)
+        generated = extract_json_with_retry(
+            raw_text, model, tokenizer, extract_identifiers=extract_identifiers
+        )
         t_json_elapsed = time.time() - t_json_start
 
         if "error" in generated and source == "pdfplumber":
@@ -2443,7 +2477,9 @@ def extract_poster(
             pymupdf_text = extract_text_with_pymupdf(poster_path)
             if pymupdf_text and len(pymupdf_text) > 500:
                 t_retry_start = time.time()
-                generated = extract_json_with_retry(pymupdf_text, model, tokenizer)
+                generated = extract_json_with_retry(
+                    pymupdf_text, model, tokenizer, extract_identifiers=extract_identifiers
+                )
                 t_retry_elapsed = time.time() - t_retry_start
                 if "error" not in generated:
                     log(f"PyMuPDF fallback succeeded in {t_retry_elapsed:.2f}s")
@@ -2457,7 +2493,9 @@ def extract_poster(
 
         if pdf_links and "error" not in generated:
             from .identifiers import merge_pdf_link_annotations
-            generated = merge_pdf_link_annotations(generated, pdf_links)
+            generated = merge_pdf_link_annotations(
+                generated, pdf_links, extract_identifiers
+            )
 
         fmt = EXT_TO_FORMAT.get(ext)
         if fmt and "error" not in generated:
