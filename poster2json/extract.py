@@ -1040,6 +1040,29 @@ def extract_text_with_pymupdf(pdf_path: str) -> str:
 
 MIN_PDF_TEXT_CHARS = 200
 
+# Above this page-0 character count, skip pdfplumber's XY-cut reading-order
+# engine (which can hang for many minutes and exhaust system RAM on pathological
+# PDFs — e.g. vectorised text or millions of glyphs) and use the bounded PyMuPDF
+# extractor instead.
+MAX_PDFPLUMBER_CHARS = 30000
+
+
+def _pdf_char_count(pdf_path: str) -> int:
+    """Cheap character-count probe via PyMuPDF, used to gate the expensive
+    pdfplumber reading-order engine. Stops early once well past any threshold."""
+    try:
+        import fitz
+        doc = fitz.open(pdf_path)
+        n = 0
+        for page in doc:
+            n += len(page.get_text("text"))
+            if n > 200000:
+                break
+        doc.close()
+        return n
+    except Exception:
+        return 0
+
 
 def extract_pdf_link_annotations(pdf_path: str) -> list:
     """Extract URI link annotations embedded in a PDF.
@@ -1124,10 +1147,17 @@ def get_raw_text(
         return text, "qwen_vision"
 
     if ext == ".pdf":
-        text = extract_text_with_pdfplumber(poster_path)
-        if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
-            log(f"Using pdfplumber output ({len(text)} characters)")
-            return text, "pdfplumber"
+        # Guard: pdfplumber's XY-cut reading-order engine can hang and blow up
+        # memory on pathological PDFs with very high character counts. Probe the
+        # char count cheaply with PyMuPDF and skip pdfplumber for oversized pages.
+        if _pdf_char_count(poster_path) <= MAX_PDFPLUMBER_CHARS:
+            text = extract_text_with_pdfplumber(poster_path)
+            if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
+                log(f"Using pdfplumber output ({len(text)} characters)")
+                return text, "pdfplumber"
+        else:
+            log(f"PDF exceeds {MAX_PDFPLUMBER_CHARS} chars; skipping pdfplumber "
+                f"(XY-cut) to avoid hang/OOM, falling back to PyMuPDF")
         text = extract_text_with_pymupdf(poster_path)
         if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
             log(f"Using PyMuPDF fallback ({len(text)} characters)")
@@ -1921,6 +1951,25 @@ def _needs_funder_enrichment(funding_refs) -> bool:
     return False
 
 
+_SECTION_LABELS = {
+    "introduction", "intro", "background", "objective", "objectives", "aim", "aims",
+    "method", "methods", "methodology", "materials", "approach",
+    "result", "results", "discussion", "conclusion", "conclusions",
+    "abstract", "summary", "references", "acknowledgements", "acknowledgments",
+    "future work", "limitations", "contact",
+}
+
+
+def _is_section_label_only(text: str) -> bool:
+    """True if `text` is nothing but section-label keywords (e.g. "Methodology"
+    or "Introduction Results") — a lone-header echo, not real content."""
+    t = re.sub(r"[#*•:/\-–—]", " ", text or "").strip().lower()
+    if not t or len(t) > 45:
+        return False
+    toks = [w for w in t.split() if w]
+    return bool(toks) and all(w in _SECTION_LABELS for w in toks)
+
+
 def _postprocess_json(data: dict, raw_text: str = "") -> dict:
     """Comprehensive post-processing for extracted JSON."""
     result = data.copy()
@@ -2031,17 +2080,38 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
             # Compare raw text lines against section content and reclaim
             # any contiguous block of missing lines.
             if raw_text and cleaned_sections:
-                # Collect all captured text (sections + captions)
+                # Collect all captured text. As well as section content + captions
+                # this MUST include section titles and the words already parsed
+                # into structured metadata (titles / creators / descriptions /
+                # subjects); otherwise the recovery step re-imports the title and
+                # author banner and bare section-label headers as junk "ghost"
+                # sections.
                 captured = set()
                 for sec in cleaned_sections:
-                    for w in sec["sectionContent"].lower().split():
-                        captured.add(w)
-                for cap in result.get("imageCaptions", []):
-                    if isinstance(cap, dict):
-                        for v in cap.values():
-                            if isinstance(v, str):
-                                for w in v.lower().split():
-                                    captured.add(w)
+                    captured.update(sec["sectionContent"].lower().split())
+                    captured.update(
+                        sec.get("sectionTitle", "").replace("#", " ").lower().split()
+                    )
+                for key in ("imageCaptions", "tableCaptions"):
+                    for cap in result.get(key, []) or []:
+                        if isinstance(cap, dict):
+                            for v in cap.values():
+                                if isinstance(v, str):
+                                    captured.update(v.lower().split())
+                for fld in ("titles", "creators", "descriptions", "subjects"):
+                    for obj in result.get(fld, []) or []:
+                        if isinstance(obj, dict):
+                            for v in obj.values():
+                                if isinstance(v, str):
+                                    captured.update(v.lower().split())
+                                elif isinstance(v, list):
+                                    for it in v:
+                                        if isinstance(it, str):
+                                            captured.update(it.lower().split())
+                                        elif isinstance(it, dict):
+                                            for vv in it.values():
+                                                if isinstance(vv, str):
+                                                    captured.update(vv.lower().split())
 
                 # Strip ## prefixes and find ALL uncaptured blocks
                 raw_lines = [
@@ -2052,6 +2122,13 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                 current_block = []
                 for ln in raw_lines:
                     if not ln:
+                        continue
+                    # Never reclaim a bare section-label header ("Methodology",
+                    # "Introduction Results", ...) as recovered content.
+                    if _is_section_label_only(ln):
+                        if current_block and len(" ".join(current_block)) > 10:
+                            all_uncaptured_blocks.append(current_block)
+                        current_block = []
                         continue
                     words = ln.lower().split()
                     if not words:
@@ -2067,8 +2144,12 @@ def _postprocess_json(data: dict, raw_text: str = "") -> dict:
                     all_uncaptured_blocks.append(current_block)
 
                 for block in all_uncaptured_blocks:
+                    blob = "\n".join(block)
+                    # Drop blocks that are entirely section-label echoes.
+                    if _is_section_label_only(blob):
+                        continue
                     cleaned_sections.append({
-                        "sectionContent": "\n".join(block),
+                        "sectionContent": blob,
                     })
 
             result["content"]["sections"] = cleaned_sections
