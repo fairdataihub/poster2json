@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-06-05
+
+### Changed
+
+- **Several structured fields are no longer model-extracted.** These values are either fixed provenance markers or supplied by the repository/platform upstream, so letting the model guess them only introduced hallucinations:
+  - **`version`** is now always set to the fixed string `"Posters.science automated"`. It is no longer requested in the prompt or read from the poster.
+  - **`rightsList`** is dropped from poster2json output. Licenses are not printed reliably on posters; rights come from the repository or platform. Any `rightsList` the model emits is removed.
+  - **`descriptions[].descriptionType`** is auto-filled to its default `"Abstract"` for every generated description. The description text itself stays model-generated; only the type is set deterministically.
+  - **`conference.conferenceStartDate`, `conference.conferenceEndDate`, and `conference.conferenceYear`** are dropped. Conference dates come from the repository or are entered on the platform, not extracted from the poster. The remaining conference fields (name, location) are still grounded in the poster text as before.
+
 ## [0.9.2] - 2026-06-05
 
 ### Changed

@@ -1417,7 +1417,7 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
-1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, conference, version
+1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, conference
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
@@ -1437,7 +1437,6 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "descriptions": [{{"description": "A 3-4 sentence summary of the full poster...", "descriptionType": "Abstract"}}],
   "conference": null,
   "researchField": null,
-  "version": null,
   "content": {{
     "sections": [
       {{"sectionTitle": "Introduction", "sectionContent": "Full verbatim text of this section from the poster..."}},
@@ -1452,14 +1451,12 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 EXTRACTION NOTES:
 - publicationYear: Extract if a year is printed on the poster. If not found, set to null.
 - subjects: Extract 3-5 keywords from poster content
-- descriptions: Write a 3-4 sentence summary of the full poster; descriptionType should be "Abstract" if the poster has an abstract or summary, otherwise choose the most appropriate type from: Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other
+- descriptions: Write a 3-4 sentence summary of the full poster.
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
 - conference: Extract from text visible on the poster (header, footer, logos). If not found, set to null.
 - imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
-- version: Extract if printed on the poster. If not found, set to null.
-- rightsList: OPTIONAL - include if license/copyright info found on poster
 - researchField: MUST be exactly one of: "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences" — or null if unclear.
-- GROUNDING: For metadata fields (conference, publicationYear, version), only extract values that appear as text on the poster. If not found, use null. For section content, copy ALL text verbatim — do not skip or shorten.
+- GROUNDING: For metadata fields (conference, publicationYear), only extract values that appear as text on the poster. If not found, use null. For section content, copy ALL text verbatim — do not skip or shorten.
 
 POSTER TEXT TO CONVERT:
 {raw_text}
@@ -1467,7 +1464,7 @@ POSTER TEXT TO CONVERT:
 OUTPUT VALID JSON ONLY:"""
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
-1. creators, titles, publicationYear, subjects, descriptions, conference, version, content
+1. creators, titles, publicationYear, subjects, descriptions, conference, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim — every line of poster text must appear in a section
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
@@ -1482,7 +1479,6 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "descriptions": [{{"description": "3-4 sentence summary of the full poster", "descriptionType": "Abstract"}}],
   "conference": null,
   "researchField": null,
-  "version": null,
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "Full verbatim text of this section..."}}]
   }},
@@ -2012,6 +2008,17 @@ def _postprocess_json(
     # Drop LLM-hallucinated formats — set deterministically from file extension
     result.pop("formats", None)
 
+    # version is a fixed provenance marker, not extracted by the model.
+    result["version"] = "Posters.science automated"
+
+    # descriptionType is auto-filled to its default; only the description text
+    # (the summary) is model-generated.
+    descs = result.get("descriptions")
+    if isinstance(descs, list):
+        for d in descs:
+            if isinstance(d, dict) and d.get("description"):
+                d["descriptionType"] = "Abstract"
+
     # Ensure caption fields exist and normalize with auto-generated IDs
     for key, ctype in [("imageCaptions", "fig"), ("tableCaptions", "table")]:
         if key not in result:
@@ -2022,6 +2029,10 @@ def _postprocess_json(
     # Strip placeholder/hallucinated conference values
     conf = result.get("conference")
     if isinstance(conf, dict):
+        # Conference dates are not extracted by the model; they come from the
+        # repository or are entered on the platform.
+        for _k in ("conferenceStartDate", "conferenceEndDate", "conferenceYear"):
+            conf.pop(_k, None)
         cn = conf.get("conferenceName", "")
         if isinstance(cn, str) and _is_placeholder(cn):
             conf.pop("conferenceName", None)
@@ -2249,11 +2260,9 @@ def _postprocess_json(
             if isinstance(title_obj, dict) and "title" in title_obj:
                 title_obj["title"] = _clean_unicode_artifacts(title_obj.get("title", ""))
 
-    # Normalize licenses to SPDX form when confidently matched
-    if "rightsList" in result:
-        from .normalize import normalize_rights_list
-
-        result["rightsList"] = normalize_rights_list(result["rightsList"])
+    # Licenses are not extracted from the poster by the model; rights are
+    # provided by the repository or platform upstream. Drop any the model emits.
+    result.pop("rightsList", None)
 
     # Cleanup + dedupe subjects
     if "subjects" in result:

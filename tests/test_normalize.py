@@ -193,8 +193,9 @@ def test_conference_placeholder_stripped():
         }
     }
     out = _postprocess_json(data, raw_text="")
-    # conferenceName stripped; conferenceYear remains → object not collapsed
-    assert out["conference"] == {"conferenceYear": 2024}
+    # conferenceName is a placeholder and conferenceYear is dropped (dates are
+    # not model-extracted), so the object collapses to null.
+    assert out["conference"] is None
 
 
 def test_conference_all_placeholder_collapses_to_null():
