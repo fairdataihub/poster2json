@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] - 2026-06-08
+
+### Changed
+
+- **`publisher` is now an explicit null placeholder instead of being dropped.** poster2json never guesses a publisher (it is filled downstream by posters.science), but rather than omitting the field it now emits `publisher: null`, overwriting anything the model emitted. This gives the downstream automation a consistent slot to fill and keeps the (required) field present. The bundled `poster_schema.json` marks `publisher` as nullable (`"type": ["object", "null"]`), matching the existing nullable convention (e.g. `dateInformation`).
+
 ## [0.9.5] - 2026-06-08
 
 ### Fixed

@@ -221,12 +221,14 @@ def test_bogus_table_caption_filtered():
     assert len(out["imageCaptions"]) == 1
 
 
-def test_publisher_stripped_from_output():
+def test_publisher_set_to_null_placeholder():
     from poster2json.extract import _postprocess_json
 
     data = {"publisher": {"name": "Some University"}}
     out = _postprocess_json(data, raw_text="")
-    assert "publisher" not in out
+    # Publisher is filled downstream; the model's value is replaced with a null
+    # placeholder rather than dropped.
+    assert out["publisher"] is None
 
 
 def test_conference_dropped_even_when_real():

@@ -2025,8 +2025,10 @@ def _postprocess_json(
     # repository or entered on the platform. Drop anything the model emits.
     result.pop("conference", None)
 
-    # Publisher is auto-set by posters.science — strip if the LLM emitted one
-    result.pop("publisher", None)
+    # Publisher is filled downstream by posters.science, never guessed by the
+    # model. Emit an explicit null placeholder (overwriting anything the model
+    # or metadata supplied) so the downstream automation has a slot to fill.
+    result["publisher"] = None
 
     # Filter bogus captions (hallucinated "not found" or template echoes)
     for key in ("imageCaptions", "tableCaptions"):
