@@ -1417,7 +1417,7 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
-1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions, conference
+1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
@@ -1435,7 +1435,6 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
   "descriptions": [{{"description": "A 3-4 sentence summary of the full poster...", "descriptionType": "Abstract"}}],
-  "conference": null,
   "researchField": null,
   "content": {{
     "sections": [
@@ -1452,11 +1451,9 @@ EXTRACTION NOTES:
 - publicationYear: Extract if a year is printed on the poster. If not found, set to null.
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Write a 3-4 sentence summary of the full poster.
-- titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")
-- conference: Extract from text visible on the poster (header, footer, logos). If not found, set to null.
-- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
+- titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
 - researchField: MUST be exactly one of: "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences" — or null if unclear.
-- GROUNDING: For metadata fields (conference, publicationYear), only extract values that appear as text on the poster. If not found, use null. For section content, copy ALL text verbatim — do not skip or shorten.
+- GROUNDING: For metadata fields (publicationYear), only extract values that appear as text on the poster. If not found, use null. For section content, copy ALL text verbatim — do not skip or shorten.
 
 POSTER TEXT TO CONVERT:
 {raw_text}
@@ -1464,12 +1461,11 @@ POSTER TEXT TO CONVERT:
 OUTPUT VALID JSON ONLY:"""
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
-1. creators, titles, publicationYear, subjects, descriptions, conference, content
+1. creators, titles, publicationYear, subjects, descriptions, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim — every line of poster text must appear in a section
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
-5. conference: extract if visible on the poster. If not found, set to null.
-6. imageCaptions/tableCaptions: for figures/tables on the poster. If none, use [].
+5. imageCaptions/tableCaptions: for figures/tables on the poster. If none, use [].
 
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
@@ -1477,7 +1473,6 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
   "descriptions": [{{"description": "3-4 sentence summary of the full poster", "descriptionType": "Abstract"}}],
-  "conference": null,
   "researchField": null,
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "Full verbatim text of this section..."}}]
@@ -2026,39 +2021,9 @@ def _postprocess_json(
         elif isinstance(result[key], (dict, list)):
             result[key] = _normalize_captions(result[key], caption_type=ctype)
 
-    # Strip placeholder/hallucinated conference values
-    conf = result.get("conference")
-    if isinstance(conf, dict):
-        # Conference dates are not extracted by the model; they come from the
-        # repository or are entered on the platform.
-        for _k in ("conferenceStartDate", "conferenceEndDate", "conferenceYear"):
-            conf.pop(_k, None)
-        cn = conf.get("conferenceName", "")
-        if isinstance(cn, str) and _is_placeholder(cn):
-            conf.pop("conferenceName", None)
-        # Ground-truth check: conference name must appear in the poster text
-        cn = conf.get("conferenceName", "")
-        if isinstance(cn, str) and cn and raw_text:
-            cn_lower = cn.lower().strip()
-            if cn_lower not in raw_text.lower():
-                result["conference"] = None
-                conf = None
-        if conf is not None:
-            cl = conf.get("conferenceLocation", "")
-            if isinstance(cl, str) and _is_placeholder(cl):
-                conf.pop("conferenceLocation", None)
-            cu = conf.get("conferenceUrl", "")
-            if isinstance(cu, str) and _is_placeholder(cu):
-                conf.pop("conferenceUrl", None)
-            # Fix 4: validate conferenceUri is a real URL
-            for uri_key in ("conferenceUri", "conferenceUrl"):
-                val = conf.get(uri_key, "")
-                if isinstance(val, str) and val and not val.startswith(("http://", "https://")):
-                    conf.pop(uri_key, None)
-            # Collapse to null if no meaningful fields remain
-            meaningful = {k for k, v in conf.items() if v}
-            if not meaningful:
-                result["conference"] = None
+    # Conference is not extracted by the model at all; it is supplied by the
+    # repository or entered on the platform. Drop anything the model emits.
+    result.pop("conference", None)
 
     # Publisher is auto-set by posters.science — strip if the LLM emitted one
     result.pop("publisher", None)

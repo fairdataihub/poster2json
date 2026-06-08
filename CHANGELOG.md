@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-06-08
+
+### Changed
+
+- **The `conference` object is no longer model-extracted.** 0.9.3 dropped the conference date fields; this release drops the rest (`conferenceName`, `conferenceLocation`, `conferenceUri`, `conferenceAcronym`) so poster2json never emits a `conference` object at all. Conference information is supplied by the repository or entered on the platform, not guessed from the poster. The prompt no longer requests it, the placeholder/grounding postprocess logic is removed, and any `conference` the model emits is stripped.
+
 ## [0.9.3] - 2026-06-05
 
 ### Changed

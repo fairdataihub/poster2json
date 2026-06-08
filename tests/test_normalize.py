@@ -193,9 +193,8 @@ def test_conference_placeholder_stripped():
         }
     }
     out = _postprocess_json(data, raw_text="")
-    # conferenceName is a placeholder and conferenceYear is dropped (dates are
-    # not model-extracted), so the object collapses to null.
-    assert out["conference"] is None
+    # conference is no longer model-extracted at all; it is dropped entirely.
+    assert "conference" not in out
 
 
 def test_conference_all_placeholder_collapses_to_null():
@@ -203,7 +202,7 @@ def test_conference_all_placeholder_collapses_to_null():
 
     data = {"conference": {"conferenceName": "Name of Conference", "conferenceLocation": "City, Country"}}
     out = _postprocess_json(data, raw_text="")
-    assert out["conference"] is None
+    assert "conference" not in out
 
 
 def test_bogus_table_caption_filtered():
@@ -230,20 +229,22 @@ def test_publisher_stripped_from_output():
     assert "publisher" not in out
 
 
-def test_real_conference_preserved():
+def test_conference_dropped_even_when_real():
     from poster2json.extract import _postprocess_json
 
     data = {"conference": {"conferenceName": "US-RSE'25", "conferenceYear": 2025}}
     out = _postprocess_json(data, raw_text="")
-    assert out["conference"]["conferenceName"] == "US-RSE'25"
+    # Even a real, well-formed conference is dropped — it comes from metadata.
+    assert "conference" not in out
 
 
-def test_conference_grounded_in_poster_text():
+def test_conference_dropped_even_when_grounded():
     from poster2json.extract import _postprocess_json
 
     data = {"conference": {"conferenceName": "ICML 2025", "conferenceYear": 2025}}
     out = _postprocess_json(data, raw_text="Presented at ICML 2025, Vancouver")
-    assert out["conference"]["conferenceName"] == "ICML 2025"
+    # No grounding logic remains; conference is dropped regardless of the text.
+    assert "conference" not in out
 
 
 def test_conference_not_in_poster_text_stripped():
@@ -251,4 +252,4 @@ def test_conference_not_in_poster_text_stripped():
 
     data = {"conference": {"conferenceName": "US-RSE'25", "conferenceYear": 2025}}
     out = _postprocess_json(data, raw_text="Drug-polymer interactions in nanoparticle delivery systems")
-    assert out["conference"] is None
+    assert "conference" not in out
