@@ -253,3 +253,33 @@ def test_conference_not_in_poster_text_stripped():
     data = {"conference": {"conferenceName": "US-RSE'25", "conferenceYear": 2025}}
     out = _postprocess_json(data, raw_text="Drug-polymer interactions in nanoparticle delivery systems")
     assert "conference" not in out
+
+
+def test_as_result_dict_unwraps_top_level_array():
+    from poster2json.extract import _as_result_dict
+
+    # The model sometimes wraps the object in a JSON array.
+    assert _as_result_dict([{"titles": [{"title": "X"}]}]) == {"titles": [{"title": "X"}]}
+    assert _as_result_dict({"a": 1}) == {"a": 1}
+    assert "error" in _as_result_dict([])
+    assert "error" in _as_result_dict("not an object")
+
+
+def test_strip_surrogates_recursive():
+    from poster2json.extract import _strip_surrogates
+
+    out = _strip_surrogates({"titles": [{"title": "Lab \ud83d Group"}], "n": 3})
+    title = out["titles"][0]["title"]
+    assert "\ud83d" not in title
+    title.encode("utf-8")  # must not raise
+    assert out["n"] == 3
+
+
+def test_postprocess_strips_surrogates_so_json_dumps_succeeds():
+    import json
+    from poster2json.extract import _postprocess_json
+
+    # Lone surrogates in the model output broke json.dump(ensure_ascii=False).
+    data = {"titles": [{"title": "A\ud83dB"}], "subjects": [{"subject": "x\ud83d"}]}
+    out = _postprocess_json(data, raw_text="")
+    json.dumps(out, ensure_ascii=False).encode("utf-8")  # must not raise

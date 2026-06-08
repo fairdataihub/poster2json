@@ -2288,6 +2288,9 @@ def _postprocess_json(
             result["creators"], get_orcid_client()
         )
 
+    # Drop lone UTF-16 surrogates the model can emit (half of an emoji); they
+    # cannot be UTF-8 encoded and would break json.dump(ensure_ascii=False).
+    result = _strip_surrogates(result)
     return result
 
 
@@ -2326,6 +2329,36 @@ def _normalize_raw_text_for_model(text: str) -> str:
     return text
 
 
+def _strip_surrogates(obj):
+    """Recursively drop lone UTF-16 surrogate code points (e.g. half of an
+    emoji the model emitted). They are valid ``str`` but cannot be UTF-8
+    encoded, so they break ``json.dump(..., ensure_ascii=False)`` and file
+    writes downstream."""
+    if isinstance(obj, str):
+        if any("\ud800" <= c <= "\udfff" for c in obj):
+            return obj.encode("utf-8", "ignore").decode("utf-8")
+        return obj
+    if isinstance(obj, dict):
+        return {k: _strip_surrogates(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_strip_surrogates(v) for v in obj]
+    return obj
+
+
+def _as_result_dict(result):
+    """The model occasionally returns a top-level JSON array instead of an
+    object; unwrap it to the first object so the rest of the pipeline can treat
+    the result as a dict (avoids ``'list' object has no attribute 'get'``)."""
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, list):
+        for item in result:
+            if isinstance(item, dict):
+                return item
+        return {"error": "model returned a JSON array with no object", "raw": str(result)[:500]}
+    return {"error": f"model returned non-object JSON ({type(result).__name__})", "raw": str(result)[:500]}
+
+
 def extract_json_with_retry(
     raw_text: str, model, tokenizer, extract_identifiers: bool = False
 ) -> dict:
@@ -2357,7 +2390,7 @@ def extract_json_with_retry(
 
     log("Starting primary JSON extraction with full prompt")
     response = _generate(model, tokenizer, prompt, MAX_JSON_TOKENS)
-    result = _robust_json_parse(response)
+    result = _as_result_dict(_robust_json_parse(response))
     if "error" in result:
         log(f"Primary JSON parse error: {result['error']}")
     else:
@@ -2367,14 +2400,14 @@ def extract_json_with_retry(
     if "error" in result or _is_truncated(result.get("raw", "")):
         log(f"Retrying with max_tokens={MAX_RETRY_TOKENS}")
         response = _generate(model, tokenizer, prompt, MAX_RETRY_TOKENS)
-        result = _robust_json_parse(response)
+        result = _as_result_dict(_robust_json_parse(response))
 
     # Fallback to shorter prompt
     if "error" in result or _is_truncated(result.get("raw", "")):
         log("Using fallback shorter prompt")
         fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
         response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
-        result = _robust_json_parse(response)
+        result = _as_result_dict(_robust_json_parse(response))
 
     result = _postprocess_json(
         result, raw_text=raw_text, extract_identifiers=extract_identifiers
