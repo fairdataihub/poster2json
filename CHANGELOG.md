@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.9] - 2026-06-08
+
+### Changed
+
+- **Affiliations sharing a ROR organization now preserve distinct sub-unit names instead of collapsing.** Previously ROR enrichment replaced every affiliation string with the org's canonical display name, so two departments of one university — e.g. `"Hamilton Glaucoma Center, … University of California San Diego"` and `"Division of Ophthalmology Informatics …, University of California San Diego"` — both became `"University of California San Diego"` and were then de-duplicated to a single entry, discarding the department detail. Affiliation resolution now keeps each **distinct** source name when several map to the same ROR id, attaching the shared identifier to each. A **single** source name still uses ROR's canonical display name, and true duplicates (the same name twice) still collapse to one. Unresolved affiliations are de-duplicated by normalized name. Internally the separate enrich + dedupe passes are replaced by one `resolve_person_affiliations` step (which subsumes the 0.9.7 dedupe).
+
 ## [0.9.8] - 2026-06-08
 
 ### Changed

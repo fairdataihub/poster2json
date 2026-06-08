@@ -7,10 +7,8 @@ import pytest
 
 from poster2json.ror import (
     RorClient,
-    _enrich_affiliation_item,
     coerce_person_affiliations,
-    dedupe_person_affiliations,
-    enrich_persons,
+    resolve_person_affiliations,
     strip_extracted_affiliation_ids,
 )
 
@@ -27,41 +25,70 @@ class StubClient:
         return self.table.get(name)
 
 
-def test_enrich_affiliation_string_match_promotes_to_object():
-    client = StubClient({"Stanford University": {"id": "https://ror.org/00f54p054", "name": "Stanford University"}})
-    out = _enrich_affiliation_item("Stanford University", client)
-    assert out == {
-        "name": "Stanford University",
-        "affiliationIdentifier": "https://ror.org/00f54p054",
+_UCSD = {"id": "https://ror.org/0168r3w48", "name": "University of California San Diego"}
+
+
+def test_resolve_single_match_uses_canonical_name():
+    client = StubClient({"OHSU, School of Medicine, Portland, OR, USA": {
+        "id": "https://ror.org/009avj582", "name": "Oregon Health & Science University"}})
+    persons = [{"name": "Tedla", "affiliation": ["OHSU, School of Medicine, Portland, OR, USA"]}]
+    out = resolve_person_affiliations(persons, client)
+    assert out[0]["affiliation"] == [{
+        "name": "Oregon Health & Science University",
+        "affiliationIdentifier": "https://ror.org/009avj582",
         "affiliationIdentifierScheme": "ROR",
         "schemeUri": "https://ror.org/",
-    }
+    }]
 
 
-def test_enrich_affiliation_string_no_match_unchanged():
-    client = StubClient({})
-    assert _enrich_affiliation_item("Unknown Inst", client) == "Unknown Inst"
+def test_resolve_distinct_departments_same_org_kept_with_shared_id():
+    # The Jalili case: two different UCSD department strings -> same ROR id ->
+    # both kept, each with its original name plus the shared identifier.
+    hamilton = "Hamilton Glaucoma Center, ... University of California San Diego, La Jolla, CA, US"
+    informatics = "Division of Ophthalmology Informatics ... University of California San Diego, La Jolla, CA, USA"
+    client = StubClient({hamilton: _UCSD, informatics: _UCSD})
+    persons = [{"name": "Jalili", "affiliation": [hamilton, informatics]}]
+    out = resolve_person_affiliations(persons, client)
+    affs = out[0]["affiliation"]
+    assert [a["name"] for a in affs] == [hamilton, informatics]
+    assert all(a["affiliationIdentifier"] == "https://ror.org/0168r3w48" for a in affs)
+    assert all(a["affiliationIdentifierScheme"] == "ROR" for a in affs)
 
 
-def test_enrich_affiliation_object_replaces_name_with_canonical():
-    client = StubClient({"东京大学": {"id": "https://ror.org/057zh3y96", "name": "The University of Tokyo"}})
-    out = _enrich_affiliation_item({"name": "东京大学"}, client)
-    assert out["name"] == "The University of Tokyo"
-    assert out["affiliationIdentifier"] == "https://ror.org/057zh3y96"
+def test_resolve_identical_strings_collapse_to_one_canonical():
+    client = StubClient({"UC San Diego": _UCSD})
+    persons = [{"name": "X", "affiliation": ["UC San Diego", "UC San Diego"]}]
+    out = resolve_person_affiliations(persons, client)
+    assert out[0]["affiliation"] == [{
+        "name": "University of California San Diego",
+        "affiliationIdentifier": "https://ror.org/0168r3w48",
+        "affiliationIdentifierScheme": "ROR",
+        "schemeUri": "https://ror.org/",
+    }]
 
 
-def test_enrich_affiliation_object_with_existing_identifier_skips():
-    client = StubClient({"X": {"id": "https://ror.org/different", "name": "Different"}})
-    item = {"name": "X", "affiliationIdentifier": "https://ror.org/preserved"}
-    out = _enrich_affiliation_item(item, client)
-    assert out == item
-    assert client.calls == []  # no lookup performed
+def test_resolve_unresolved_kept_and_deduped_by_name():
+    client = StubClient({})  # nothing resolves
+    persons = [{"name": "X", "affiliation": ["Some Tiny Lab", "some tiny lab ", "Other Inst"]}]
+    out = resolve_person_affiliations(persons, client)
+    assert out[0]["affiliation"] == ["Some Tiny Lab", "Other Inst"]
 
 
-def test_enrich_persons_skips_missing_affiliation():
+def test_resolve_ignores_model_id_after_strip():
+    # strip removes the model-supplied id, resolve looks up by name and
+    # attaches ROR's own id (not whatever the model copied off the poster).
+    client = StubClient({"University of California San Diego": _UCSD})
+    persons = [{"name": "X", "affiliation": [
+        {"name": "University of California San Diego", "affiliationIdentifier": "https://ror.org/WRONG"}]}]
+    persons = strip_extracted_affiliation_ids(persons)
+    out = resolve_person_affiliations(persons, client)
+    assert out[0]["affiliation"][0]["affiliationIdentifier"] == "https://ror.org/0168r3w48"
+
+
+def test_resolve_skips_persons_without_affiliation():
     client = StubClient({})
     persons = [{"name": "A"}, {"name": "B", "affiliation": []}]
-    out = enrich_persons(persons, client)
+    out = resolve_person_affiliations(persons, client)
     assert out == persons
 
 
@@ -137,42 +164,6 @@ def test_coerce_filters_blank_list_items_but_keeps_valid():
     assert out[0]["affiliation"] == ["Stanford", {"name": "MIT"}]
 
 
-def test_dedupe_identical_objects():
-    # The other reported shape: same ROR object listed twice (Jalili / UCSD).
-    ucsd = {
-        "name": "University of California San Diego",
-        "schemeUri": "https://ror.org/",
-        "affiliationIdentifier": "https://ror.org/0168r3w48",
-        "affiliationIdentifierScheme": "ROR",
-    }
-    persons = [{"name": "Jalili, Jalil", "affiliation": [dict(ucsd), dict(ucsd)]}]
-    out = dedupe_person_affiliations(persons)
-    assert out[0]["affiliation"] == [ucsd]
-
-
-def test_dedupe_identical_strings():
-    persons = [{"name": "A", "affiliation": ["MIT", "mit", "MIT "]}]
-    out = dedupe_person_affiliations(persons)
-    assert out[0]["affiliation"] == ["MIT"]
-
-
-def test_dedupe_prefers_identified_entry_over_bare_name():
-    persons = [{"name": "A", "affiliation": [
-        "Stanford University",
-        {"name": "Stanford University", "affiliationIdentifier": "https://ror.org/00f54p054"},
-    ]}]
-    out = dedupe_person_affiliations(persons)
-    assert out[0]["affiliation"] == [
-        {"name": "Stanford University", "affiliationIdentifier": "https://ror.org/00f54p054"}
-    ]
-
-
-def test_dedupe_keeps_distinct_affiliations_and_order():
-    persons = [{"name": "A", "affiliation": ["MIT", "Stanford", "MIT"]}]
-    out = dedupe_person_affiliations(persons)
-    assert out[0]["affiliation"] == ["MIT", "Stanford"]
-
-
 def test_strip_extracted_affiliation_ids_removes_model_supplied_ids():
     # The model is not asked for an identifier; anything present was scraped
     # off the poster and must be dropped so the name is resolved via ROR.
@@ -192,23 +183,6 @@ def test_strip_leaves_string_affiliations_untouched():
     assert out[0]["affiliation"] == ["Stanford University"]
 
 
-def test_strip_then_resolve_uses_ror_match_not_model_id():
-    # End-to-end policy check: a model-supplied (here deliberately wrong) id is
-    # ignored, and the affiliation is resolved by name through ROR instead.
-    persons = [{"name": "A", "affiliation": [{
-        "name": "University of California San Diego",
-        "affiliationIdentifier": "https://ror.org/WRONGID",
-    }]}]
-    persons = strip_extracted_affiliation_ids(persons)
-    client = StubClient({"University of California San Diego": {
-        "id": "https://ror.org/0168r3w48",
-        "name": "University of California San Diego",
-    }})
-    out = enrich_persons(persons, client)
-    assert out[0]["affiliation"][0]["affiliationIdentifier"] == "https://ror.org/0168r3w48"
-    assert client.calls == ["University of California San Diego"]  # resolution ran
-
-
 def test_strip_then_resolve_no_match_leaves_bare_name():
     # If ROR can't confidently match, the affiliation keeps only its name
     # (no id) — the accepted trade-off of strip-and-resolve.
@@ -217,7 +191,7 @@ def test_strip_then_resolve_no_match_leaves_bare_name():
         "affiliationIdentifier": "https://ror.org/whatever",
     }]}]
     persons = strip_extracted_affiliation_ids(persons)
-    out = enrich_persons(persons, StubClient({}))
+    out = resolve_person_affiliations(persons, StubClient({}))
     assert out[0]["affiliation"] == [{"name": "Some Tiny Lab"}]
 
 

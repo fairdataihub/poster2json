@@ -2255,32 +2255,25 @@ def _postprocess_json(
     # Affiliation normalization: coerce to the schema's array form (the model
     # sometimes emits a bare string or single object), drop any model-supplied
     # identifiers (ROR IDs are resolved from the name, never trusted from what
-    # the model scraped off the poster), then ROR-enrich, then collapse
-    # duplicates. Coerce/strip/dedupe run unconditionally; only the network
-    # enrichment is gated on something actually being unresolved.
-    from .ror import (
-        coerce_person_affiliations,
-        dedupe_person_affiliations,
-        strip_extracted_affiliation_ids,
-    )
+    # the model scraped off the poster), then resolve against ROR. Resolution
+    # also collapses same-org duplicates while preserving distinct sub-unit
+    # names that share one ROR id. Coerce/strip run unconditionally; resolution
+    # is gated on something actually being unresolved.
+    from .ror import coerce_person_affiliations, strip_extracted_affiliation_ids
     for _persons_key in ("creators", "contributors"):
         if _persons_key in result:
             result[_persons_key] = coerce_person_affiliations(result[_persons_key])
             result[_persons_key] = strip_extracted_affiliation_ids(result[_persons_key])
 
-    # ROR enrichment -- skip if all affiliations already resolved
     if (_needs_ror_enrichment(result.get("creators"))
             or _needs_ror_enrichment(result.get("contributors"))):
-        from .ror import enrich_persons, get_default_client
+        from .ror import get_default_client, resolve_person_affiliations
         ror = get_default_client()
-        if "creators" in result:
-            result["creators"] = enrich_persons(result["creators"], ror)
-        if "contributors" in result:
-            result["contributors"] = enrich_persons(result["contributors"], ror)
-
-    for _persons_key in ("creators", "contributors"):
-        if _persons_key in result:
-            result[_persons_key] = dedupe_person_affiliations(result[_persons_key])
+        for _persons_key in ("creators", "contributors"):
+            if _persons_key in result:
+                result[_persons_key] = resolve_person_affiliations(
+                    result[_persons_key], ror
+                )
 
     # Funder + award normalization, then ROR funder lookup
     if "fundingReferences" in result:

@@ -180,45 +180,90 @@ class RorClient:
         return match
 
 
-def _enrich_affiliation_item(item, client: RorClient):
+def _affiliation_display_name(item) -> Optional[str]:
+    """Return the human-readable affiliation name (string, or dict ``name``)."""
     if isinstance(item, str):
-        m = client.lookup(item)
-        if m:
-            return {
-                "name": m["name"],
-                "affiliationIdentifier": m["id"],
-                "affiliationIdentifierScheme": "ROR",
-                "schemeUri": "https://ror.org/",
-            }
-        return item
-    if isinstance(item, dict):
-        if item.get("affiliationIdentifier"):
-            return item
-        name = item.get("name")
-        if not isinstance(name, str):
-            return item
-        m = client.lookup(name)
-        if m:
-            out = dict(item)
-            out["name"] = m["name"]
-            out["affiliationIdentifier"] = m["id"]
-            out["affiliationIdentifierScheme"] = "ROR"
-            out.setdefault("schemeUri", "https://ror.org/")
-            return out
-        return item
-    return item
+        return item.strip() or None
+    if isinstance(item, dict) and isinstance(item.get("name"), str):
+        return item["name"].strip() or None
+    return None
 
 
-def enrich_persons(persons: list, client: RorClient) -> list:
-    """Enrich affiliations on a creators or contributors list (in place)."""
+def _norm_name(name: str) -> str:
+    return unicodedata.normalize("NFKC", name).strip().casefold()
+
+
+def resolve_person_affiliations(persons: list, client: RorClient) -> list:
+    """Resolve affiliations against ROR and collapse same-org duplicates.
+
+    Operates in place on a creators/contributors list. Each affiliation (a
+    string or a ``{"name": ...}`` object — model-supplied identifiers were
+    already stripped) is looked up in ROR by name:
+
+    - **Unresolved** affiliations keep their original value and are
+      de-duplicated by normalized name.
+    - A ROR org reached by a **single** distinct source name is emitted once,
+      using ROR's canonical display name plus the identifier.
+    - When **several distinct** source names resolve to the **same** ROR org
+      (e.g. two departments of one university), each distinct name is kept with
+      the shared identifier, preserving the sub-unit detail instead of
+      collapsing to one canonical entry.
+
+    True duplicates (the same name listed twice) always collapse to one entry.
+    """
     if not isinstance(persons, list):
         return persons
     for p in persons:
         if not isinstance(p, dict):
             continue
         affs = p.get("affiliation")
-        if isinstance(affs, list):
-            p["affiliation"] = [_enrich_affiliation_item(a, client) for a in affs]
+        if not isinstance(affs, list):
+            continue
+
+        # Look each item up once, remembering its original display name.
+        records = []  # (display_name | None, ror_match | None, raw_item)
+        for item in affs:
+            name = _affiliation_display_name(item)
+            ror = client.lookup(name) if name else None
+            records.append((name, ror, item))
+
+        # How many distinct source names map to each resolved ROR id?
+        names_per_id = {}
+        for name, ror, _ in records:
+            if ror and name:
+                names_per_id.setdefault(ror["id"], set()).add(_norm_name(name))
+
+        out = []
+        seen = set()
+        for name, ror, raw in records:
+            if ror and name:
+                rid = ror["id"]
+                if len(names_per_id.get(rid, ())) > 1:
+                    # Several distinct sub-units of one org: keep each name.
+                    key = ("id+name", rid, _norm_name(name))
+                    display = name
+                else:
+                    # Single source name: use ROR's canonical display name.
+                    key = ("id", rid)
+                    display = ror["name"]
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({
+                    "name": display,
+                    "affiliationIdentifier": rid,
+                    "affiliationIdentifierScheme": "ROR",
+                    "schemeUri": "https://ror.org/",
+                })
+            else:
+                # Unresolved: keep original value, de-dupe by normalized name.
+                if name is not None:
+                    key = ("name", _norm_name(name))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                out.append(raw)
+        p["affiliation"] = out
     return persons
 
 
@@ -286,8 +331,8 @@ def strip_extracted_affiliation_ids(persons: list) -> list:
     annotations). The prompt does not request an identifier, so any
     ``affiliationIdentifier`` / ``affiliationIdentifierScheme`` / ``schemeUri``
     present was scraped by the model; we remove it here, before enrichment, so
-    ``enrich_persons`` resolves each affiliation by name. Mirrors how
-    ``creators[].nameIdentifiers[]`` drop model-emitted scheme fields.
+    ``resolve_person_affiliations`` resolves each affiliation by name. Mirrors
+    how ``creators[].nameIdentifiers[]`` drop model-emitted scheme fields.
     """
     if not isinstance(persons, list):
         return persons
@@ -301,77 +346,6 @@ def strip_extracted_affiliation_ids(persons: list) -> list:
             if isinstance(aff, dict):
                 for field in _AFFILIATION_ID_FIELDS:
                     aff.pop(field, None)
-    return persons
-
-
-def _affiliation_name(item) -> Optional[str]:
-    if isinstance(item, str):
-        name = item
-    elif isinstance(item, dict) and isinstance(item.get("name"), str):
-        name = item["name"]
-    else:
-        return None
-    name = unicodedata.normalize("NFKC", name).strip().casefold()
-    return name or None
-
-
-def _affiliation_dedupe_key(item):
-    if isinstance(item, dict):
-        ident = item.get("affiliationIdentifier")
-        if ident:
-            return ("id", str(ident).strip().lower())
-    name = _affiliation_name(item)
-    if name is not None:
-        return ("name", name)
-    return ("obj", json.dumps(item, sort_keys=True, ensure_ascii=False))
-
-
-def _affiliation_richness(item) -> int:
-    if isinstance(item, dict):
-        return 2 if item.get("affiliationIdentifier") else 1
-    return 0
-
-
-def dedupe_person_affiliations(persons: list) -> list:
-    """Collapse duplicate affiliation entries on every person (in place).
-
-    Entries are keyed on their ROR identifier when present, else on their
-    normalized name, so the same organization listed twice (a recurring model
-    artifact) collapses to one. When duplicates collide the richer entry (one
-    carrying an identifier) is kept, and a bare-name entry is dropped when an
-    identified entry already covers the same organization name.
-    """
-    if not isinstance(persons, list):
-        return persons
-    for p in persons:
-        if not isinstance(p, dict):
-            continue
-        affs = p.get("affiliation")
-        if not isinstance(affs, list) or len(affs) < 2:
-            continue
-        order = []
-        chosen = {}
-        for item in affs:
-            key = _affiliation_dedupe_key(item)
-            if key not in chosen:
-                chosen[key] = item
-                order.append(key)
-            elif _affiliation_richness(item) > _affiliation_richness(chosen[key]):
-                chosen[key] = item
-        # Drop bare-name entries already covered by an identified entry.
-        identified_names = {
-            _affiliation_name(it)
-            for it in chosen.values()
-            if isinstance(it, dict) and it.get("affiliationIdentifier")
-        }
-        identified_names.discard(None)
-        result = []
-        for key in order:
-            it = chosen[key]
-            if key[0] == "name" and key[1] in identified_names and _affiliation_richness(it) < 2:
-                continue
-            result.append(it)
-        p["affiliation"] = result
     return persons
 
 
