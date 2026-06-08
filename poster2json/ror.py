@@ -270,6 +270,40 @@ def coerce_person_affiliations(persons: list) -> list:
     return persons
 
 
+_AFFILIATION_ID_FIELDS = (
+    "affiliationIdentifier",
+    "affiliationIdentifierScheme",
+    "schemeUri",
+)
+
+
+def strip_extracted_affiliation_ids(persons: list) -> list:
+    """Drop model-supplied affiliation identifiers so IDs come only from ROR.
+
+    poster2json's policy is that affiliation ROR identifiers are resolved from
+    the affiliation *name* via the ROR API — never trusted from whatever the
+    model copied off the poster (printed ``ror.org/...`` text or link
+    annotations). The prompt does not request an identifier, so any
+    ``affiliationIdentifier`` / ``affiliationIdentifierScheme`` / ``schemeUri``
+    present was scraped by the model; we remove it here, before enrichment, so
+    ``enrich_persons`` resolves each affiliation by name. Mirrors how
+    ``creators[].nameIdentifiers[]`` drop model-emitted scheme fields.
+    """
+    if not isinstance(persons, list):
+        return persons
+    for p in persons:
+        if not isinstance(p, dict):
+            continue
+        affs = p.get("affiliation")
+        if not isinstance(affs, list):
+            continue
+        for aff in affs:
+            if isinstance(aff, dict):
+                for field in _AFFILIATION_ID_FIELDS:
+                    aff.pop(field, None)
+    return persons
+
+
 def _affiliation_name(item) -> Optional[str]:
     if isinstance(item, str):
         name = item

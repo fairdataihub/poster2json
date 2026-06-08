@@ -2253,13 +2253,20 @@ def _postprocess_json(
             result["language"] = None
 
     # Affiliation normalization: coerce to the schema's array form (the model
-    # sometimes emits a bare string or single object), then ROR-enrich, then
-    # collapse duplicates. Coerce and dedupe run unconditionally; only the
-    # network enrichment is gated on something actually being unresolved.
-    from .ror import coerce_person_affiliations, dedupe_person_affiliations
+    # sometimes emits a bare string or single object), drop any model-supplied
+    # identifiers (ROR IDs are resolved from the name, never trusted from what
+    # the model scraped off the poster), then ROR-enrich, then collapse
+    # duplicates. Coerce/strip/dedupe run unconditionally; only the network
+    # enrichment is gated on something actually being unresolved.
+    from .ror import (
+        coerce_person_affiliations,
+        dedupe_person_affiliations,
+        strip_extracted_affiliation_ids,
+    )
     for _persons_key in ("creators", "contributors"):
         if _persons_key in result:
             result[_persons_key] = coerce_person_affiliations(result[_persons_key])
+            result[_persons_key] = strip_extracted_affiliation_ids(result[_persons_key])
 
     # ROR enrichment -- skip if all affiliations already resolved
     if (_needs_ror_enrichment(result.get("creators"))

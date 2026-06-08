@@ -11,6 +11,7 @@ from poster2json.ror import (
     coerce_person_affiliations,
     dedupe_person_affiliations,
     enrich_persons,
+    strip_extracted_affiliation_ids,
 )
 
 
@@ -170,6 +171,54 @@ def test_dedupe_keeps_distinct_affiliations_and_order():
     persons = [{"name": "A", "affiliation": ["MIT", "Stanford", "MIT"]}]
     out = dedupe_person_affiliations(persons)
     assert out[0]["affiliation"] == ["MIT", "Stanford"]
+
+
+def test_strip_extracted_affiliation_ids_removes_model_supplied_ids():
+    # The model is not asked for an identifier; anything present was scraped
+    # off the poster and must be dropped so the name is resolved via ROR.
+    persons = [{"name": "A", "affiliation": [{
+        "name": "University of California San Diego",
+        "schemeUri": "https://ror.org/",
+        "affiliationIdentifier": "https://ror.org/scraped-off-poster",
+        "affiliationIdentifierScheme": "ROR",
+    }]}]
+    out = strip_extracted_affiliation_ids(persons)
+    assert out[0]["affiliation"] == [{"name": "University of California San Diego"}]
+
+
+def test_strip_leaves_string_affiliations_untouched():
+    persons = [{"name": "A", "affiliation": ["Stanford University"]}]
+    out = strip_extracted_affiliation_ids(persons)
+    assert out[0]["affiliation"] == ["Stanford University"]
+
+
+def test_strip_then_resolve_uses_ror_match_not_model_id():
+    # End-to-end policy check: a model-supplied (here deliberately wrong) id is
+    # ignored, and the affiliation is resolved by name through ROR instead.
+    persons = [{"name": "A", "affiliation": [{
+        "name": "University of California San Diego",
+        "affiliationIdentifier": "https://ror.org/WRONGID",
+    }]}]
+    persons = strip_extracted_affiliation_ids(persons)
+    client = StubClient({"University of California San Diego": {
+        "id": "https://ror.org/0168r3w48",
+        "name": "University of California San Diego",
+    }})
+    out = enrich_persons(persons, client)
+    assert out[0]["affiliation"][0]["affiliationIdentifier"] == "https://ror.org/0168r3w48"
+    assert client.calls == ["University of California San Diego"]  # resolution ran
+
+
+def test_strip_then_resolve_no_match_leaves_bare_name():
+    # If ROR can't confidently match, the affiliation keeps only its name
+    # (no id) — the accepted trade-off of strip-and-resolve.
+    persons = [{"name": "A", "affiliation": [{
+        "name": "Some Tiny Lab",
+        "affiliationIdentifier": "https://ror.org/whatever",
+    }]}]
+    persons = strip_extracted_affiliation_ids(persons)
+    out = enrich_persons(persons, StubClient({}))
+    assert out[0]["affiliation"] == [{"name": "Some Tiny Lab"}]
 
 
 def test_strip_trailing_country():

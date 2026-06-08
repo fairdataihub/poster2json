@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.8] - 2026-06-08
+
+### Changed
+
+- **Affiliation ROR identifiers are now resolved exclusively from the name string, never trusted from the model.** The prompt does not ask the model for an `affiliationIdentifier`, so when one appeared it had been copied off the poster (printed `ror.org/...` text or PDF link annotations) — and the pipeline trusted it: `ror.py` skipped its lookup whenever an identifier was already present, and `identifiers.py` blessed the scraped value with scheme/`schemeUri`. This bypassed the intended string→ROR-API resolution. A new strip step (`strip_extracted_affiliation_ids`) now drops any model-supplied `affiliationIdentifier` / `affiliationIdentifierScheme` / `schemeUri` before enrichment, so every affiliation is resolved by name through the ROR API. This mirrors the existing handling of `creators[].nameIdentifiers[]` (model scheme fields dropped) and of `identifiers[]` / `relatedIdentifiers[]` (handled upstream). Trade-off: an affiliation the ROR matcher can't confidently resolve keeps only its name and no identifier, even if the poster printed a correct one.
+
 ## [0.9.7] - 2026-06-08
 
 ### Fixed
