@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.7] - 2026-06-08
+
+### Fixed
+
+- **`creators[].affiliation` / `contributors[].affiliation` always emitted as the schema's array form.** The model occasionally returned a bare string (e.g. `"affiliation": "Oregon Health & Science University, ..."`) or a single object, which violated the schema (`affiliation` must be an array) and skipped ROR enrichment entirely. A new coercion step now runs before enrichment: a bare string becomes `[string]`, a single object becomes `[object]`, blank/`null`/junk values drop the (optional) key, and blank items inside a list are filtered out. Because the value is now a proper list, string affiliations also become eligible for ROR resolution again.
+- **Duplicate affiliations are collapsed.** The same organization listed twice on a creator (a recurring model artifact, e.g. the identical ROR object repeated) is now deduplicated. Entries are keyed on their ROR identifier when present, else on their normalized name; when duplicates collide the entry carrying an identifier is kept, and a bare-name entry is dropped when an identified entry already covers the same organization. Runs unconditionally, after enrichment, so it also cleans posters whose affiliations were already fully resolved.
+
 ## [0.9.6] - 2026-06-08
 
 ### Changed

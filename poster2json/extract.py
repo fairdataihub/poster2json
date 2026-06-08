@@ -2252,6 +2252,15 @@ def _postprocess_json(
             # honest than guessing.
             result["language"] = None
 
+    # Affiliation normalization: coerce to the schema's array form (the model
+    # sometimes emits a bare string or single object), then ROR-enrich, then
+    # collapse duplicates. Coerce and dedupe run unconditionally; only the
+    # network enrichment is gated on something actually being unresolved.
+    from .ror import coerce_person_affiliations, dedupe_person_affiliations
+    for _persons_key in ("creators", "contributors"):
+        if _persons_key in result:
+            result[_persons_key] = coerce_person_affiliations(result[_persons_key])
+
     # ROR enrichment -- skip if all affiliations already resolved
     if (_needs_ror_enrichment(result.get("creators"))
             or _needs_ror_enrichment(result.get("contributors"))):
@@ -2261,6 +2270,10 @@ def _postprocess_json(
             result["creators"] = enrich_persons(result["creators"], ror)
         if "contributors" in result:
             result["contributors"] = enrich_persons(result["contributors"], ror)
+
+    for _persons_key in ("creators", "contributors"):
+        if _persons_key in result:
+            result[_persons_key] = dedupe_person_affiliations(result[_persons_key])
 
     # Funder + award normalization, then ROR funder lookup
     if "fundingReferences" in result:

@@ -222,6 +222,125 @@ def enrich_persons(persons: list, client: RorClient) -> list:
     return persons
 
 
+def _coerce_affiliation_value(aff):
+    """Coerce one person's ``affiliation`` into the schema's array form.
+
+    The schema requires ``affiliation`` to be an array of strings/objects, but
+    the model sometimes emits a bare string or a single object. Returns a
+    non-empty list, or ``None`` to signal the key should be dropped (it was
+    null, empty, or contained only junk — ``affiliation`` is optional).
+    """
+    if isinstance(aff, str):
+        s = aff.strip()
+        return [s] if s else None
+    if isinstance(aff, dict):
+        return [aff] if (aff.get("name") or aff.get("affiliationIdentifier")) else None
+    if isinstance(aff, list):
+        out = []
+        for item in aff:
+            if isinstance(item, str):
+                s = item.strip()
+                if s:
+                    out.append(s)
+            elif isinstance(item, dict):
+                if item.get("name") or item.get("affiliationIdentifier"):
+                    out.append(item)
+            # drop anything else (numbers, None, nested lists)
+        return out or None
+    return None
+
+
+def coerce_person_affiliations(persons: list) -> list:
+    """Normalize ``affiliation`` on every person to a list (in place).
+
+    A bare string becomes ``[string]``, a single object becomes ``[object]``,
+    and null/empty values drop the key. Runs before ROR enrichment so the
+    enrichment and the schema both see a proper array.
+    """
+    if not isinstance(persons, list):
+        return persons
+    for p in persons:
+        if not isinstance(p, dict) or "affiliation" not in p:
+            continue
+        coerced = _coerce_affiliation_value(p["affiliation"])
+        if coerced is None:
+            p.pop("affiliation", None)
+        else:
+            p["affiliation"] = coerced
+    return persons
+
+
+def _affiliation_name(item) -> Optional[str]:
+    if isinstance(item, str):
+        name = item
+    elif isinstance(item, dict) and isinstance(item.get("name"), str):
+        name = item["name"]
+    else:
+        return None
+    name = unicodedata.normalize("NFKC", name).strip().casefold()
+    return name or None
+
+
+def _affiliation_dedupe_key(item):
+    if isinstance(item, dict):
+        ident = item.get("affiliationIdentifier")
+        if ident:
+            return ("id", str(ident).strip().lower())
+    name = _affiliation_name(item)
+    if name is not None:
+        return ("name", name)
+    return ("obj", json.dumps(item, sort_keys=True, ensure_ascii=False))
+
+
+def _affiliation_richness(item) -> int:
+    if isinstance(item, dict):
+        return 2 if item.get("affiliationIdentifier") else 1
+    return 0
+
+
+def dedupe_person_affiliations(persons: list) -> list:
+    """Collapse duplicate affiliation entries on every person (in place).
+
+    Entries are keyed on their ROR identifier when present, else on their
+    normalized name, so the same organization listed twice (a recurring model
+    artifact) collapses to one. When duplicates collide the richer entry (one
+    carrying an identifier) is kept, and a bare-name entry is dropped when an
+    identified entry already covers the same organization name.
+    """
+    if not isinstance(persons, list):
+        return persons
+    for p in persons:
+        if not isinstance(p, dict):
+            continue
+        affs = p.get("affiliation")
+        if not isinstance(affs, list) or len(affs) < 2:
+            continue
+        order = []
+        chosen = {}
+        for item in affs:
+            key = _affiliation_dedupe_key(item)
+            if key not in chosen:
+                chosen[key] = item
+                order.append(key)
+            elif _affiliation_richness(item) > _affiliation_richness(chosen[key]):
+                chosen[key] = item
+        # Drop bare-name entries already covered by an identified entry.
+        identified_names = {
+            _affiliation_name(it)
+            for it in chosen.values()
+            if isinstance(it, dict) and it.get("affiliationIdentifier")
+        }
+        identified_names.discard(None)
+        result = []
+        for key in order:
+            it = chosen[key]
+            if key[0] == "name" and key[1] in identified_names and _affiliation_richness(it) < 2:
+                continue
+            result.append(it)
+        p["affiliation"] = result
+    return persons
+
+
 _default_client: Optional[RorClient] = None
 
 
