@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.16] - 2026-06-10
+
+### Added
+
+- **PosterSentry pre-screening rejects non-poster submissions before extraction.** A new front-of-pipeline quality gate runs the [PosterSentry](https://github.com/fairdataihub/poster-sentry) poster/non-poster classifier on incoming PDFs at the very start of `extract_poster`, before the expensive LLM stage. A confident non-poster (a mislabeled paper, slide deck, abstract booklet, etc.) now returns a structured failure instead of being run through the model to produce junk metadata. The result carries the usual `error` key, so existing consumers that branch on `"error" in result` (e.g. the posters.science job worker, which marks the `ExtractionJob` failed and stores `error`) need no changes. On top of that string it carries machine-readable fields so the API and platform can tell a non-poster apart from a generic extraction failure and tell the submitter why: `errorCode` is the stable string `"NOT_A_POSTER"`, alongside `failedStep: "poster_sentry"`, `isPoster: false`, `posterSentryConfidence` (poster probability), and `posterSentryThreshold`. The screen is **PDF-only** (PosterSentry is trained on PDFs; image uploads bypass it) and **fails open**: any error running the classifier is logged and extraction proceeds, so a classifier outage never rejects a legitimate poster. On by default; disable per call with `extract_poster(..., screen_posters=False)` / `poster2json extract --no-screen`, or per deployment with `POSTER2JSON_POSTER_SENTRY=off`. The poster-probability cutoff is configurable via `POSTER2JSON_POSTER_SENTRY_THRESHOLD` (default `0.5`). All PosterSentry wiring lives in the new `poster2json/screen.py`; the rest of the pipeline is untouched.
+
 ## [0.9.14] - 2026-06-09
 
 ### Changed

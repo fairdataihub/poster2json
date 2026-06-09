@@ -5,17 +5,17 @@ Technical architecture and methodology for poster2json.
 ## Pipeline Overview
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Input Poster   │────▶│  Raw Text       │────▶│  Structured     │
-│  (PDF/Image)    │     │  Extraction     │     │  JSON Output    │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                              │                        │
-                    ┌─────────┴─────────┐    ┌────────┴────────┐
-                    │                   │    │                 │
-               [PDF Files]        [Image Files]    [Transformers]
-                    │                   │         Llama 3.1 8B
-               [pdfplumber]      [Qwen2-VL-7B]   Section-aware
-               Text Layout       Vision OCR      JSON Generation
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Input Poster   │────▶│  PosterSentry   │────▶│  Raw Text       │────▶│  Structured     │
+│  (PDF/Image)    │     │  pre-screen     │     │  Extraction     │     │  JSON Output    │
+└─────────────────┘     └─────────────────┘     └─────────────────┘     └─────────────────┘
+                              │                        │                        │
+                       [PDF only]              ┌───────┴───────┐      ┌────────┴────────┐
+                    non-poster => reject       │               │      │                 │
+                    NOT_A_POSTER          [PDF Files]    [Image Files]    [Transformers]
+                                               │               │         Llama 3.1 8B
+                                          [pdfplumber]   [Qwen2-VL-7B]   Section-aware
+                                          Text Layout     Vision OCR      JSON Generation
 ```
 
 ## Models
@@ -40,6 +40,32 @@ Vision-language model for image-based poster OCR:
 - Direct pixel-to-text extraction
 - Multi-language support
 - Layout-aware text recognition
+
+## Stage 0: PosterSentry pre-screening
+
+Before any text extraction, incoming **PDFs** are screened by [PosterSentry](https://github.com/fairdataihub/poster-sentry), a lightweight CPU-only poster/non-poster classifier. The goal is to reject mislabeled uploads (papers, slide decks, abstract booklets) at the cheapest possible point, before the GPU-bound LLM stage produces meaningless metadata.
+
+A confident non-poster short-circuits the pipeline and returns a failure result:
+
+```json
+{
+  "error": "PosterSentry classified this submission as a non-poster ...",
+  "errorCode": "NOT_A_POSTER",
+  "failedStep": "poster_sentry",
+  "isPoster": false,
+  "posterSentryConfidence": 0.18,
+  "posterSentryThreshold": 0.5
+}
+```
+
+Because the result carries the standard `error` key, downstream consumers that already branch on `"error" in result` (the posters.science job worker marks the `ExtractionJob` failed and stores the message) need no changes; the `errorCode` / `failedStep` fields let the API and platform surface the specific reason to the submitter.
+
+Design notes:
+
+- **PDF-only.** PosterSentry is trained on PDFs; image uploads (JPG/PNG) bypass the gate and go straight to OCR.
+- **Fails open.** Any error running the classifier (missing model, corrupt PDF) is logged and extraction proceeds, so an outage never rejects a legitimate poster. Only a confident non-poster verdict rejects.
+- **Configurable.** On by default; toggle with `screen_posters=` / `--screen/--no-screen` / `POSTER2JSON_POSTER_SENTRY`, and tune the poster-probability cutoff with `POSTER2JSON_POSTER_SENTRY_THRESHOLD` (default `0.5`).
+- **Contained.** All PosterSentry wiring lives in `poster2json/screen.py`; the rest of the pipeline is unaware of it.
 
 ## Stage 1: Raw Text Extraction
 
@@ -202,6 +228,7 @@ poster2json/
 │   ├── extract_text_with_pdfplumber()  # Layout-aware PDF extraction
 │   ├── extract_json_with_retry()       # Stage 2: JSON structuring
 │   └── _postprocess_json()             # Post-processing + normalization hooks
+├── screen.py         # Stage 0: PosterSentry non-poster pre-screen (NOT_A_POSTER gate)
 ├── xy_cut.py         # Reading-order reconstruction for multi-column layouts
 ├── cli.py            # Command-line interface
 ├── gui.py            # Optional graphical interface

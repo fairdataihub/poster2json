@@ -82,6 +82,16 @@ def main(ctx):
         "When unset, falls back to POSTER2JSON_EXTRACT_IDENTIFIERS."
     )
 )
+@click.option(
+    "--screen/--no-screen",
+    "screen_posters",
+    default=None,
+    help=(
+        "Pre-screen PDFs with PosterSentry and reject confident non-posters "
+        "with a NOT_A_POSTER error before extraction. On by default. "
+        "When unset, falls back to POSTER2JSON_POSTER_SENTRY."
+    )
+)
 def extract(
     input_file: str,
     output: str,
@@ -89,6 +99,7 @@ def extract(
     model_id: str,
     quantization: str,
     extract_identifiers: bool,
+    screen_posters: bool,
 ):
     """
     Extract structured JSON from a scientific poster.
@@ -122,10 +133,14 @@ def extract(
             model_id=model_id,
             quantization=quantization,
             extract_identifiers=extract_identifiers,
+            screen_posters=screen_posters,
         )
-        
+
         if "error" in result:
-            click.echo(f"Error during extraction: {result['error']}", err=True)
+            if result.get("errorCode") == "NOT_A_POSTER":
+                click.echo(f"Not a poster: {result['error']}", err=True)
+            else:
+                click.echo(f"Error during extraction: {result['error']}", err=True)
             sys.exit(1)
         
         # Format output

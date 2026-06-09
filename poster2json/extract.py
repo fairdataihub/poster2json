@@ -2630,6 +2630,7 @@ def extract_poster(
     model_id: Optional[str] = None,
     quantization: Optional[str] = None,
     extract_identifiers: Optional[bool] = None,
+    screen_posters: Optional[bool] = None,
 ) -> dict:
     """
     Extract structured JSON metadata from a scientific poster.
@@ -2646,10 +2647,41 @@ def extract_poster(
             identifiers, and relatedIdentifiers. Off by default (handled
             upstream); ORCID and ROR enrichment always run. When None, the
             default comes from the POSTER2JSON_EXTRACT_IDENTIFIERS env var.
+        screen_posters: Run the PosterSentry pre-screen (PDF only) before
+            extraction. A confident non-poster returns a NOT_A_POSTER error
+            result instead of being extracted. On by default; when None the
+            default comes from the POSTER2JSON_POSTER_SENTRY env var. See
+            poster2json/screen.py for the failure contract.
+
+    Returns:
+        The extraction result dict. On failure it carries an ``error`` key; a
+        PosterSentry rejection additionally sets ``errorCode == "NOT_A_POSTER"``
+        (and ``failedStep``, ``isPoster``, ``posterSentryConfidence``,
+        ``posterSentryThreshold``) so downstream can tell a non-poster apart
+        from a generic extraction failure.
     """
     if extract_identifiers is None:
         extract_identifiers = _identifiers_flag_default()
     log(f"Processing poster: {poster_path}")
+
+    ext = Path(poster_path).suffix.lower()
+
+    # PosterSentry pre-screen: reject confident non-posters (mislabeled papers,
+    # slide decks, abstract booklets) BEFORE the expensive LLM extraction, so a
+    # bad upload fails fast with an obvious reason instead of yielding junk
+    # metadata. PDF-only: PosterSentry is trained on PDFs, so image uploads
+    # bypass the gate. Fails open: a classifier error proceeds to extraction so
+    # an outage never rejects a real poster. This is the only PosterSentry
+    # touch-point in poster2json (see poster2json/screen.py).
+    from .screen import screen_poster, screening_enabled_default
+
+    if screen_posters is None:
+        screen_posters = screening_enabled_default()
+    if screen_posters and ext == ".pdf":
+        rejection = screen_poster(poster_path)
+        if rejection is not None:
+            log(f"PosterSentry rejected submission: {rejection['error']}")
+            return rejection
 
     # For image posters (and PDFs that may need vision OCR fallback):
     # unload the JSON model BEFORE the vision model loads. Qwen2-VL-7B
@@ -2657,7 +2689,6 @@ def extract_poster(
     # api.py healthcheck is ~9GB resident, leaving the vision load short
     # by a few hundred MB and OOMing.
     # Cost: ~10s of JSON reload after OCR.
-    ext = Path(poster_path).suffix.lower()
     if ext in {".jpg", ".jpeg", ".png"}:
         unload_json_model()
 

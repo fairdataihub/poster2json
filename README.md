@@ -59,12 +59,45 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 
 The pipeline uses:
 
+- [**PosterSentry**](https://github.com/fairdataihub/poster-sentry) as a front-of-pipeline quality gate; confident non-posters are rejected before the LLM runs (see [Pre-screening](#pre-screening))
 - [**Llama-3.1-8B-Instruct**](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) (a verbatim mirror of Meta's release; swap with any HuggingFace instruct model via `--model`) for JSON structuring
 - **Qwen2-VL-7B** for vision-based OCR of image posters
 - **pdfplumber** for layout-aware PDF text extraction
 - **lingua-language-detector** for ISO 639-1 language detection on body text (overrides any value the model emits — body text beats metadata-fragment guessing)
 - **ROR** (`https://api.ror.org`) for affiliation and publisher canonicalisation; matched names get a ROR identifier attached
 - **SPDX** matching (with integer-exact version handling) for license normalisation in `rightsList`
+
+## Pre-screening
+
+Before the LLM stage, **PosterSentry** screens incoming PDFs and rejects confident non-posters (mislabeled papers, slide decks, abstract booklets) so they fail fast instead of producing junk metadata. A rejection comes back as an ordinary error result (so anything that branches on `"error" in result` already handles it), with extra fields so callers can tell a non-poster apart from a generic failure:
+
+```python
+from poster2json import extract_poster
+
+result = extract_poster("not-a-poster.pdf")
+if result.get("errorCode") == "NOT_A_POSTER":
+    print(result["error"])                    # human-readable reason
+    print(result["posterSentryConfidence"])   # poster probability, e.g. 0.18
+```
+
+```json
+{
+  "error": "PosterSentry classified this submission as a non-poster (poster probability 0.18, below the 0.50 threshold). Skipped LLM extraction because the file does not appear to be a scientific poster.",
+  "errorCode": "NOT_A_POSTER",
+  "failedStep": "poster_sentry",
+  "isPoster": false,
+  "posterSentryConfidence": 0.18,
+  "posterSentryThreshold": 0.5
+}
+```
+
+The gate is **PDF-only** (PosterSentry is trained on PDFs; image uploads bypass it) and **fails open**: if the classifier can't run, extraction proceeds, so an outage never rejects a real poster.
+
+| Control | Default | Effect |
+|---------|---------|--------|
+| `extract_poster(..., screen_posters=False)` / `poster2json extract --no-screen` | on | Skip screening for one call |
+| `POSTER2JSON_POSTER_SENTRY=off` | on | Disable screening for a deployment |
+| `POSTER2JSON_POSTER_SENTRY_THRESHOLD` | `0.5` | Poster-probability cutoff below which a PDF is rejected |
 
 ## Quick Start
 

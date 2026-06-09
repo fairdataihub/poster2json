@@ -1,7 +1,7 @@
 [tool.poetry]
 
 name = "poster2json"
-version = "0.9.14"
+version = "0.9.16"
 description = "Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models"
 
 packages = [{ include = "poster2json" }]
@@ -67,6 +67,11 @@ sentencepiece = "*"
 pdfplumber = ">=0.10.0"
 pymupdf = ">=1.22.0"
 Pillow = ">=9.0.0"
+
+# Poster / non-poster pre-screening (front-of-pipeline quality gate). A
+# confident non-poster is rejected with a NOT_A_POSTER error before the LLM
+# extraction stage runs. CPU-only, ~10KB classifier head + model2vec embeddings.
+poster-sentry = ">=0.1.0"
 
 # Validation / JSON repair
 jsonschema = ">=4.17.0"
