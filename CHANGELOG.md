@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.10] - 2026-06-09
+
+### Fixed
+
+- **Authors no longer over-assigned every affiliation.** On posters whose banner has a numbered affiliation list and whose authors carry superscript markers (e.g. "Limaye 1,3"), the fine-tuned model frequently assigned every institution to authors — most often the lead author absorbing all of them — even when the raw text was unambiguous. A new strictly-gated postprocess step (`_correct_affiliations_from_superscripts`) parses the numbered affiliation list and each author's markers from the raw text and reassigns each author exactly their own numbered affiliations (which then resolve through ROR as usual). It is a no-op unless a clean sequential `1..N` list is found, every author has a marker, and every marker resolves to a parsed affiliation — so posters without numbered affiliations are left untouched, and a `_validation` info note is emitted when it fires. On a real 7-author poster this corrected the lead author from 5 affiliations (two of them other authors' institutions) down to his correct 2.
+
 ## [0.9.9] - 2026-06-08
 
 ### Changed

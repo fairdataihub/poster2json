@@ -285,3 +285,55 @@ def test_postprocess_strips_surrogates_so_json_dumps_succeeds():
     data = {"titles": [{"title": "A\ud83dB"}], "subjects": [{"subject": "x\ud83d"}]}
     out = _postprocess_json(data, raw_text="")
     json.dumps(out, ensure_ascii=False).encode("utf-8")  # must not raise
+
+
+def test_superscript_corrector_reassigns_from_markers():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = (
+        "Abridged Retinal Fluorescence Lifetimes in Glaucoma\n"
+        "Siddharth Limaye 1,3 Shahin Hallaj 1,2 , Maria Jessica Cruz 4 , "
+        "Saron Tedla 5 , Jalil Jalili 1,2 , Mark Christopher 1,2 , Linda M. Zangwill 1,2 "
+        "1 Hamilton Glaucoma Center, University of California, San Diego, CA, US; "
+        "2 Division of Ophthalmology Informatics, University of California, San Diego, CA, USA; "
+        "3 Carle Illinois College of Medicine, University of Illinois at Urbana-Champaign, IL, USA; "
+        "4 University of California, Davis, School of Medicine, CA, USA; "
+        "5 Oregon Health and Science University, School of Medicine, OR, USA\n"
+        "## BACKGROUND\n"
+    )
+    # The model over-assigned every institution to every author.
+    everything = ["Hamilton", "Division", "Carle", "Davis", "Oregon"]
+    result = {"creators": [
+        {"name": "Limaye, Siddharth", "familyName": "Limaye", "affiliation": list(everything)},
+        {"name": "Hallaj, Shahin", "familyName": "Hallaj", "affiliation": list(everything)},
+        {"name": "Cruz, Maria Jessica", "familyName": "Cruz", "affiliation": list(everything)},
+        {"name": "Tedla, Saron", "familyName": "Tedla", "affiliation": list(everything)},
+        {"name": "Jalili, Jalil", "familyName": "Jalili", "affiliation": list(everything)},
+        {"name": "Christopher, Mark", "familyName": "Christopher", "affiliation": list(everything)},
+        {"name": "Zangwill, Linda M.", "familyName": "Zangwill", "affiliation": list(everything)},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    # Limaye 1,3 -> Hamilton (UCSD) + Carle (UIUC), not all 5
+    assert len(affs[0]) == 2
+    assert affs[0][0].startswith("Hamilton") and "Urbana-Champaign" in affs[0][1]
+    # Cruz 4 -> only UC Davis; Tedla 5 -> only OHSU
+    assert len(affs[2]) == 1 and "Davis" in affs[2][0]
+    assert len(affs[3]) == 1 and "Oregon" in affs[3][0]
+    # 1,2 authors -> both UCSD departments
+    assert len(affs[1]) == 2
+    assert any(n.get("level") == "info" for n in result.get("_validation", []))
+
+
+def test_superscript_corrector_noop_without_numbered_list():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = "Jane Doe, John Smith\nUniversity of Somewhere\n## INTRODUCTION\n"
+    result = {"creators": [
+        {"name": "Doe, Jane", "familyName": "Doe", "affiliation": ["University of Somewhere"]},
+        {"name": "Smith, John", "familyName": "Smith", "affiliation": ["University of Somewhere"]},
+    ]}
+    before = [list(c["affiliation"]) for c in result["creators"]]
+    _correct_affiliations_from_superscripts(result, raw)
+    assert [c["affiliation"] for c in result["creators"]] == before
+    assert "_validation" not in result

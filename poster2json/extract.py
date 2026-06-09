@@ -1976,6 +1976,107 @@ def _is_section_label_only(text: str) -> bool:
     return bool(toks) and all(w in _SECTION_LABELS for w in toks)
 
 
+_AFFIL_LIST_SIGNATURE = re.compile(r";\s*\d{1,2}\s+[A-Z]")
+_AFFIL_SEGMENT_RE = re.compile(r"^(\d{1,2})\s+([A-Z].{4,})$")
+_AFFIL_FIRST_TAIL_RE = re.compile(r"(?<!\d)1\s+([A-Z].{4,})$")
+
+
+def _parse_numbered_affiliations(banner: str):
+    """Parse a poster banner's numbered affiliation list into ``{n: text}``.
+
+    Returns the map only when it is a clean, fully sequential ``1..N`` (N>=2)
+    list (affiliations are ``;``-delimited and digit-prefixed, with the first
+    entry trailing the author segment). Returns ``None`` otherwise, so callers
+    treat anything ambiguous as "do not touch".
+    """
+    parts = re.split(r"\s*;\s*", banner.strip())
+    if len(parts) < 2:
+        return None
+    amap = {}
+    for seg in parts[1:]:
+        m = _AFFIL_SEGMENT_RE.match(seg.strip())
+        if not m:
+            return None
+        amap[int(m.group(1))] = m.group(2).strip()
+    m1 = _AFFIL_FIRST_TAIL_RE.search(parts[0])
+    if m1:
+        amap[1] = m1.group(1).strip()
+    if len(amap) < 2:
+        return None
+    hi = max(amap)
+    if set(amap) != set(range(1, hi + 1)):
+        return None
+    return amap
+
+
+def _author_markers(banner: str, family: str):
+    """Return the superscript marker numbers that follow ``family`` in the
+    banner (e.g. "Limaye 1,3" -> [1, 3]), or ``None`` if no marker is found."""
+    m = re.search(re.escape(family) + r"\s{0,3}(\d{1,2}(?:\s*,\s*\d{1,2})*)", banner)
+    if not m:
+        return None
+    return [int(x) for x in re.split(r"\s*,\s*", m.group(1))]
+
+
+def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None:
+    """Rebuild each author's affiliation list from superscript markers in the
+    raw text when the poster banner carries a numbered affiliation list.
+
+    The fine-tuned model commonly over-assigns affiliations (e.g. the lead
+    author absorbs every institution) even when the raw text is unambiguous.
+    The markers in the raw text are authoritative, so when present they are
+    used to reassign affiliations deterministically. Strictly gated: a no-op
+    unless a clean numbered list is found, every creator has a marker, and
+    every marker resolves to a parsed affiliation — so posters without this
+    structure are left untouched.
+    """
+    if not raw_text:
+        return
+    creators = result.get("creators")
+    if not isinstance(creators, list) or len(creators) < 2:
+        return
+    families = []
+    for c in creators:
+        if not isinstance(c, dict):
+            return
+        fam = c.get("familyName") or ""
+        if not fam:
+            nm = c.get("name", "")
+            fam = nm.split(",")[0].strip() if "," in nm else ""
+        if not fam:
+            return
+        families.append(fam)
+
+    banner = None
+    for line in raw_text.splitlines():
+        if families[0] in line and _AFFIL_LIST_SIGNATURE.search(line):
+            banner = line
+            break
+    if banner is None:
+        return
+
+    amap = _parse_numbered_affiliations(banner)
+    if not amap:
+        return
+
+    plan = []
+    for fam in families:
+        marks = _author_markers(banner, fam)
+        if not marks or any(n not in amap for n in marks):
+            return
+        plan.append(marks)
+
+    for c, marks in zip(creators, plan):
+        c["affiliation"] = [amap[n] for n in marks]
+    notes = result.setdefault("_validation", [])
+    if isinstance(notes, list):
+        notes.append({
+            "field": "creators",
+            "level": "info",
+            "message": "Affiliations reassigned from author superscript markers in the poster banner.",
+        })
+
+
 def _postprocess_json(
     data: dict, raw_text: str = "", extract_identifiers: bool = False
 ) -> dict:
@@ -2251,6 +2352,13 @@ def _postprocess_json(
             # Body text too short or detector unsure — null is more
             # honest than guessing.
             result["language"] = None
+
+    # Reassign affiliations from author superscript markers when the poster
+    # banner has a numbered affiliation list (the model commonly over-assigns,
+    # e.g. the lead author absorbing every institution). Strictly gated, so it
+    # is a no-op on posters without a numbered list. Runs before resolution so
+    # the reassigned name strings get ROR-resolved normally.
+    _correct_affiliations_from_superscripts(result, raw_text)
 
     # Affiliation normalization: coerce to the schema's array form (the model
     # sometimes emits a bare string or single object), drop any model-supplied
