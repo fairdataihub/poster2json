@@ -1433,7 +1433,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   ],
   "titles": [{{"title": "Main Poster Title"}}],
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
-  "descriptions": [{{"description": "A 3-4 sentence summary of the full poster...", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "A 3-4 sentence summary of the full poster..."}}],
   "researchField": null,
   "content": {{
     "sections": [
@@ -1469,7 +1469,7 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
   "titles": [{{"title": "Poster Title"}}],
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
-  "descriptions": [{{"description": "3-4 sentence summary of the full poster", "descriptionType": "Abstract"}}],
+  "descriptions": [{{"description": "3-4 sentence summary of the full poster"}}],
   "researchField": null,
   "content": {{
     "sections": [{{"sectionTitle": "Header", "sectionContent": "Full verbatim text of this section..."}}]
@@ -2177,13 +2177,17 @@ def _postprocess_json(
     result.pop("version", None)
     result["publicationYear"] = None
 
-    # descriptionType is auto-filled to its default; only the description text
-    # (the summary) is model-generated.
+    # The model's description is a machine-generated summary, so its
+    # descriptionType is "Other". "Abstract" is reserved for the author's own
+    # formal abstract, which the platform attaches downstream (the submitter's
+    # poster abstract), never poster2json's summary. The type is set
+    # deterministically here; the prompt no longer asks the model for it, so
+    # only the description text (the summary) is model-generated.
     descs = result.get("descriptions")
     if isinstance(descs, list):
         for d in descs:
             if isinstance(d, dict) and d.get("description"):
-                d["descriptionType"] = "Abstract"
+                d["descriptionType"] = "Other"
 
     # Ensure caption fields exist and normalize with auto-generated IDs
     for key, ctype in [("imageCaptions", "fig"), ("tableCaptions", "table")]:

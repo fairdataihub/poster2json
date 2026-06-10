@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.15] - 2026-06-10
+
+### Fixed
+
+- **The LLM summary's `descriptionType` is now `"Other"`, not `"Abstract"`.** poster2json's `descriptions[]` entry is a machine-generated summary, so its type is `"Other"`. `"Abstract"` is reserved for the author's own formal poster abstract, which the platform attaches downstream (the submitter's abstract), never poster2json's summary. Post-processing had hardcoded `"Abstract"` since v0.9.3 (2026-06-05), a regression from the `"Other"` that was set on 2026-05-04 and reverted on 2026-05-19; for roughly three weeks every extracted summary was mislabeled as an abstract. `_postprocess_json` now sets `"Other"`.
+
+### Changed
+
+- **`descriptionType` is no longer requested in the extraction prompt.** The type is set deterministically in post-processing (see above), so asking the model for it was redundant and occasionally produced a value that was immediately overwritten. Both the primary and fallback prompts drop `descriptionType` from their JSON examples; output stays schema-valid.
+
 ## [0.9.14] - 2026-06-09
 
 ### Changed
