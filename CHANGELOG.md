@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.12] - 2026-06-09
+
+### Fixed
+
+- **ORCID enrichment restored for multi-department affiliations.** 0.9.9 began preserving distinct sub-unit affiliation names (e.g. two departments of one university), which left a creator's affiliation as a long string such as "Hamilton Glaucoma Center, ... University of California, San Diego, La Jolla, CA, US". ORCID's affiliation-org-name search does not match those long strings, so name-plus-affiliation lookups silently stopped resolving (ROR was unaffected because it resolved before the canonicalization step). ORCID enrichment now queries with the ROR canonical institution name when the affiliation carries a ROR identifier, which restores the matches.
+
+### Added
+
+- **creators[].nameType and contributors[].nameType.** Each person is now tagged "Personal" (the model produced a givenName/familyName split) or "Organizational" (organization name only), matching the schema enum. It is derived deterministically in post-processing and is not requested from the model.
+
 ## [0.9.11] - 2026-06-09
 
 ### Fixed

@@ -221,9 +221,17 @@ def _creator_affiliation_name(creator: dict) -> Optional[str]:
     return None
 
 
-def enrich_creators_orcid(creators: list, client: OrcidClient) -> list:
+def enrich_creators_orcid(creators: list, client: OrcidClient,
+                          affiliation_resolver=None) -> list:
     """Add ORCID to creators that have givenName + familyName + affiliation
-    but no existing ORCID identifier."""
+    but no existing ORCID identifier.
+
+    ``affiliation_resolver``, when provided, maps a creator's affiliation name to
+    a cleaner institution name for the ORCID query (e.g. the ROR canonical name).
+    ORCID's affiliation-org-name search does not match long, multi-part sub-unit
+    strings, so resolving to the canonical institution name restores matches that
+    0.9.9's sub-unit preservation otherwise broke.
+    """
     if not isinstance(creators, list) or not client.enabled:
         return creators
     for creator in creators:
@@ -236,6 +244,11 @@ def enrich_creators_orcid(creators: list, client: OrcidClient) -> list:
         if not given or not family:
             continue
         affiliation = _creator_affiliation_name(creator)
+        if affiliation and affiliation_resolver is not None:
+            try:
+                affiliation = affiliation_resolver(affiliation) or affiliation
+            except Exception:
+                pass
         orcid = client.lookup(given, family, affiliation)
         if not orcid:
             continue

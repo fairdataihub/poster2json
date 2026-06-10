@@ -2381,11 +2381,23 @@ def _postprocess_json(
             if raw_sections:
                 result["content"]["sections"] = raw_sections
 
-    # Clean creators
-    if "creators" in result and isinstance(result["creators"], list):
-        for creator in result["creators"]:
-            if isinstance(creator, dict) and "name" in creator:
+    # Clean creators/contributors and set nameType. poster2json does not ask the
+    # model for nameType; it is derived from whether the model produced a
+    # person-name split (givenName/familyName) — "Personal" — versus an
+    # organization name only — "Organizational" — matching the schema enum.
+    for _person_field in ("creators", "contributors"):
+        _persons = result.get(_person_field)
+        if not isinstance(_persons, list):
+            continue
+        for creator in _persons:
+            if not isinstance(creator, dict):
+                continue
+            if "name" in creator:
                 creator["name"] = _clean_unicode_artifacts(creator.get("name", ""))
+            creator["nameType"] = (
+                "Personal" if (creator.get("givenName") or creator.get("familyName"))
+                else "Organizational"
+            )
 
     # Clean titles
     if "titles" in result and isinstance(result["titles"], list):
@@ -2472,8 +2484,18 @@ def _postprocess_json(
     if _needs_orcid_enrichment(result.get("creators")):
         from .orcid import enrich_creators_orcid
         from .orcid import get_default_client as get_orcid_client
+        from .ror import get_default_client as get_ror_client
+        _ror = get_ror_client()
+
+        def _canonical_affiliation(name):
+            # ORCID's affiliation search does not match long sub-unit strings;
+            # query with the ROR canonical institution name when available.
+            r = _ror.lookup(name) if name else None
+            return (r or {}).get("name") or name
+
         result["creators"] = enrich_creators_orcid(
-            result["creators"], get_orcid_client()
+            result["creators"], get_orcid_client(),
+            affiliation_resolver=_canonical_affiliation,
         )
 
     # Drop lone UTF-16 surrogates the model can emit (half of an emoji); they

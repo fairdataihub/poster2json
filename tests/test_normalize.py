@@ -401,3 +401,43 @@ def test_superscript_corrector_expands_ranges():
     affs = [c["affiliation"] for c in result["creators"]]
     assert len(affs[0]) == 3                                  # Smith 1-3 -> all three
     assert len(affs[1]) == 1 and "Beta" in affs[1][0]        # Jones 2 -> Beta
+
+
+def test_creator_nametype_personal_vs_organizational():
+    from poster2json.extract import _postprocess_json
+
+    data = {"creators": [
+        {"name": "Smith, Jane", "givenName": "Jane", "familyName": "Smith"},
+        {"name": "AI-READI Consortium"},
+    ]}
+    out = _postprocess_json(data, raw_text="")
+    assert out["creators"][0]["nameType"] == "Personal"
+    assert out["creators"][1]["nameType"] == "Organizational"
+
+
+def test_orcid_enrichment_uses_affiliation_resolver():
+    from poster2json.orcid import enrich_creators_orcid
+
+    class FakeClient:
+        enabled = True
+
+        def __init__(self):
+            self.seen = []
+
+        def lookup(self, given, family, affiliation):
+            self.seen.append(affiliation)
+            return "0000-0001-2345-6789" if affiliation == "University of Example" else None
+
+    creators = [{
+        "givenName": "Jane", "familyName": "Smith",
+        "affiliation": [{"name": "Dept of X, University of Example, City, Country",
+                         "affiliationIdentifier": "https://ror.org/abc123"}],
+    }]
+    fc = FakeClient()
+    out = enrich_creators_orcid(
+        creators, fc, affiliation_resolver=lambda n: "University of Example"
+    )
+    # The resolved canonical name (not the long sub-unit string) was queried.
+    assert fc.seen == ["University of Example"]
+    nids = out[0].get("nameIdentifiers", [])
+    assert nids and "0000-0001-2345-6789" in nids[0]["nameIdentifier"]
