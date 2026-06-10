@@ -33,13 +33,12 @@ what the prompt requests. The schema requires eight top-level fields:
  "publisher", "conference", "formats"]
 ```
 
-Of those eight, the prompt asks the model for **four** (`creators`, `titles`,
-`subjects`, `descriptions`) plus `publicationYear`. It does **not** ask for
-`publisher`, `conference`, or `formats` at all. Those three are required by the
-schema but are filled by the platform and the file system, never guessed by the
-model. `publicationYear` is the lone required metadata field still produced by
-the model, and that exception is discussed under
-[Open questions](#open-questions-for-review).
+Of those eight, the prompt asks the model for **four**: `creators`, `titles`,
+`subjects`, and `descriptions`. It does **not** ask for `publisher`, `conference`,
+`formats`, or `publicationYear`. Those four are required by the schema but are
+filled by the platform and the file system, never guessed by the model.
+`publicationYear` was the last of them to move off the model; see
+[How we got here](#how-we-got-here).
 
 This split is the result of roughly a year of moving fields off the model one at
 a time, each time a field turned out to be a hallucination source or was better
@@ -66,12 +65,12 @@ that change ownership are listed; routine normalization is omitted.
 | `researchField` | no | LLM | yes (4 domains or null) | placeholder or junk values coerced to null |
 | `content.sections[].sectionTitle` / `sectionContent` | no | LLM | yes | dedupe, verbatim content |
 | `imageCaptions[]` / `tableCaptions[]` | no | LLM | yes | normalized to caption arrays |
-| `publicationYear` | yes | platform (tracker) / LLM (prompt) | yes (grounded) | not overridden (see open questions) |
 
 ### Fields the model is deliberately not asked for
 
 | Schema field | Required | Tracker source | In prompt | Post-processing |
 |---|---|---|---|---|
+| `publicationYear` | yes | platform | no | dropped from prompt, force-nulled (set at publish) |
 | `publisher` | yes | platform | no | forced to `null` (set at publish) |
 | `conference.*` | yes | platform / user | no | stripped from model output |
 | `formats[]` | yes | file extension | no | stripped, set from the file's MIME type |
@@ -152,9 +151,11 @@ failure we hit during the year of iteration.
   and is later normalized and deduped.
 
 - **`descriptions`: a 3 to 4 sentence summary.** The model writes a short summary
-  of the whole poster. Note that the prompt example tags it
-  `"descriptionType": "Abstract"`, but post-processing now forces that type
-  unconditionally, so the model's choice of type is inert (see open questions).
+  of the whole poster. Only the description text is model-generated; the schema's
+  `descriptionType` is no longer requested in the prompt and is set to `Other`
+  deterministically in post-processing, because the summary is machine-generated.
+  `Abstract` is reserved for the author's own formal abstract, which the platform
+  attaches downstream, so poster2json never emits it.
 
 ### The fallback prompt
 
@@ -232,11 +233,13 @@ source own a field the model had been guessing.
    v0.6.x series). DOIs, ORCIDs, arXiv IDs, ROR, and funder ids are extracted by
    regex and looked up via API rather than trusted from the model.
 
-6. **Stop hallucinating `publicationYear`** (commit `6ab31af`, 2026-05-19). The
-   prompt had a hardcoded example year and a "use the current year if not found"
-   instruction, which fabricated years at scale. It was changed to null with a
-   strict "only if explicitly printed, never guess" rule. Importantly,
-   `publicationYear` stayed a model-owned field; it was grounded, not removed.
+6. **`publicationYear` grounded, then removed.** The prompt once had a hardcoded
+   example year and a "use the current year if not found" instruction, which
+   fabricated years at scale; commit `6ab31af` (2026-05-19) changed it to null
+   with a strict "only if explicitly printed" rule. It was later removed from the
+   model entirely (v0.9.14, commit `79f02d7`): dropped from both prompts and
+   force-nulled in post-processing, because the platform sets the publication year
+   at publish time.
 
 7. **`formats` set from the file** (v0.6.x). Dropped from the prompt and set
    deterministically from the file extension and MIME type.
@@ -256,8 +259,9 @@ source own a field the model had been guessing.
 
 11. **`version`, `rightsList`, `descriptionType`, conference dates removed**
     (v0.9.3). `version` is forced to a provenance string; `rightsList` is stripped
-    (license is chosen by the user at publish); `descriptionType` is forced to
-    `Abstract`; conference dates are dropped.
+    (license is chosen by the user at publish); `descriptionType` is set
+    deterministically in post-processing (to `Abstract` at the time, corrected to
+    `Other` in v0.9.15); conference dates are dropped.
 
 12. **The whole `conference` object removed** (v0.9.4). v0.9.3 dropped only the
     dates; v0.9.4 dropped the rest. Conference metadata is supplied by the
@@ -270,48 +274,43 @@ source own a field the model had been guessing.
 14. **`nameType` derived, not asked for** (v0.9.12). Set to Personal or
     Organizational from the presence of given and family names.
 
-The endpoint of all fourteen moves is exactly the "Tracker source" column in the
+15. **`descriptionType` removed from the prompt and corrected to `Other`**
+    (v0.9.15). The model's description is a machine-generated summary, so its type
+    is `Other`; `Abstract` is reserved for the author's own formal abstract, which
+    the platform attaches downstream. Post-processing had forced `Abstract` since
+    v0.9.3; it now sets `Other`, and the prompt no longer asks for the type. (The
+    value flip-flopped earlier: set to `Other` in `3945d81` on 2026-05-04, reverted
+    to `Abstract` in `74536e8` on 2026-05-19.)
+
+The endpoint of all these moves is exactly the "Tracker source" column in the
 Field Coverage sheet: the fields marked LLM are the ones the prompt still owns,
 and everything marked platform, regex, or an API name is a field the prompt was
 deliberately relieved of.
 
 ## Open questions for review
 
-These are the inconsistencies that surfaced while reconciling the prompt, the
-schema, and the coverage tracker. They are the reason this is opened as a
-discussion rather than a finished design.
+Most of the inconsistencies that surfaced when this doc was first drafted have
+since been resolved: `publicationYear` was removed from the model (v0.9.14),
+`descriptionType` was removed from the prompt and corrected to `Other` (v0.9.15),
+and the grounding note no
+longer singles out a field. Two items remain.
 
-1. **`publicationYear` is the last required metadata field still owned by the
-   model.** Every one of its peers (publisher, conference, version, rights,
-   formats, language) was moved to a deterministic or platform source, and the
-   coverage tracker already lists `publicationYear` as platform-set (current year
-   at publish). It is grounded in the prompt but, unlike its peers, is never
-   stripped or overridden in post-processing. If the platform sets it at publish
-   anyway, should the prompt stop asking for it?
+1. **`fundingReferences` is kept as a model field, and the prompt should ask for
+   it.** Funder name and award number are LLM-sourced by design: the coverage
+   tracker lists them as LLM, and post-processing already normalizes funding and
+   looks up funder ROR identifiers when funding references are present. The gap is
+   that the current prompt does not request `fundingReferences`, so the model is
+   only enriched on funding it happens to volunteer. The fix is to add
+   `fundingReferences` (funderName, awardNumber, awardUri) to the prompt's JSON
+   shape so funding is extracted on purpose rather than by accident.
 
-2. **`descriptionType` is asked for but ignored.** The prompt example still tags
-   the description as `Abstract`, and older versions listed the full type enum for
-   the model to choose from, but post-processing now forces every description's
-   type to `Abstract`. The in-prompt instruction is dead weight. Either remove it
-   from the prompt, or let the model's choice stand.
-
-3. **`fundingReferences` is treated as LLM-sourced everywhere except the prompt.**
-   The tracker and the post-processing both treat funder name and award number as
-   model output, but the current prompt does not ask for them. Either add funding
-   to the prompt explicitly, or reclassify it in the tracker.
-
-4. **The GROUNDING note now names a single field.** The grounding line reads "For
-   metadata fields (publicationYear), only extract values that appear...". The
-   parenthetical used to list publisher, conference, version, and publicationYear;
-   as each was removed it shrank to one. It is a small vestige, and it confirms
-   that `publicationYear` is the only grounded metadata field left.
-
-5. **The model-owned boundary is not a single rule.** Most of the year's work
-   moved administrative fields off the model, but `subjects` and `researchField`
-   were added to the model in the same window. The working principle is that
-   descriptive and topical content stays with the model while administrative and
-   provenance metadata moves to deterministic sources. That split is reasonable,
-   but it is worth stating explicitly so future field decisions have a rule to
+2. **The model-ownership boundary is worth stating as one rule.** The working
+   principle, visible across the whole history, is that descriptive and topical
+   content (titles, creators, subjects, the summary, sections, captions,
+   researchField) stays with the model, while administrative and provenance
+   metadata (publisher, conference, dates, version, formats, language, license,
+   identifiers, publicationYear) moves to deterministic sources, APIs, or the
+   platform. Writing that rule down gives future field decisions something to
    follow.
 
 ## References
