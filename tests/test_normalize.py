@@ -337,3 +337,67 @@ def test_superscript_corrector_noop_without_numbered_list():
     _correct_affiliations_from_superscripts(result, raw)
     assert [c["affiliation"] for c in result["creators"]] == before
     assert "_validation" not in result
+
+
+def test_superscript_corrector_next_number_delimited_multiline():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    # Real-corpus pattern: affiliations on their own line, delimited by the next
+    # number (no ';'), authors on the line above.
+    raw = (
+        "Evolution Poster\n"
+        "Noelle M. Mason 1 , Chris X. McDaniels 1 , John P. Korbin 1,2 & Lisa N. Barrow 1\n"
+        "1 Museum of Southwestern Biology, University of New Mexico, 2 Sandia National Laboratories\n"
+        "## Background\n"
+    )
+    result = {"creators": [
+        {"name": "Mason, Noelle M.", "familyName": "Mason", "affiliation": ["X", "Y"]},
+        {"name": "McDaniels, Chris X.", "familyName": "McDaniels", "affiliation": ["X", "Y"]},
+        {"name": "Korbin, John P.", "familyName": "Korbin", "affiliation": ["X", "Y"]},
+        {"name": "Barrow, Lisa N.", "familyName": "Barrow", "affiliation": ["X", "Y"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 1 and "Museum" in affs[0][0]      # Mason 1
+    assert len(affs[2]) == 2 and any("Sandia" in a for a in affs[2])  # Korbin 1,2
+    assert len(affs[3]) == 1 and "Museum" in affs[3][0]      # Barrow 1 (not the affil "1")
+
+
+def test_superscript_corrector_unicode_superscripts():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = (
+        "Marine Poster\n"
+        "Eva Troianou ¹, Evi Abatzidou ¹, Ioannis Tzovenis ¹,²\n"
+        "¹ Institute of Marine Biology, Lixouri, Greece "
+        "² Microphykos Research Centre, Athens, Greece\n"
+        "## Abstract\n"
+    )
+    result = {"creators": [
+        {"name": "Troianou, Eva", "familyName": "Troianou", "affiliation": ["x"]},
+        {"name": "Abatzidou, Evi", "familyName": "Abatzidou", "affiliation": ["x"]},
+        {"name": "Tzovenis, Ioannis", "familyName": "Tzovenis", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 1 and "Marine" in affs[0][0]      # Troianou superscript-1
+    assert len(affs[2]) == 2                                  # Tzovenis 1,2
+
+
+def test_superscript_corrector_expands_ranges():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = (
+        "Title\n"
+        "Alice Smith 1-3, Bob Jones 2\n"
+        "1 Alpha University, 2 Beta Institute, 3 Gamma College\n"
+        "## Intro\n"
+    )
+    result = {"creators": [
+        {"name": "Smith, Alice", "familyName": "Smith", "affiliation": ["x"]},
+        {"name": "Jones, Bob", "familyName": "Jones", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 3                                  # Smith 1-3 -> all three
+    assert len(affs[1]) == 1 and "Beta" in affs[1][0]        # Jones 2 -> Beta

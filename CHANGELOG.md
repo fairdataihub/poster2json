@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.11] - 2026-06-09
+
+### Fixed
+
+- **Superscript affiliation correction generalized to real-world notations.** 0.9.10's corrector only handled semicolon-delimited numbered lists with plain-digit markers. It now also handles numbered lists delimited by the next number (no semicolon), unicode superscript digit markers, multi-line banners (authors and affiliations on separate lines), marker ranges like "1-3", and role glyphs (asterisk, dagger, envelope, plus) which are ignored. Real affiliations are told apart from author-name false positives by a multilingual institution-keyword filter, the marker search is anchored on each model-extracted author name, and the author/affiliation boundary is split so a trailing author's marker is not mistaken for the first affiliation number. Validated on the 2025 corpus: fired on 576 of 4837 multi-author posters with zero anomalies (no author left empty or over-assigned), and verified semantically correct on real banners with up to 17 authors and complex multi-marker assignments.
+
 ## [0.9.10] - 2026-06-09
 
 ### Fixed

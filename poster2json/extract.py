@@ -1976,60 +1976,127 @@ def _is_section_label_only(text: str) -> bool:
     return bool(toks) and all(w in _SECTION_LABELS for w in toks)
 
 
-_AFFIL_LIST_SIGNATURE = re.compile(r";\s*\d{1,2}\s+[A-Z]")
-_AFFIL_SEGMENT_RE = re.compile(r"^(\d{1,2})\s+([A-Z].{4,})$")
-_AFFIL_FIRST_TAIL_RE = re.compile(r"(?<!\d)1\s+([A-Z].{4,})$")
+# --- Author/affiliation superscript correction -------------------------------
+# The fine-tuned model frequently over-assigns affiliations (most often the
+# lead author absorbs every institution) even when the raw text is unambiguous.
+# When a poster banner carries a numbered affiliation list, the superscript
+# markers in the raw text are authoritative, so affiliations are reassigned
+# deterministically. Strictly gated throughout: any ambiguity is a no-op that
+# leaves the model's output untouched.
+
+# unicode superscript digits -> ascii (the corrector sees the un-normalized text)
+_SUP_TRANS = str.maketrans({
+    "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+    "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+})
+
+# institution keyword (multilingual stems) — distinguishes a real numbered
+# affiliation from a number that merely precedes the next author's name
+_INSTITUTION_KW = re.compile(
+    r"(?i)(universi|institut|instituto|departa|depart|dipart|college|colleg|"
+    r"colegio|school|escuela|scuola|hospital|clinic|laborator|cent(?:er|re|ro)|"
+    r"zentrum|facult|academ|foundation|fundac|fondazione|stiftung|ministr|"
+    r"program|division|divisi|research|investigac|forschung|museum|museo|"
+    r"society|sociedad|council|agency|observator|engineering|technolog|"
+    r"hochschule|polytechni|gmbh)"
+)
+
+# a numbered affiliation marker: 1-2 digits at a boundary, then a capitalized
+# institution name (optionally space/dot separated, including accented capitals)
+_AFFIL_MARK = re.compile(r"(?:(?<=[\s;,(])|^)(\d{1,2})[.\s]{0,2}(?=[A-ZÀ-ɏ(])")
 
 
-def _parse_numbered_affiliations(banner: str):
-    """Parse a poster banner's numbered affiliation list into ``{n: text}``.
+def _parse_marker_run(run: str):
+    """Parse an author marker run ("1,3" / "1-3,6" / "4 2") into a list of ints,
+    expanding ranges. Returns ``None`` on anything unexpected so the caller can
+    bail (keeping the corrector a strict no-op under ambiguity)."""
+    nums = []
+    for part in re.split(r"[,\s]+", run.strip()):
+        if not part:
+            continue
+        rng = re.match(r"^(\d{1,2})[–—-](\d{1,2})$", part)
+        if rng:
+            a, b = int(rng.group(1)), int(rng.group(2))
+            if not (a <= b and b - a <= 15):
+                return None
+            nums.extend(range(a, b + 1))
+        elif part.isdigit() and len(part) <= 2:
+            nums.append(int(part))
+        else:
+            return None
+    return nums or None
 
-    Returns the map only when it is a clean, fully sequential ``1..N`` (N>=2)
-    list (affiliations are ``;``-delimited and digit-prefixed, with the first
-    entry trailing the author segment). Returns ``None`` otherwise, so callers
-    treat anything ambiguous as "do not touch".
-    """
-    parts = re.split(r"\s*;\s*", banner.strip())
-    if len(parts) < 2:
+
+def _banner_region(raw_text: str, first_family: str):
+    """The author/affiliation banner: the first line naming the lead author plus
+    following lines up to the next detected header, joined into one string."""
+    lines = raw_text.splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if re.search(re.escape(first_family), ln, re.IGNORECASE):
+            start = i
+            break
+    if start is None:
+        return None
+    out = []
+    for off, ln in enumerate(lines[start:start + 12]):
+        s = ln.strip().lstrip("#").strip()
+        if off > 0 and (ln.lstrip().startswith("## ") or (s and _is_section_label_only(s))):
+            break
+        if s:
+            out.append(s)
+    return " ".join(out) if out else None
+
+
+def _parse_affiliation_block(region: str):
+    """Parse the numbered affiliation list from a (superscript-normalized) banner
+    region into ``({n: text}, block_start_index)``. Handles ``;``-, comma- and
+    next-number-delimited lists. Returns ``None`` unless a clean sequential
+    ``1..N`` (N>=2) run of institution-bearing entries is found."""
+    cands = [(int(m.group(1)), m.start(1), m.end()) for m in _AFFIL_MARK.finditer(region)]
+    real = []
+    for i, (num, ms, me) in enumerate(cands):
+        seg_end = cands[i + 1][1] if i + 1 < len(cands) else len(region)
+        if _INSTITUTION_KW.search(region[me:seg_end][:280]):
+            real.append((num, ms, me))
+    if len(real) < 2:
+        return None
+    seq = []
+    expect = 1
+    for num, ms, me in real:
+        if num == expect:
+            seq.append((num, ms, me))
+            expect += 1
+    if len(seq) < 2 or seq[-1][0] != len(seq):
         return None
     amap = {}
-    for seg in parts[1:]:
-        m = _AFFIL_SEGMENT_RE.match(seg.strip())
-        if not m:
+    for j, (num, ms, me) in enumerate(seq):
+        end = seq[j + 1][1] if j + 1 < len(seq) else len(region)
+        txt = region[me:end].strip().strip(",;").strip()
+        if not txt:
             return None
-        amap[int(m.group(1))] = m.group(2).strip()
-    m1 = _AFFIL_FIRST_TAIL_RE.search(parts[0])
-    if m1:
-        amap[1] = m1.group(1).strip()
-    if len(amap) < 2:
-        return None
-    hi = max(amap)
-    if set(amap) != set(range(1, hi + 1)):
-        return None
-    return amap
+        amap[num] = txt
+    return amap, seq[0][1]
 
 
-def _author_markers(banner: str, family: str):
-    """Return the superscript marker numbers that follow ``family`` in the
-    banner (e.g. "Limaye 1,3" -> [1, 3]), or ``None`` if no marker is found."""
-    m = re.search(re.escape(family) + r"\s{0,3}(\d{1,2}(?:\s*,\s*\d{1,2})*)", banner)
+def _author_marker_nums(author_region: str, family: str):
+    """Marker numbers adjacent to ``family`` in the author byline (anchored on
+    the LLM-extracted author name). Role glyphs (``*``/``+``/contact symbols)
+    terminate the digit run and are ignored. ``None`` if no marker is found."""
+    m = re.search(re.escape(family) + r"[.\s]{0,4}(\d[\d,–—\-\s]*)",
+                  author_region, re.IGNORECASE)
     if not m:
         return None
-    return [int(x) for x in re.split(r"\s*,\s*", m.group(1))]
+    return _parse_marker_run(m.group(1))
 
 
 def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None:
-    """Rebuild each author's affiliation list from superscript markers in the
-    raw text when the poster banner carries a numbered affiliation list.
-
-    The fine-tuned model commonly over-assigns affiliations (e.g. the lead
-    author absorbs every institution) even when the raw text is unambiguous.
-    The markers in the raw text are authoritative, so when present they are
-    used to reassign affiliations deterministically. Strictly gated: a no-op
-    unless a clean numbered list is found, every creator has a marker, and
-    every marker resolves to a parsed affiliation — so posters without this
-    structure are left untouched.
-    """
+    """Reassign each author's affiliations from the poster banner's numbered list
+    using superscript markers in the (authoritative) raw text, anchoring the
+    marker search on each LLM-extracted author name. Strictly gated: a no-op
+    unless a clean sequential numbered list is found, every author has a marker,
+    and every marker resolves to a parsed affiliation — so posters without
+    numbered affiliations are left untouched."""
     if not raw_text:
         return
     creators = result.get("creators")
@@ -2043,25 +2110,23 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
         if not fam:
             nm = c.get("name", "")
             fam = nm.split(",")[0].strip() if "," in nm else ""
-        if not fam:
+        if not fam or len(fam) < 2:
             return
         families.append(fam)
 
-    banner = None
-    for line in raw_text.splitlines():
-        if families[0] in line and _AFFIL_LIST_SIGNATURE.search(line):
-            banner = line
-            break
-    if banner is None:
+    region = _banner_region(raw_text, families[0])
+    if not region:
         return
-
-    amap = _parse_numbered_affiliations(banner)
-    if not amap:
+    region = region.translate(_SUP_TRANS)
+    parsed = _parse_affiliation_block(region)
+    if not parsed:
         return
+    amap, block_start = parsed
+    author_region = region[:block_start]
 
     plan = []
     for fam in families:
-        marks = _author_markers(banner, fam)
+        marks = _author_marker_nums(author_region, fam)
         if not marks or any(n not in amap for n in marks):
             return
         plan.append(marks)
