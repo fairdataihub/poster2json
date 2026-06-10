@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.17] - 2026-06-10
+
+### Changed
+
+- **ROR affiliation enrichment is now exact-only and never rewrites the affiliation text.** Previously a department/sub-unit string (e.g. "Hamilton Glaucoma Center, ..., University of California, San Diego, La Jolla, CA, US") fuzzy-matched to its parent organization and was rewritten to the parent's canonical display name, so two distinct sub-units of one university collapsed to the same name and the same identifier. An identifier is now attached only when the affiliation *is* the organization (its ROR name, alias, or acronym, optionally followed by a pure address tail); sub-units get no identifier and keep their full extracted text verbatim. ROR's canonical display name is no longer substituted for any affiliation, so distinct sub-units stay distinct.
+- **ORCID enrichment queries the creator's specific affiliation, not a broadened ROR canonical name.** 0.9.12 widened the ORCID affiliation query to the parent organization's canonical name so long sub-unit strings would resolve; that broadening is reverted. ORCID is queried with the extracted affiliation and still requires a single unambiguous name-plus-affiliation hit, so a sub-unit-affiliation author who does not resolve gets no identifier rather than a broadened guess.
+
 ## [0.9.16] - 2026-06-10
 
 ### Changed

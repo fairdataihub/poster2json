@@ -60,6 +60,67 @@ def _ror_display_name(org: dict) -> Optional[str]:
     return None
 
 
+# Institution/sub-unit keywords used to tell a trailing *address* ("La Jolla,
+# CA, US") apart from a trailing *sub-unit* ("School of Medicine") after an org
+# name. Kept local to ror.py (extract.py's richer copy pulls heavy deps).
+_INST_KW = re.compile(
+    r"(?i)(univers|institut|instituto|departa|department|dipart|division|"
+    r"divisi|school|escuela|colleg|hospital|clinic|laborator|cent(?:er|re|ro)|"
+    r"zentrum|facult|academ|foundation|fundac|research|hochschule|polytechni)"
+)
+
+
+def _norm_match(s: str) -> str:
+    """Accent- and case-insensitive normalization for exact name comparison,
+    preserving commas (org names like 'University of California, San Diego')."""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _org_match_names(org: dict) -> list:
+    """Every matchable name for a ROR org: display name, labels, aliases,
+    acronyms — anything in the v2 ``names`` array."""
+    out = []
+    for n in org.get("names", []):
+        v = n.get("value")
+        if isinstance(v, str) and v.strip():
+            out.append(v.strip())
+    return out
+
+
+def _is_geography_tail(rest: str) -> bool:
+    """True when the text after an org name is only an address (city/state/
+    country/postal), not a further sub-unit — so the affiliation is the org
+    plus its location, e.g. 'University of X' + ', La Jolla, CA, US'."""
+    if not rest:
+        return True
+    if _INST_KW.search(rest):
+        return False
+    segs = [s.strip() for s in rest.split(",") if s.strip()]
+    return len(segs) <= 4 and all(len(s) <= 30 for s in segs)
+
+
+def _affiliation_is_exact(aff_key: str, org: dict) -> bool:
+    """True when the affiliation string IS this organization (optionally
+    followed only by its address), as opposed to a department/sub-unit that
+    merely *contains* the org name. ROR's matcher returns the parent org for
+    sub-unit strings (e.g. 'Hamilton Glaucoma Center, …, UCSD' -> UCSD); the
+    exact-only policy attaches an identifier only to the former."""
+    a = _norm_match(aff_key)
+    for nm in _org_match_names(org):
+        n = _norm_match(nm)
+        if not n:
+            continue
+        if a == n:
+            return True
+        if a.startswith(n):
+            rest = a[len(n):].lstrip(" ,.;")
+            if not rest or _is_geography_tail(rest):
+                return True
+    return False
+
+
 class RorClient:
     """Disk-cached, rate-limited ROR matcher.
 
@@ -132,19 +193,14 @@ class RorClient:
         for item in data.get("items", []):
             if not item.get("chosen"):
                 continue
-            mtype = item.get("matching_type", "")
-            score = item.get("score", 0.0)
-            # ROR's `chosen=True` alone is too permissive: COMMON TERMS at
-            # 0.90 has matched "Dept of CS, Univ. of California, Berkeley"
-            # to "California Coast University". Accept EXACT and PHRASE
-            # outright; require >=0.95 for fuzzier modes.
-            if mtype in ("EXACT", "PHRASE"):
-                accept = True
-            else:
-                accept = score >= 0.95
-            if not accept:
-                break
             org = item.get("organization", {})
+            # Exact-only: attach an identifier only when the affiliation string
+            # IS this organization (optionally followed by its address), not a
+            # department/sub-unit that merely contains the org name. ROR's
+            # matcher (and its score/matching_type) happily map sub-unit strings
+            # to the parent org, which over-broadened identifiers before.
+            if not _affiliation_is_exact(key, org):
+                break
             display = _ror_display_name(org)
             rid = org.get("id")
             if display and rid:
@@ -194,22 +250,21 @@ def _norm_name(name: str) -> str:
 
 
 def resolve_person_affiliations(persons: list, client: RorClient) -> list:
-    """Resolve affiliations against ROR and collapse same-org duplicates.
+    """Attach ROR identifiers to affiliations, never rewriting the text.
 
     Operates in place on a creators/contributors list. Each affiliation (a
     string or a ``{"name": ...}`` object — model-supplied identifiers were
-    already stripped) is looked up in ROR by name:
+    already stripped) is looked up in ROR by name. ``RorClient.lookup`` only
+    returns a match on an **exact** organization match (the affiliation IS the
+    org, optionally followed by its address), so department/sub-unit strings
+    resolve to nothing and are left untouched.
 
-    - **Unresolved** affiliations keep their original value and are
-      de-duplicated by normalized name.
-    - A ROR org reached by a **single** distinct source name is emitted once,
-      using ROR's canonical display name plus the identifier.
-    - When **several distinct** source names resolve to the **same** ROR org
-      (e.g. two departments of one university), each distinct name is kept with
-      the shared identifier, preserving the sub-unit detail instead of
-      collapsing to one canonical entry.
+    - **Resolved** (exact): the extracted text is kept verbatim and a ROR
+      identifier is attached. ROR's canonical display name is *not* substituted,
+      so two distinct sub-units of one university stay distinct.
+    - **Unresolved**: the original value is kept unchanged.
 
-    True duplicates (the same name listed twice) always collapse to one entry.
+    True duplicates (the same name listed twice) collapse to one entry.
     """
     if not isinstance(persons, list):
         return persons
@@ -220,49 +275,27 @@ def resolve_person_affiliations(persons: list, client: RorClient) -> list:
         if not isinstance(affs, list):
             continue
 
-        # Look each item up once, remembering its original display name.
-        records = []  # (display_name | None, ror_match | None, raw_item)
-        for item in affs:
-            name = _affiliation_display_name(item)
-            ror = client.lookup(name) if name else None
-            records.append((name, ror, item))
-
-        # How many distinct source names map to each resolved ROR id?
-        names_per_id = {}
-        for name, ror, _ in records:
-            if ror and name:
-                names_per_id.setdefault(ror["id"], set()).add(_norm_name(name))
-
         out = []
         seen = set()
-        for name, ror, raw in records:
-            if ror and name:
-                rid = ror["id"]
-                if len(names_per_id.get(rid, ())) > 1:
-                    # Several distinct sub-units of one org: keep each name.
-                    key = ("id+name", rid, _norm_name(name))
-                    display = name
-                else:
-                    # Single source name: use ROR's canonical display name.
-                    key = ("id", rid)
-                    display = ror["name"]
-                if key in seen:
-                    continue
-                seen.add(key)
+        for item in affs:
+            name = _affiliation_display_name(item)
+            if name is None:
+                out.append(item)
+                continue
+            dedupe_key = _norm_name(name)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            ror = client.lookup(name)
+            if ror:
                 out.append({
-                    "name": display,
-                    "affiliationIdentifier": rid,
+                    "name": name,  # keep the extracted text; never canonicalize
+                    "affiliationIdentifier": ror["id"],
                     "affiliationIdentifierScheme": "ROR",
                     "schemeUri": "https://ror.org/",
                 })
             else:
-                # Unresolved: keep original value, de-dupe by normalized name.
-                if name is not None:
-                    key = ("name", _norm_name(name))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                out.append(raw)
+                out.append(item)
         p["affiliation"] = out
     return persons
 

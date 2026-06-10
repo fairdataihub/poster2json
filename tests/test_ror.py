@@ -28,14 +28,15 @@ class StubClient:
 _UCSD = {"id": "https://ror.org/0168r3w48", "name": "University of California San Diego"}
 
 
-def test_resolve_single_match_uses_canonical_name():
-    client = StubClient({"OHSU, School of Medicine, Portland, OR, USA": {
-        "id": "https://ror.org/009avj582", "name": "Oregon Health & Science University"}})
-    persons = [{"name": "Tedla", "affiliation": ["OHSU, School of Medicine, Portland, OR, USA"]}]
+def test_resolve_keeps_extracted_name_never_canonicalizes():
+    # The extracted text is preserved verbatim; ROR's canonical display name is
+    # never substituted (even though the matched org's canonical name differs).
+    client = StubClient({"University of California, San Diego, CA, US": _UCSD})
+    persons = [{"name": "X", "affiliation": ["University of California, San Diego, CA, US"]}]
     out = resolve_person_affiliations(persons, client)
     assert out[0]["affiliation"] == [{
-        "name": "Oregon Health & Science University",
-        "affiliationIdentifier": "https://ror.org/009avj582",
+        "name": "University of California, San Diego, CA, US",
+        "affiliationIdentifier": "https://ror.org/0168r3w48",
         "affiliationIdentifierScheme": "ROR",
         "schemeUri": "https://ror.org/",
     }]
@@ -55,16 +56,74 @@ def test_resolve_distinct_departments_same_org_kept_with_shared_id():
     assert all(a["affiliationIdentifierScheme"] == "ROR" for a in affs)
 
 
-def test_resolve_identical_strings_collapse_to_one_canonical():
+def test_resolve_identical_strings_collapse_keeping_extracted_name():
     client = StubClient({"UC San Diego": _UCSD})
     persons = [{"name": "X", "affiliation": ["UC San Diego", "UC San Diego"]}]
     out = resolve_person_affiliations(persons, client)
     assert out[0]["affiliation"] == [{
-        "name": "University of California San Diego",
+        "name": "UC San Diego",  # extracted text, not ROR's canonical display name
         "affiliationIdentifier": "https://ror.org/0168r3w48",
         "affiliationIdentifierScheme": "ROR",
         "schemeUri": "https://ror.org/",
     }]
+
+
+def test_affiliation_is_exact_accepts_org_and_trailing_geography():
+    from poster2json.ror import _affiliation_is_exact, _normalize_query
+    nq = _normalize_query
+    ucsd = {"id": "https://ror.org/0168r3w48", "names": [
+        {"value": "University of California, San Diego", "types": ["ror_display"]},
+        {"value": "UCSD", "types": ["acronym"]}]}
+    assert _affiliation_is_exact(nq("University of California, San Diego"), ucsd)
+    assert _affiliation_is_exact(nq("University of California, San Diego, CA, US"), ucsd)
+    assert _affiliation_is_exact(nq("UCSD"), ucsd)
+
+
+def test_affiliation_is_exact_rejects_subunits():
+    from poster2json.ror import _affiliation_is_exact, _normalize_query
+    nq = _normalize_query
+    ucsd = {"id": "x", "names": [
+        {"value": "University of California, San Diego", "types": ["ror_display"]}]}
+    assert not _affiliation_is_exact(nq(
+        "Hamilton Glaucoma Center, Viterbi Family Department of Ophthalmology, "
+        "Shiley Eye Institute, University of California, San Diego, La Jolla, CA, US"), ucsd)
+    assert not _affiliation_is_exact(nq(
+        "University of California, San Diego School of Medicine"), ucsd)
+    assert not _affiliation_is_exact(nq(
+        "University of California, San Diego, Division of Cardiology"), ucsd)
+
+
+def test_resolve_exact_only_drops_subunit_ids_and_keeps_distinct():
+    # End-to-end via a client applying the real exactness gate: two different
+    # UCSD sub-units get NO identifier and stay distinct; the bare org resolves.
+    from poster2json.ror import _affiliation_is_exact, _normalize_query, _ror_display_name
+    ucsd = {"id": "https://ror.org/0168r3w48", "names": [
+        {"value": "University of California, San Diego", "types": ["ror_display"]},
+        {"value": "UCSD", "types": ["acronym"]}]}
+
+    class ExactClient:
+        def lookup(self, name):
+            if _affiliation_is_exact(_normalize_query(name), ucsd):
+                return {"id": ucsd["id"], "name": _ror_display_name(ucsd)}
+            return None
+
+    hamilton = ("Hamilton Glaucoma Center, Viterbi Family Department of Ophthalmology, "
+                "Shiley Eye Institute, University of California, San Diego, La Jolla, CA, US")
+    division = ("Division of Ophthalmology Informatics and Data Science, Viterbi Family "
+                "Department of Ophthalmology, Shiley Eye Institute, University of "
+                "California, San Diego, La Jolla, CA, USA")
+    persons = [
+        {"name": "A", "affiliation": [hamilton]},
+        {"name": "B", "affiliation": [division]},
+        {"name": "C", "affiliation": ["University of California, San Diego, CA, US"]},
+    ]
+    out = resolve_person_affiliations(persons, ExactClient())
+    assert out[0]["affiliation"] == [hamilton]        # sub-unit: no id, verbatim
+    assert out[1]["affiliation"] == [division]        # sub-unit: no id, verbatim
+    assert out[0]["affiliation"][0] != out[1]["affiliation"][0]   # stay distinct
+    c0 = out[2]["affiliation"][0]
+    assert c0["affiliationIdentifier"] == "https://ror.org/0168r3w48"
+    assert c0["name"] == "University of California, San Diego, CA, US"
 
 
 def test_resolve_unresolved_kept_and_deduped_by_name():

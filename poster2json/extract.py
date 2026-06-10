@@ -2484,22 +2484,17 @@ def _postprocess_json(
 
         result = enrich_json_with_identifiers(result, raw_text, extract_identifiers)
 
-    # ORCID lookup -- skip if all creators already have ORCID
+    # ORCID lookup -- skip if all creators already have ORCID. Queried with the
+    # creator's specific extracted affiliation (no ROR-canonical broadening): a
+    # match is attached only when name + that affiliation resolve to a single
+    # unambiguous ORCID, so sub-unit-affiliation authors that don't resolve get
+    # no identifier rather than a broadened guess.
     if _needs_orcid_enrichment(result.get("creators")):
         from .orcid import enrich_creators_orcid
         from .orcid import get_default_client as get_orcid_client
-        from .ror import get_default_client as get_ror_client
-        _ror = get_ror_client()
-
-        def _canonical_affiliation(name):
-            # ORCID's affiliation search does not match long sub-unit strings;
-            # query with the ROR canonical institution name when available.
-            r = _ror.lookup(name) if name else None
-            return (r or {}).get("name") or name
 
         result["creators"] = enrich_creators_orcid(
             result["creators"], get_orcid_client(),
-            affiliation_resolver=_canonical_affiliation,
         )
 
     # Drop lone UTF-16 surrogates the model can emit (half of an emoji); they
