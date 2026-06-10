@@ -56,7 +56,7 @@ The pipeline processes posters in two stages:
 2. **JSON Structuring**
    - Raw text → Llama 3.1 8B → Structured JSON
 
-See [Architecture](architecture.md) for technical details.
+See [Architecture](architecture.md) for technical details, and [Extraction Prompt: Design and History](prompt-design.md) for why the LLM prompt asks for what it does.
 
 ## Performance
 
