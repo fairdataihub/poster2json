@@ -2002,6 +2002,28 @@ _INSTITUTION_KW = re.compile(
 # institution name (optionally space/dot separated, including accented capitals)
 _AFFIL_MARK = re.compile(r"(?:(?<=[\s;,(])|^)(\d{1,2})[.\s]{0,2}(?=[A-ZÀ-ɏ(])")
 
+# A parsed affiliation segment that ran past the institution list into the
+# poster body/abstract. The banner region can include body text when the
+# affiliation line and the abstract are not separated by a detected header
+# (e.g. they share a line), and the last numbered entry is delimited only by
+# the end of the region — so it swallows whatever follows. Real affiliations
+# are Title-Case institution/place tokens, not prose: they are not very long
+# and carry no long run of consecutive lowercase or ALL-CAPS words. Such a
+# segment is a strong ambiguity signal, so the corrector bails (no-op).
+_AFFIL_MAX_LEN = 180
+_PROSE_RUN = re.compile(r"\b[a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){4,}\b")
+_CAPS_RUN = re.compile(r"\b[A-Z]{2,}(?:\s+[A-Z]{2,}){4,}\b")
+
+
+def _affiliation_ran_into_body(txt: str) -> bool:
+    """True if a parsed affiliation segment looks like it ran into poster body
+    text (too long, or a sentence-/header-like run of words)."""
+    return (
+        len(txt) > _AFFIL_MAX_LEN
+        or bool(_PROSE_RUN.search(txt))
+        or bool(_CAPS_RUN.search(txt))
+    )
+
 
 def _parse_marker_run(run: str):
     """Parse an author marker run ("1,3" / "1-3,6" / "4 2") into a list of ints,
@@ -2070,7 +2092,7 @@ def _parse_affiliation_block(region: str):
     for j, (num, ms, me) in enumerate(seq):
         end = seq[j + 1][1] if j + 1 < len(seq) else len(region)
         txt = region[me:end].strip().strip(",;").strip()
-        if not txt:
+        if not txt or _affiliation_ran_into_body(txt):
             return None
         amap[num] = txt
     return amap, seq[0][1]

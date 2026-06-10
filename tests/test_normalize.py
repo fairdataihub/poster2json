@@ -416,6 +416,56 @@ def test_superscript_corrector_expands_ranges():
     assert len(affs[1]) == 1 and "Beta" in affs[1][0]        # Jones 2 -> Beta
 
 
+def test_superscript_corrector_noop_when_block_runs_into_abstract():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    # The last numbered affiliation is followed immediately by the abstract on
+    # the same banner run (no header break), so the naive parse would swallow
+    # the body text. The corrector must detect that and stay a no-op.
+    raw = (
+        "Early reproductive failure in kakapo\n"
+        "Olivia Janes 1, Jana Wold 1,2, Tammy Steeves 2\n"
+        "1 Centre National de la Recherche Scientifique (CNRS), Rennes, France; "
+        "2 University of Canterbury, New Zealand "
+        "Early reproductive failure in kakapo Kakapo are a Nationally Critical "
+        "taonga species endemic to Aotearoa New Zealand and experience high rates "
+        "of early embryo death across the breeding population studied here.\n"
+    )
+    original = ["School of Biological Sciences"]
+    result = {"creators": [
+        {"name": "Janes, Olivia", "familyName": "Janes", "affiliation": list(original)},
+        {"name": "Wold, Jana", "familyName": "Wold", "affiliation": list(original)},
+        {"name": "Steeves, Tammy", "familyName": "Steeves", "affiliation": list(original)},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    # Untouched: no reassignment, no abstract text grabbed as an affiliation.
+    for c in result["creators"]:
+        assert c["affiliation"] == original
+    assert not result.get("_validation")
+
+
+def test_affiliation_ran_into_body_detector():
+    from poster2json.extract import _affiliation_ran_into_body
+
+    assert not _affiliation_ran_into_body("University of California, San Diego, CA, US")
+    assert not _affiliation_ran_into_body(
+        "LPL, Laboratoire de Physique des Lasers, Universite Paris 13, "
+        "Sorbonne Paris Cite, Villetaneuse, France"
+    )
+    # prose / abstract text
+    assert _affiliation_ran_into_body(
+        "Kakapo are a Nationally Critical taonga species endemic to Aotearoa "
+        "New Zealand and experience high rates of early embryo death"
+    )
+    # all-caps section headers grabbed from the body
+    assert _affiliation_ran_into_body(
+        "Univ. of California San Diego USA MOTIVATION THE GAS PUFF Z PINCH "
+        "THE MACHINE LEARN IMAGE RESULTS"
+    )
+    # absurdly long single segment
+    assert _affiliation_ran_into_body("Institute of " + "x" * 200)
+
+
 def test_creator_nametype_personal_vs_organizational():
     from poster2json.extract import _postprocess_json
 

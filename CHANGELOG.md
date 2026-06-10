@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.18] - 2026-06-10
+
+### Fixed
+
+- **The superscript affiliation corrector no longer grabs poster body text as an affiliation.** The numbered affiliation list's last entry was bounded only by the end of the scanned banner region, so when the affiliation line and the abstract shared a line (no detected header between them) the last affiliation swallowed the body text (observed up to 2,119 characters of abstract and section headers across ~108 of 6,725 posters). Block parsing now bails, keeping the corrector a strict no-op, when any parsed affiliation looks like it ran into body text: longer than 180 characters, or containing a run of five or more consecutive lowercase words (prose) or ALL-CAPS words (section headers). Clean numbered banners and the existing correction behavior are unaffected.
+
 ## [0.9.17] - 2026-06-10
 
 ### Changed
