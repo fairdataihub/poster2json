@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.19] - 2026-06-10
+
+### Fixed
+
+- **Duplicate content sections are now de-duplicated.** On sparse or hand-drawn posters the model can loop and emit the same section several times (observed as three identical untitled "than you might think!" sections on the Turing Way sketchnote poster), and the raw-text recovery step could re-add a fragment that already appeared. Post-processing now collapses sections with identical normalized content (case- and whitespace-insensitive) to a single entry, keeping the first occurrence and preferring a copy that carries a title. Distinct sections are unaffected.
+
 ## [0.9.18] - 2026-06-10
 
 ### Fixed

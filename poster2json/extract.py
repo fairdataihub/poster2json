@@ -2349,6 +2349,26 @@ def _postprocess_json(
                         "sectionContent": blob,
                     })
 
+            # Drop duplicate sections. The model can repeat a section verbatim
+            # (a generation loop, common on sparse or hand-drawn posters), and
+            # the raw-text recovery above can re-add a fragment that already
+            # appears several times. De-dupe by normalized content, keeping the
+            # first occurrence and preferring a copy that carries a title.
+            deduped = []
+            seen_by_content = {}
+            for sec in cleaned_sections:
+                ckey = " ".join(sec.get("sectionContent", "").lower().split())
+                if not ckey:
+                    continue
+                if ckey in seen_by_content:
+                    idx = seen_by_content[ckey]
+                    if not deduped[idx].get("sectionTitle") and sec.get("sectionTitle"):
+                        deduped[idx] = sec
+                    continue
+                seen_by_content[ckey] = len(deduped)
+                deduped.append(sec)
+            cleaned_sections = deduped
+
             result["content"]["sections"] = cleaned_sections
 
     # Build sections from raw text when LLM produced none

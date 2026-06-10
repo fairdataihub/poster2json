@@ -478,6 +478,47 @@ def test_creator_nametype_personal_vs_organizational():
     assert out["creators"][1]["nameType"] == "Organizational"
 
 
+def test_postprocess_dedupes_repeated_sections():
+    from poster2json.extract import _postprocess_json
+
+    # The model looped and emitted the same fragment as three untitled sections
+    # (the TTW sketchnote-poster case): they must collapse to one.
+    data = {"content": {"sections": [
+        {"sectionTitle": "", "sectionContent": "than you might think!"},
+        {"sectionTitle": "", "sectionContent": "than you might think!"},
+        {"sectionTitle": "", "sectionContent": "than you might think!"},
+    ]}}
+    out = _postprocess_json(data, raw_text="")
+    secs = out["content"]["sections"]
+    assert len(secs) == 1
+    assert secs[0]["sectionContent"] == "than you might think!"
+
+
+def test_postprocess_dedup_prefers_titled_section():
+    from poster2json.extract import _postprocess_json
+
+    # Same content appears untitled then titled; keep the titled copy.
+    data = {"content": {"sections": [
+        {"sectionContent": "shared body text content goes here"},
+        {"sectionTitle": "Collaboration", "sectionContent": "shared body text content goes here"},
+    ]}}
+    out = _postprocess_json(data, raw_text="")
+    secs = out["content"]["sections"]
+    assert len(secs) == 1
+    assert secs[0].get("sectionTitle") == "Collaboration"
+
+
+def test_postprocess_keeps_distinct_sections():
+    from poster2json.extract import _postprocess_json
+
+    data = {"content": {"sections": [
+        {"sectionTitle": "Intro", "sectionContent": "first distinct section body"},
+        {"sectionTitle": "Methods", "sectionContent": "second distinct section body"},
+    ]}}
+    out = _postprocess_json(data, raw_text="")
+    assert len(out["content"]["sections"]) == 2
+
+
 def test_orcid_enrichment_uses_affiliation_resolver():
     from poster2json.orcid import enrich_creators_orcid
 
