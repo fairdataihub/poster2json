@@ -441,3 +441,23 @@ def test_orcid_enrichment_uses_affiliation_resolver():
     assert fc.seen == ["University of Example"]
     nids = out[0].get("nameIdentifiers", [])
     assert nids and "0000-0001-2345-6789" in nids[0]["nameIdentifier"]
+
+
+def test_language_always_owned_by_lingua_not_llm():
+    from poster2json.extract import _postprocess_json
+
+    # The LLM hallucinated "en" for a clearly German body; lingua must win.
+    # (Body must exceed the detector's MIN_CHARS floor of 200.)
+    german = (
+        "Untersuchung der Wirksamkeit neuer Therapien bei Patienten mit "
+        "chronischen Erkrankungen. Die Ergebnisse zeigen eine deutliche "
+        "Verbesserung der Lebensqualitaet und der Behandlungsergebnisse. "
+        "Diese Studie wurde an mehreren Krankenhaeusern durchgefuehrt und "
+        "umfasste mehrere hundert Teilnehmer ueber einen langen Zeitraum."
+    )
+    out = _postprocess_json({"language": "en"}, raw_text=german)
+    assert out["language"] == "de"
+
+    # With no body text the model's guess is still discarded, not trusted.
+    out2 = _postprocess_json({"language": "en"}, raw_text="")
+    assert out2["language"] is None

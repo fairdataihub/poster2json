@@ -2415,20 +2415,15 @@ def _postprocess_json(
 
         result["subjects"] = normalize_subjects(result["subjects"])
 
-    # Heuristic language detection on the raw body text. Overwrites any
-    # value the LLM may have emitted — the model has been observed to
-    # hallucinate `language` from English metadata fragments (e.g. the
-    # figshare Japanese poster at DOI 10.6084/m9.figshare.10116536.v1).
-    if raw_text:
-        from .language import detect_language
+    # Language is owned entirely by the lingua-based detector, never the LLM.
+    # The model has been observed to hallucinate `language` from English
+    # metadata fragments (e.g. the figshare Japanese poster at DOI
+    # 10.6084/m9.figshare.10116536.v1), so its value is always discarded and
+    # re-derived from the raw body text. When there is no body text (or the
+    # detector is unsure), null is more honest than a guess.
+    from .language import detect_language
 
-        detected = detect_language(raw_text)
-        if detected:
-            result["language"] = detected
-        else:
-            # Body text too short or detector unsure — null is more
-            # honest than guessing.
-            result["language"] = None
+    result["language"] = detect_language(raw_text) if raw_text else None
 
     # Reassign affiliations from author superscript markers when the poster
     # banner has a numbered affiliation list (the model commonly over-assigns,

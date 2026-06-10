@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.13] - 2026-06-09
+
+### Changed
+
+- **Language is now owned entirely by the lingua detector, never the model.** The extraction prompt never asked for a language field, but the fine-tuned model still emits one (often a wrong "en" for non-English posters). Post-processing previously re-derived language from the body text only when raw text was present, so on the rare empty-text path the model's guess could leak through. It is now always discarded and re-derived (or set to null when there is no body text or the detector is unsure).
+
 ## [0.9.12] - 2026-06-09
 
 ### Fixed
