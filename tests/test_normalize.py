@@ -205,6 +205,19 @@ def test_conference_all_placeholder_collapses_to_null():
     assert "conference" not in out
 
 
+def test_postprocess_drops_version_and_nulls_publication_year():
+    # version and publicationYear are platform-owned (set at publish), never
+    # extracted: version is dropped (optional in schema), publicationYear is
+    # emitted as null rather than the model's guess.
+    from poster2json.extract import _postprocess_json
+
+    out = _postprocess_json(
+        {"publicationYear": 2019, "version": "model guess"}, raw_text=""
+    )
+    assert out["publicationYear"] is None
+    assert "version" not in out
+
+
 def test_bogus_table_caption_filtered():
     from poster2json.extract import _postprocess_json
 

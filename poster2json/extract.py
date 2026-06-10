@@ -1417,7 +1417,7 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
 
 CRITICAL RULES:
-1. Extract ALL required fields: creators, titles, publicationYear, subjects, descriptions
+1. Extract ALL required fields: creators, titles, subjects, descriptions
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
@@ -1432,7 +1432,6 @@ JSON SCHEMA (all top-level fields are REQUIRED):
     {{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution Name"]}}
   ],
   "titles": [{{"title": "Main Poster Title"}}],
-  "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}, {{"subject": "keyword3"}}],
   "descriptions": [{{"description": "A 3-4 sentence summary of the full poster...", "descriptionType": "Abstract"}}],
   "researchField": null,
@@ -1448,12 +1447,11 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 }}
 
 EXTRACTION NOTES:
-- publicationYear: Extract if a year is printed on the poster. If not found, set to null.
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Write a 3-4 sentence summary of the full poster.
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
 - researchField: MUST be exactly one of: "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences" — or null if unclear.
-- GROUNDING: For metadata fields (publicationYear), only extract values that appear as text on the poster. If not found, use null. For section content, copy ALL text verbatim — do not skip or shorten.
+- GROUNDING: Only extract values that appear as text on the poster — do not invent metadata. For section content, copy ALL text verbatim — do not skip or shorten.
 
 POSTER TEXT TO CONVERT:
 {raw_text}
@@ -1461,7 +1459,7 @@ POSTER TEXT TO CONVERT:
 OUTPUT VALID JSON ONLY:"""
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
-1. creators, titles, publicationYear, subjects, descriptions, content
+1. creators, titles, subjects, descriptions, content
 2. SEPARATE section for EACH header found in the poster text. Use the poster's own headers. Lines starting with "## " are detected headers.
 3. Copy ALL text EXACTLY verbatim — every line of poster text must appear in a section
 4. If title is ALL CAPS, convert to Title Case preserving acronyms (SARS-CoV-2, not SARS-COV-2)
@@ -1470,7 +1468,6 @@ FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 {{
   "creators": [{{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution"]}}],
   "titles": [{{"title": "Poster Title"}}],
-  "publicationYear": null,
   "subjects": [{{"subject": "keyword1"}}, {{"subject": "keyword2"}}],
   "descriptions": [{{"description": "3-4 sentence summary of the full poster", "descriptionType": "Abstract"}}],
   "researchField": null,
@@ -2169,8 +2166,16 @@ def _postprocess_json(
     # Drop LLM-hallucinated formats — set deterministically from file extension
     result.pop("formats", None)
 
-    # version is a fixed provenance marker, not extracted by the model.
-    result["version"] = "Posters.science automated"
+    # version and publicationYear are assigned by the platform at publish time
+    # (Zenodo deposit version; current year), never by extraction — letting the
+    # model guess only seeds placeholder/wrong values downstream. version is
+    # optional in the schema, so drop it. publicationYear stays a required
+    # field (the platform fills it at publish); extraction emits null as a
+    # placeholder rather than guessing the poster's printed year. The bundled
+    # schema is intentionally left strict (integer) — the *final* poster.json
+    # carries a real year supplied by posters.science.
+    result.pop("version", None)
+    result["publicationYear"] = None
 
     # descriptionType is auto-filled to its default; only the description text
     # (the summary) is model-generated.

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.14] - 2026-06-09
+
+### Changed
+
+- **`version` and `publicationYear` are no longer produced by extraction; they are platform-owned (set at publish time).** Per the Poster.json field-coverage spec, `version` is the Zenodo deposit version ("1", then auto-incremented) and `publicationYear` is set to the current year when the poster is published — neither should be guessed from the poster. `version` (which was being hardcoded to the placeholder `"Posters.science automated"`) is now dropped from output; it is optional in the schema. `publicationYear` is removed from the extraction prompt and emitted as `null` (the platform fills the real year at publish). The bundled `poster_schema.json` is intentionally left strict (`publicationYear` stays a required integer) — the *final* poster.json carries a real year supplied by posters.science.
+
 ## [0.9.13] - 2026-06-09
 
 ### Changed
