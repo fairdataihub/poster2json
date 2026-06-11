@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.20] - 2026-06-11
+
+### Fixed
+
+- **Markdown is stripped from content sections, and bare structural labels are dropped.** The model occasionally emits markdown emphasis (`**bold**`, leading `#` headers) and, on some posters, structural scaffolding such as `**Title and Subtitle:**` or `**Author Names and Affiliations:**` as section content with no actual text. Post-processing now strips markdown from section titles and content, and drops sections whose content is just a short single-line label ending in a colon (the real title and authors live in their own fields). Sections with real content, including "Label: value" lines, are unaffected.
+
 ## [0.9.19] - 2026-06-10
 
 ### Fixed

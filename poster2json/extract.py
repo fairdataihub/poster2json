@@ -1973,6 +1973,34 @@ def _is_section_label_only(text: str) -> bool:
     return bool(toks) and all(w in _SECTION_LABELS for w in toks)
 
 
+_MD_BOLD = re.compile(r"\*\*([^*]+)\*\*|__([^_]+)__")
+_MD_HEADER = re.compile(r"(?m)^\s{0,3}#{1,6}\s+")
+
+
+def _strip_markdown(text: str) -> str:
+    """Strip the markdown emphasis the model occasionally emits (**bold**,
+    __bold__, leading # headers). Output is plain text, not markdown."""
+    if not isinstance(text, str) or not text:
+        return text
+    text = _MD_BOLD.sub(lambda m: m.group(1) or m.group(2), text)
+    text = _MD_HEADER.sub("", text)
+    return text.strip()
+
+
+_BARE_LABEL = re.compile(r"^[A-Za-z][A-Za-z0-9&,'()/\- ]{0,58}:$")
+
+
+def _is_bare_structural_label(text: str) -> bool:
+    """True for a short single-line label like "Title and Subtitle:" or "Author
+    Names and Affiliations:" that the model emitted as section content with no
+    actual text after it. These are structural scaffolding, not content — the
+    real title/authors live in their own fields — so they are dropped."""
+    t = (text or "").strip()
+    if not t or "\n" in t or len(t) > 60:
+        return False
+    return bool(_BARE_LABEL.fullmatch(t))
+
+
 # --- Author/affiliation superscript correction -------------------------------
 # The fine-tuned model frequently over-assigns affiliations (most often the
 # lead author absorbs every institution) even when the raw text is unambiguous.
@@ -2267,7 +2295,14 @@ def _postprocess_json(
                 content = _clean_unicode_artifacts(
                     content.strip() if isinstance(content, str) else ""
                 )
-                if content and len(content) > 10:
+                # Strip markdown the model sometimes emits, then drop sections
+                # whose content is just a bare structural label (e.g. the model
+                # emitting "**Title and Subtitle:**" / "**Author Names and
+                # Affiliations:**" as content): scaffolding, not real content.
+                title = _strip_markdown(title)
+                content = _strip_markdown(content)
+                if (content and len(content) > 10
+                        and not _is_bare_structural_label(content)):
                     entry = {"sectionContent": content}
                     if title:
                         entry["sectionTitle"] = title

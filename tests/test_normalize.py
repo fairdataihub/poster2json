@@ -519,6 +519,48 @@ def test_postprocess_keeps_distinct_sections():
     assert len(out["content"]["sections"]) == 2
 
 
+def test_postprocess_strips_markdown_from_sections():
+    from poster2json.extract import _postprocess_json
+
+    data = {"content": {"sections": [
+        {"sectionTitle": "**Methods**",
+         "sectionContent": "We used **phenomenological** qualitative analysis of interviews."},
+    ]}}
+    out = _postprocess_json(data, raw_text="")
+    s = out["content"]["sections"][0]
+    assert s["sectionTitle"] == "Methods"
+    assert "**" not in s["sectionContent"]
+    assert "phenomenological qualitative" in s["sectionContent"]
+
+
+def test_postprocess_drops_bare_structural_labels():
+    from poster2json.extract import _postprocess_json
+
+    # The Tokarski poster case: the model emitted bold meta-labels as section
+    # content with no real text. These are scaffolding and must be dropped.
+    data = {"content": {"sections": [
+        {"sectionContent": "**Title and Subtitle:**"},
+        {"sectionContent": "**Author Names and Affiliations:**"},
+        {"sectionTitle": "Study Objectives",
+         "sectionContent": "How do parents of adolescents perceive the transition process?"},
+    ]}}
+    out = _postprocess_json(data, raw_text="")
+    secs = out["content"]["sections"]
+    assert len(secs) == 1
+    assert secs[0]["sectionTitle"] == "Study Objectives"
+
+
+def test_postprocess_keeps_label_with_real_content():
+    from poster2json.extract import _postprocess_json
+
+    # "Label: actual content" carries information and is NOT a bare label.
+    data = {"content": {"sections": [
+        {"sectionContent": "Contact: tokarsk1@duq.edu and the project website"},
+    ]}}
+    out = _postprocess_json(data, raw_text="")
+    assert len(out["content"]["sections"]) == 1
+
+
 def test_orcid_enrichment_uses_affiliation_resolver():
     from poster2json.orcid import enrich_creators_orcid
 
