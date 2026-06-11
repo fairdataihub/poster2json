@@ -561,6 +561,41 @@ def test_postprocess_keeps_label_with_real_content():
     assert len(out["content"]["sections"]) == 1
 
 
+def test_recovery_does_not_reinject_ocr_markdown_labels():
+    from poster2json.extract import _postprocess_json
+
+    # The vision OCR decorates labels with markdown ("**STUDY OBJECTIVES:**");
+    # the model already captured those as real titled sections. The raw-text
+    # recovery must NOT re-add the decorated labels as untitled junk sections.
+    raw_text = (
+        "**Title and Subtitle:**\n"
+        "A Qualitative Study of the Transition Process\n\n"
+        "**STUDY OBJECTIVES:**\n"
+        "How do parents of adolescents with IDD perceive the transition process?\n\n"
+        "**THEMES:**\n"
+        "Matching client and context. Parents are the driving force.\n"
+    )
+    data = {
+        "titles": [{"title": "A Qualitative Study of the Transition Process"}],
+        "content": {"sections": [
+            {"sectionTitle": "Study Objectives",
+             "sectionContent": "How do parents of adolescents with IDD perceive the transition process?"},
+            {"sectionTitle": "Themes",
+             "sectionContent": "Matching client and context. Parents are the driving force."},
+        ]},
+    }
+    out = _postprocess_json(data, raw_text=raw_text)
+    secs = out["content"]["sections"]
+    joined = " ".join(s.get("sectionContent", "") for s in secs)
+    # No bare markdown labels survived, and none were re-added as sections.
+    assert "**" not in joined
+    assert not any(_bare in s.get("sectionContent", "") for s in secs
+                   for _bare in ("Title and Subtitle:", "STUDY OBJECTIVES:", "THEMES:"))
+    # The two real titled sections are intact.
+    titles = [s.get("sectionTitle") for s in secs]
+    assert "Study Objectives" in titles and "Themes" in titles
+
+
 def test_orcid_enrichment_uses_affiliation_resolver():
     from poster2json.orcid import enrich_creators_orcid
 

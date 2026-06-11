@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.21] - 2026-06-11
+
+### Fixed
+
+- **Markdown section labels from the vision OCR are no longer re-injected as junk sections.** On image posters the vision OCR decorates its transcription with markdown labels (e.g. `**Title and Subtitle:**`, `**STUDY OBJECTIVES:**`, `**THEMES:**`) that the model already captures as real titled sections. The raw-text recovery step (which reclaims content the model dropped, such as footer contact info) was fooled by the decoration: the `**`-wrapped tokens did not match the clean captured words, so each label was re-added as an untitled "ghost" section. Recovery now strips markdown before matching raw lines against captured content (and ignores trailing punctuation when matching), and drops any reclaimed block that is just a section-label or bare structural label. The 0.9.20 markdown/bare-label cleanup only ran on the model's own sections; it now also covers recovery-reclaimed content, which is where these labels actually came from.
+
 ## [0.9.20] - 2026-06-11
 
 ### Fixed

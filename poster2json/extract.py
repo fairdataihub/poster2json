@@ -2345,11 +2345,17 @@ def _postprocess_json(
                                                 if isinstance(vv, str):
                                                     captured.update(vv.lower().split())
 
-                # Strip ## prefixes and find ALL uncaptured blocks
-                raw_lines = [
-                    ln.lstrip("# ").strip() if ln.startswith("## ") else ln.strip()
-                    for ln in raw_text.split("\n")
-                ]
+                # Strip ## prefixes AND markdown, then find ALL uncaptured
+                # blocks. Markdown matters: the vision OCR decorates labels
+                # ("**STUDY OBJECTIVES:**"), and those decorated tokens would not
+                # match the clean captured words, so an already-captured label
+                # would be wrongly reclaimed as a "missing" block.
+                raw_lines = []
+                for ln in raw_text.split("\n"):
+                    ln = ln.strip()
+                    if ln.startswith("## "):
+                        ln = ln.lstrip("# ").strip()
+                    raw_lines.append(_strip_markdown(ln))
                 all_uncaptured_blocks = []
                 current_block = []
                 for ln in raw_lines:
@@ -2362,7 +2368,10 @@ def _postprocess_json(
                             all_uncaptured_blocks.append(current_block)
                         current_block = []
                         continue
-                    words = ln.lower().split()
+                    # Match on bare words (drop trailing punctuation) so a label
+                    # like "STUDY OBJECTIVES:" matches the captured "objectives".
+                    words = [w.strip(":.,;()") for w in ln.lower().split()]
+                    words = [w for w in words if w]
                     if not words:
                         continue
                     hit = sum(1 for w in words if w in captured)
@@ -2376,9 +2385,13 @@ def _postprocess_json(
                     all_uncaptured_blocks.append(current_block)
 
                 for block in all_uncaptured_blocks:
-                    blob = "\n".join(block)
-                    # Drop blocks that are entirely section-label echoes.
-                    if _is_section_label_only(blob):
+                    blob = _strip_markdown("\n".join(block))
+                    # Drop section-label echoes and bare structural labels
+                    # ("Title and Subtitle:", "THEMES:") that the OCR emitted but
+                    # the model already captured as real titled sections.
+                    if (not blob or len(blob) <= 10
+                            or _is_section_label_only(blob)
+                            or _is_bare_structural_label(blob)):
                         continue
                     cleaned_sections.append({
                         "sectionContent": blob,
