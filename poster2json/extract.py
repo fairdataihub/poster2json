@@ -2229,15 +2229,19 @@ def _postprocess_json(
 
     # The model's description is a machine-generated summary, so its
     # descriptionType is "Other". "Abstract" is reserved for the author's own
-    # formal abstract, which the platform attaches downstream (the submitter's
-    # poster abstract), never poster2json's summary. The type is set
-    # deterministically here; the prompt no longer asks the model for it, so
-    # only the description text (the summary) is model-generated.
+    # formal abstract: the submitter's poster abstract attached downstream, or
+    # the depositor's description carried in from the repository record during
+    # merge, never poster2json's summary. The type is set deterministically
+    # here; the prompt no longer asks the model for it, so only the description
+    # text (the summary) is model-generated. An existing "Abstract" is left
+    # untouched so this cleanup pass does not downgrade a curated abstract when
+    # it runs over an already-merged record.
     descs = result.get("descriptions")
     if isinstance(descs, list):
         for d in descs:
             if isinstance(d, dict) and d.get("description"):
-                d["descriptionType"] = "Other"
+                if d.get("descriptionType") != "Abstract":
+                    d["descriptionType"] = "Other"
 
     # Ensure caption fields exist and normalize with auto-generated IDs
     for key, ctype in [("imageCaptions", "fig"), ("tableCaptions", "table")]:
