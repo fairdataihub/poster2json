@@ -127,11 +127,11 @@ ORCIDs are extracted from poster text via regex, then matched to the appropriate
 
 ### ROR enrichment
 
-Affiliation names are looked up against the [ROR API](https://ror.org). When a match is found, `affiliationIdentifier`, `affiliationIdentifierScheme`, and `schemeUri` are populated.
+Affiliation names are looked up against the [ROR API](https://ror.org). When a match is found, `affiliationIdentifier`, `affiliationIdentifierScheme`, and `schemeURI` are populated.
 
-### Publisher enrichment
+### Publisher
 
-If a publisher name is extracted, it is also looked up against ROR to populate `publisherIdentifier`, `publisherIdentifierScheme`, and `schemeURI`.
+`publisher` is always emitted as `null`. It is platform-owned and assigned when the poster is published (the hosting repository), so extraction does not populate or enrich it.
 
 ### Language detection
 
@@ -139,11 +139,11 @@ The `language` field is detected from the raw poster text using the `lingua` lan
 
 ### Description type
 
-The LLM prompt instructs the model to classify `descriptionType` based on poster content. It defaults to "Abstract" for poster summaries, but the model can choose from the full set of DataCite description types (Abstract, Methods, SeriesInformation, TableOfContents, TechnicalInfo, Other).
+`descriptionType` is not requested from the model; it is set deterministically to `"Other"`, since the description is a machine-generated summary. `"Abstract"` is reserved for an author-provided formal abstract, which the platform attaches downstream.
 
-### Rights normalization
+### Rights
 
-License strings from the LLM are canonicalized to SPDX form. This includes alias matching, Creative Commons URL parsing, and fuzzy matching (Levenshtein distance 1). Junk entries like funding acknowledgments or boilerplate text are filtered out.
+`rightsList` is stripped from the output. The license is chosen by the user at publish time rather than inferred from the poster.
 
 ### Funding normalization
 
@@ -185,10 +185,10 @@ Outputs conform to [poster-json-schema](https://github.com/fairdataihub/poster-j
     ]
   },
   "imageCaptions": [
-    {"caption": "Figure 1. Description"}
+    {"id": "fig1", "caption": "Figure 1. Description"}
   ],
   "tableCaptions": [
-    {"captions": ["Table 1.", "Description"]}
+    {"id": "table1", "caption": "Table 1. Description"}
   ]
 }
 ```
