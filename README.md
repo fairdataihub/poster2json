@@ -63,8 +63,7 @@ The pipeline uses:
 - **Qwen2-VL-7B** for vision-based OCR of image posters
 - **pdfplumber** for layout-aware PDF text extraction
 - **lingua-language-detector** for ISO 639-1 language detection on body text (overrides any value the model emits — body text beats metadata-fragment guessing)
-- **ROR** (`https://api.ror.org`) for affiliation and publisher canonicalisation; matched names get a ROR identifier attached
-- **SPDX** matching (with integer-exact version handling) for license normalisation in `rightsList`
+- **ROR** (`https://api.ror.org`) for affiliation canonicalisation; matched names get a ROR identifier attached
 
 ## Quick Start
 
@@ -124,7 +123,7 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
           "name": "Stanford University",
           "affiliationIdentifier": "https://ror.org/00f54p054",
           "affiliationIdentifierScheme": "ROR",
-          "schemeUri": "https://ror.org/"
+          "schemeURI": "https://ror.org/"
         }
       ]
     }
@@ -132,7 +131,7 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
   "titles": [
     { "title": "Machine Learning Approaches to Diabetic Retinopathy Detection" }
   ],
-  "publicationYear": 2025,
+  "publicationYear": null,
   "language": "en",
   "researchField": "Health Sciences",
   "subjects": [
@@ -140,18 +139,9 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
     { "subject": "Diabetic Retinopathy" }
   ],
   "descriptions": [
-    { "description": "We present a deep learning model...", "descriptionType": "Abstract" }
+    { "description": "We present a deep learning model...", "descriptionType": "Other" }
   ],
-  "publisher": { "name": "Zenodo" },
-  "rightsList": [
-    {
-      "rights": "Creative Commons Attribution 4.0 International",
-      "rightsIdentifier": "CC-BY-4.0",
-      "rightsIdentifierScheme": "SPDX",
-      "schemeUri": "https://spdx.org/licenses/",
-      "rightsUri": "https://creativecommons.org/licenses/by/4.0/"
-    }
-  ],
+  "publisher": null,
   "content": {
     "sections": [
       { "sectionTitle": "Abstract", "sectionContent": "..." },
@@ -160,15 +150,17 @@ Output conforms to the [poster-json-schema](https://github.com/fairdataihub/post
     ]
   },
   "imageCaptions": [{ "id": "fig1", "caption": "Figure 1. ROC curves showing..." }],
-  "tableCaptions": [{ "id": "table1", "caption": "Table 1. Performance metrics" }]
+  "tableCaptions": [{ "id": "table1", "caption": "Table 1. Performance metrics" }],
+  "formats": ["application/pdf"]
 }
 ```
 
 Notes on the auto-populated fields:
 - `language` is detected from the raw body text (lingua heuristic). Returns null when text is too short (<200 chars / <50 non-ASCII codepoints) or the detector is unsure.
 - `researchField` must be one of the four OpenAlex top-level domains: `Health Sciences`, `Life Sciences`, `Physical Sciences`, `Social Sciences`. Null when the model can't pick one confidently.
-- `affiliation` and `publisher` get ROR enrichment when the matcher returns a high-confidence chosen result. Strings without a confident match pass through unchanged. Set `POSTER2JSON_ROR=0` to disable.
-- `rightsList` entries are matched against an SPDX table; the matcher is conservative on version numbers (e.g. `CC-BY-4.0` and `CC-BY-4.1` are never confused).
+- `affiliation` gets ROR enrichment when the matcher returns a high-confidence chosen result. Strings without a confident match pass through unchanged. Set `POSTER2JSON_ROR=0` to disable.
+- `publisher` and `publicationYear` are always emitted as `null`. They are platform-owned and set when the poster is published, not by extraction.
+- `formats` is derived from the input file's extension, not the model.
 
 ## System Requirements
 
