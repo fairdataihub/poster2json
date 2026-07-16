@@ -2080,6 +2080,13 @@ def _parse_marker_run(run: str):
     for part in re.split(r"[,\s+*†‡§¶#]+", run.strip()):
         if not part:
             continue
+        # A hyphen chain of three or more numbers ("4-5-6") cannot be a range,
+        # which has exactly two endpoints; posters write it to join markers, so
+        # the author carries every listed affiliation. Two-number forms stay
+        # range-expanded, which is the reading that "1-3" almost always wants.
+        if re.match(r"^\d{1,2}(?:[–—-]\d{1,2}){2,}$", part):
+            nums.extend(int(x) for x in re.split(r"[–—-]", part))
+            continue
         rng = re.match(r"^(\d{1,2})[–—-](\d{1,2})$", part)
         if rng:
             a, b = int(rng.group(1)), int(rng.group(2))
@@ -2108,7 +2115,10 @@ def _family_alts(family: str):
 
 def _banner_region(raw_text: str, first_family: str):
     """The author/affiliation banner: the first line naming the lead author plus
-    following lines up to the next detected header, joined into one string."""
+    following lines up to the next detected header, newline-joined into one
+    string. Line boundaries are preserved (rather than flattened to spaces) so
+    the trailing affiliation entry, which no following marker bounds, can fall
+    back to the end of its own source line; see _trim_trailing_affiliation."""
     lines = raw_text.splitlines()
     start = None
     for alt in _family_alts(first_family):
@@ -2127,7 +2137,7 @@ def _banner_region(raw_text: str, first_family: str):
             break
         if s:
             out.append(s)
-    return " ".join(out) if out else None
+    return "\n".join(out) if out else None
 
 
 # Contact/footnote tails and inline section labels that follow the last
@@ -2141,12 +2151,28 @@ _AFFIL_TAIL = re.compile(
     r"Purpose|Methods|Results|Conclusions?)\b)")
 
 
+def _collapse_ws(txt: str) -> str:
+    """Flatten the banner region's preserved line breaks back to single spaces."""
+    return re.sub(r"\s+", " ", txt).strip()
+
+
 def _trim_trailing_affiliation(txt: str) -> str:
     """Cut contact/URL/footnote tails off the final (unbounded) affiliation."""
     m = _AFFIL_TAIL.search(txt)
     if m:
         txt = txt[:m.start()]
-    return txt.strip().strip(",;").strip()
+    out = _collapse_ws(txt).strip(",;").strip()
+    # Nothing downstream bounds the trailing entry, so when a poster puts its
+    # abstract on the line after the legend with no header between them, the
+    # entry swallows the body prose and the whole parse is discarded. The
+    # source line boundary is the legend's real end: fall back to it, but keep
+    # it only if that yields a clean affiliation, so an affiliation that
+    # legitimately wraps onto the next line is never silently truncated.
+    if _affiliation_ran_into_body(out) and "\n" in txt:
+        first = _collapse_ws(txt.split("\n", 1)[0]).strip(",;").strip()
+        if first and not _affiliation_ran_into_body(first):
+            return first
+    return out
 
 
 def _parse_affiliation_block(region: str):
@@ -2176,7 +2202,7 @@ def _parse_affiliation_block(region: str):
     has_kw = False
     for j, (num, ms, me) in enumerate(seq):
         if j + 1 < len(seq):
-            txt = region[me:seq[j + 1][1]].strip().strip(",;").strip()
+            txt = _collapse_ws(region[me:seq[j + 1][1]]).strip(",;").strip()
             if not txt:
                 return None
         else:
@@ -2259,7 +2285,7 @@ def _parse_symbol_affiliation_block(region: str):
     has_kw = False
     for j, (cnt, ms, me) in enumerate(seq):
         if j + 1 < len(seq):
-            txt = region[me:seq[j + 1][1]].strip().strip(",;").strip()
+            txt = _collapse_ws(region[me:seq[j + 1][1]]).strip(",;").strip()
             if not txt:
                 return None
         else:
