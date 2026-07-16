@@ -5,20 +5,57 @@ reading-order fix with no prior context. Read `TRACK_B_PLAN.md` in this folder
 alongside this; that has the full Track B framing, this is the operational
 runbook for approach A specifically.
 
-## STATUS: approach A complete (2026-07-16)
+## STATUS (2026-07-16): approach A done, LOGIC-GAP tail done, 19/21
 
-Both non-RTL targets now PASS end-to-end. Commit 1bc9ef1 added a top-band
-banner flatten to xy_cut (`_flatten_top_band`, constants TOP_BAND=0.22 and
-TOP_BAND_DOMINANCE=0.85, both sweepable; sweeps show plateaus 0.22-0.30 and
-0.80-0.90), fixing gasimova. Commit ca44006 rescued "Surname X1"-style bylines
-from the single-char junk filter in extract.py (isporeu2023's reading order
-was already correct; the byline block was being discarded as chart debris).
-Scoreboard: AFFIL 8/13 end-to-end (was 6/13), corpus w=0.976 rGlobal=0.835
-rField=0.729, zero per-poster regressions vs after_track_a.json, suite green.
-Snapshots: baselines/after_approach_a.json, baselines/try_byline_rescue.json.
-Remaining: 8228476 is RTL (approach D); 42, 4519718, 4560930, 6724771 are
-LOGIC-GAP (corrector-side, out of scope here). The sections below are the
-original runbook, kept for context.
+Board: **19/21 acceptable, 11/13 numbered end-to-end, 12/13 logic-OK**, corpus
+w=0.976 rGlobal=0.835 rField=0.729, suite green (260 passed). Reference
+snapshot: `baselines/try_orcidtail.json`.
+
+Read this first if you are comparing to older numbers: **the eval matcher was
+too loose and the old scoreboard was inflated.** `_affil_match` accepted any
+assigned string that merely CONTAINED the ground-truth tokens, so a poster
+scored as passing while carrying junk ("Aydan Gasimova 1 FAIR Data Innovations
+Hub, ..."). It is now asymmetric (an assigned string may abbreviate GT, but may
+not add tokens GT lacks). Honest scoring cost 2 posters on the board before the
+fixes below earned them back on merit. Do not loosen it again to make a number
+go up. `calibration/diagnostics/` has no dump for this; the throwaway probe that
+found it simply printed every assigned affiliation verbatim and diffed against
+the previous commit. Do that after any corrector change — ROUGE and the
+token matcher both normalize punctuation away and will not show you junk.
+
+What landed (each measured per-poster against `after_track_a.json`, no
+regressions):
+
+- 1bc9ef1 `_flatten_top_band` in xy_cut (TOP_BAND=0.22, TOP_BAND_DOMINANCE=0.85,
+  sweepable; plateaus 0.22-0.30 and 0.80-0.90).
+- ca44006 byline rescue from the single-char junk filter (isporeu2023's whole
+  author line was being dropped as chart debris; its reading order was fine).
+- ab32c73 two eval-matcher artifacts (abbreviated legends, group authors).
+- 64e9bfe trailing legend entry bounded at its source line; hyphen-joined
+  marker runs ("4-5-6") parse.
+- 86afd80 block split on a local-rhythm gap plus a size change (a legend set a
+  point larger than the abstract under it fused into one block).
+- fe79689 line-bounded legend parse, superscript-row merge, ORCID tail, honest
+  matcher.
+
+The two remaining failures are NOT reading-order bugs:
+
+- **8228476** — RTL (Hebrew). Still ORDER-GAP. This is approach D. Note the
+  superscript-row merge is deliberately gated (SUPERSCRIPT_MIN_DIGITS=2) so it
+  does not touch this poster: rejoining a marker row shifts the median line
+  height `_lines_to_blocks` keys on and re-blocks the page, which cost this
+  poster 0.059 rField for no gain (its banner got worse too, being RTL either
+  way). Approach D should handle bidi first, then revisit.
+- **42** — NOT FIXABLE from the poster, and no code should try. Its GT lists 6
+  authors and 5 distinct affiliations; the poster prints 3 authors and 2
+  affiliations. Reddy, Dhillon and Tripathi appear only inside a References
+  citation (the CarD-T preprint), and 3 of the 5 GT affiliations (Herbert
+  Wertheim School of Public Health, Moores Cancer Center, Dept of Cellular and
+  Molecular Medicine) appear nowhere in the poster text. The annotation was
+  taken from the paper/deposit, not the poster. Raise it with the annotators;
+  it is a corpus bug, not an extraction bug.
+
+The sections below are the original runbook, kept for context.
 
 ## TL;DR
 
