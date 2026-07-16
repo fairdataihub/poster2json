@@ -1,0 +1,23 @@
+{
+  "titles": [
+    {"title": "Clinical Dataset Structure: A Universal Framework for Structuring Clinical Research Datasets"}
+  ],
+  "creators": [
+    {"name": "Gasimova, Aydan", "affiliation": [
+      {"name": "FAIR Data Innovations Hub, California Medical Innovations Institute, San Diego, CA, USA"}]},
+    {"name": "Soundarajan, Sanjay", "affiliation": [
+      {"name": "FAIR Data Innovations Hub, California Medical Innovations Institute, San Diego, CA, USA"}]},
+    {"name": "Gim, Nayoon", "affiliation": [
+      {"name": "Department of Ophthalmology, University of Washington, Seattle, WA, USA"},
+      {"name": "Department of Bioengineering, University of Washington, Seattle, WA, USA"},
+      {"name": "The Roger and Angie Karalis Johnson Retina Center, Seattle, WA, USA"}]},
+    {"name": "Shaffer, Jamie", "affiliation": [
+      {"name": "John F. Hardesty MD Department of Ophthalmology and Visual Sciences, Washington University, St. Louis, MO, USA"}]},
+    {"name": "Owen, Julia", "affiliation": [
+      {"name": "John F. Hardesty MD Department of Ophthalmology and Visual Sciences, Washington University, St. Louis, MO, USA"}]},
+    {"name": "Lee, Aaron", "affiliation": [
+      {"name": "John F. Hardesty MD Department of Ophthalmology and Visual Sciences, Washington University, St. Louis, MO, USA"}]},
+    {"name": "Patel, Bhavesh", "affiliation": [
+      {"name": "FAIR Data Innovations Hub, California Medical Innovations Institute, San Diego, CA, USA"}]}
+  ]
+}
