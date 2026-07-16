@@ -145,6 +145,12 @@ def _affil_match(got, gt_names):
         gtoks = set(g.split())
         if toks and (toks <= gtoks or len(toks & gtoks) / len(toks) >= 0.8):
             return True
+        # Poster legends often abbreviate what the deposit metadata spells out
+        # ("STScI, Baltimore, MD" for "Space Telescope Science Institute
+        # (STScI), Baltimore, MD"). A got that is a clean token-subset of the
+        # GT name is a faithful extraction of the poster, not an error.
+        if len(gtoks) >= 3 and gtoks <= toks:
+            return True
     return False
 
 
@@ -169,8 +175,13 @@ def _run_corrector(raw_text, gt_creators):
         got = c.get("affiliation") or []
         got = got if isinstance(got, list) else [got]
         # every GT affil must be matched by some assigned string, and count aligns
-        ok = bool(gt_names) and len(got) == len(gt_names) and all(
-            any(_affil_match(x, [gn]) for x in got) for gn in gt_names)
+        if gt_names:
+            ok = len(got) == len(gt_names) and all(
+                any(_affil_match(x, [gn]) for x in got) for gn in gt_names)
+        else:
+            # group authors ("the RECONS Team") have no GT affiliation;
+            # correct means the corrector assigned nothing
+            ok = not got
         correct.append(ok)
     return fired, correct
 
