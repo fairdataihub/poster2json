@@ -2103,10 +2103,15 @@ def _banner_region(raw_text: str, first_family: str):
     return " ".join(out) if out else None
 
 
-# Contact/footnote tails that follow the last affiliation in a banner (email,
-# URL, corresponding-author glyph, pipe-separated links) — trimmed off the
-# trailing entry, which is the only one not bounded by a following marker.
-_AFFIL_TAIL = re.compile(r"\s*(?:\|| \* |https?://|www\.|\S+@\S+\.\S+)")
+# Contact/footnote tails and inline section labels that follow the last
+# affiliation in a banner (email, URL, corresponding-author glyph, pipe links,
+# or the abstract/first section running onto the same line as the last
+# affiliation) — trimmed off the trailing entry, which is the only one not
+# bounded by a following marker.
+_AFFIL_TAIL = re.compile(
+    r"\s*(?:\|| \* |https?://|www\.|\S+@\S+\.\S+"
+    r"|\b(?:Abstract|Introduction|Background|Objectives?|Summary|Overview|"
+    r"Purpose|Methods|Results|Conclusions?)\b)")
 
 
 def _trim_trailing_affiliation(txt: str) -> str:

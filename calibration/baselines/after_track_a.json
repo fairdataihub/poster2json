@@ -818,9 +818,9 @@
         "n_authors": 6,
         "ref_fired": true,
         "ref_correct": 1.0,
-        "gen_fired": false,
-        "gen_correct": 0.0,
-        "status": "ORDER-GAP"
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
       }
     },
     {
