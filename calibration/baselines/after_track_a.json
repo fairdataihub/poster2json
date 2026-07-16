@@ -704,11 +704,11 @@
       "affil": {
         "scheme": "numbered",
         "n_authors": 4,
-        "ref_fired": false,
-        "ref_correct": 0.0,
-        "gen_fired": false,
-        "gen_correct": 0.0,
-        "status": "LOGIC-GAP"
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
       }
     },
     {

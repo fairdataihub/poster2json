@@ -768,3 +768,27 @@ def test_superscript_corrector_skips_collective_author():
     assert "Georgia" in affs[0][0]
     assert "RECONS Institute" in affs[1][0]
     assert affs[2] == ["x"]                         # collective author untouched
+
+
+def test_superscript_corrector_asterisk_footnote_scheme():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    # Asterisk-keyed affiliations (* / **) with a compound surname printed as
+    # only "Perdomo" in the byline, and a corresponding-author digit (¹email)
+    # that must be ignored.
+    raw = (
+        "Title\n"
+        "A. Perdomo*,**,¹, N. Vitas*,**, E. Khomenko*,**\n"
+        "*Instituto de Astrofisica de Canarias, La Laguna, Spain "
+        "**Departamento de Astrofisica, Universidad de La Laguna, Spain ¹aperdomo@iac.es\n"
+        "## ABSTRACT\n"
+    )
+    result = {"creators": [
+        {"name": "Perdomo Garcia, Andrea", "familyName": "Perdomo Garcia", "affiliation": ["x"]},
+        {"name": "Vitas, Nikola", "familyName": "Vitas", "affiliation": ["x"]},
+        {"name": "Khomenko, Elena", "familyName": "Khomenko", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 2 and "Instituto" in affs[0][0] and "Universidad" in affs[0][1]
+    assert len(affs[2]) == 2 and "Instituto" in affs[2][0]

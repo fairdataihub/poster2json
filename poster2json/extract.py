@@ -2082,14 +2082,30 @@ def _parse_marker_run(run: str):
     return nums or None
 
 
+def _family_alts(family: str):
+    """The family name plus distinctive single-token fallbacks (>=4 chars),
+    longest first. Handles bylines that print only part of a compound surname
+    (annotation "Perdomo Garcia" vs byline "Perdomo"). The full name is always
+    tried first, so single-surname behaviour is unchanged."""
+    alts = [family]
+    for t in sorted((t for t in re.split(r"\s+", family) if len(t) >= 4),
+                    key=len, reverse=True):
+        if t not in alts:
+            alts.append(t)
+    return alts
+
+
 def _banner_region(raw_text: str, first_family: str):
     """The author/affiliation banner: the first line naming the lead author plus
     following lines up to the next detected header, joined into one string."""
     lines = raw_text.splitlines()
     start = None
-    for i, ln in enumerate(lines):
-        if re.search(re.escape(first_family), ln, re.IGNORECASE):
-            start = i
+    for alt in _family_alts(first_family):
+        for i, ln in enumerate(lines):
+            if re.search(re.escape(alt), ln, re.IGNORECASE):
+                start = i
+                break
+        if start is not None:
             break
     if start is None:
         return None
@@ -2196,14 +2212,68 @@ def _author_marker_nums(author_region: str, family: str):
     honorific/degree run and role glyphs may sit between the name and the marker
     (e.g. "Ivanyi P1", "Patel, Ph.D.1", "Couperus*1+2"). Role glyphs also
     join/terminate the digit run and are ignored. ``None`` if no marker."""
-    m = re.search(
-        re.escape(family) + _INITIALS_FRAG + _HONORIFIC_FRAG
-        + r"[.,\s" + _ROLE_GLYPHS + r"]{0,4}"
-        + r"(\d[\d,+" + _ROLE_GLYPHS + r"–—\-\s]*)",
-        author_region, re.IGNORECASE)
-    if not m:
+    for fam in _family_alts(family):
+        m = re.search(
+            re.escape(fam) + _INITIALS_FRAG + _HONORIFIC_FRAG
+            + r"[.,\s" + _ROLE_GLYPHS + r"]{0,4}"
+            + r"(\d[\d,+" + _ROLE_GLYPHS + r"–—\-\s]*)",
+            author_region, re.IGNORECASE)
+        if m:
+            return _parse_marker_run(m.group(1))
+    return None
+
+
+# An asterisk-keyed affiliation marker: a run of 1-4 asterisks at a boundary,
+# then a capitalized institution name. Some posters mark affiliations with
+# ``*``/``**``/``***`` (footnote style) instead of numbers.
+_SYM_MARK = re.compile(r"(?:(?<=[\s;,(])|^)(\*{1,4})[.\s]{0,2}(?=[A-ZÀ-ɏ(])")
+
+
+def _parse_symbol_affiliation_block(region: str):
+    """Like :func:`_parse_affiliation_block` but for asterisk-keyed affiliation
+    lists (``*`` = 1, ``**`` = 2, ...). Returns ``({count: text}, block_start)``
+    keyed by asterisk count so the caller resolves it identically to the numbered
+    scheme. Same precision gates: a clean sequential 1..N run, at least one
+    institution keyword, trailing-entry trim, and every author resolving."""
+    cands = [(len(m.group(1)), m.start(1), m.end()) for m in _SYM_MARK.finditer(region)]
+    seq = []
+    expect = 1
+    for cnt, ms, me in cands:
+        if cnt == expect:
+            seq.append((cnt, ms, me))
+            expect += 1
+    if len(seq) < 2:
         return None
-    return _parse_marker_run(m.group(1))
+    amap = {}
+    has_kw = False
+    for j, (cnt, ms, me) in enumerate(seq):
+        if j + 1 < len(seq):
+            txt = region[me:seq[j + 1][1]].strip().strip(",;").strip()
+            if not txt:
+                return None
+        else:
+            txt = _trim_trailing_affiliation(region[me:])
+            if not txt or _affiliation_ran_into_body(txt):
+                return None
+        if _INSTITUTION_KW.search(txt):
+            has_kw = True
+        amap[cnt] = txt
+    if not has_kw:
+        return None
+    return amap, seq[0][1]
+
+
+def _author_marker_syms(author_region: str, family: str):
+    """Asterisk-count markers adjacent to ``family`` (e.g. "Perdomo*,**" -> [1,2]).
+    Non-asterisk markers (a contact/corresponding-author digit like the ``1`` in
+    "Perdomo*,**,1") terminate the run and are ignored. ``None`` if no marker."""
+    for fam in _family_alts(family):
+        m = re.search(re.escape(fam) + _INITIALS_FRAG + _HONORIFIC_FRAG
+                      + r"\s*((?:\*{1,4}[,\s]*)+)", author_region, re.IGNORECASE)
+        if m:
+            counts = [len(s) for s in re.findall(r"\*{1,4}", m.group(1))]
+            return counts or None
+    return None
 
 
 def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None:
@@ -2240,28 +2310,38 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
     if not region:
         return
     region = region.translate(_SUP_TRANS)
-    parsed = _parse_affiliation_block(region)
-    if not parsed:
+
+    # Try the numbered scheme first, then the asterisk (footnote) scheme. Each
+    # pairs a legend parser with a matching author-marker extractor and shares
+    # the same strict gates; the first that resolves every author wins.
+    for parse_block, extract_marks in (
+        (_parse_affiliation_block, _author_marker_nums),
+        (_parse_symbol_affiliation_block, _author_marker_syms),
+    ):
+        parsed = parse_block(region)
+        if not parsed:
+            continue
+        amap, block_start = parsed
+        author_region = region[:block_start]
+        plan = []
+        for i, fam in persons:
+            marks = extract_marks(author_region, fam)
+            if not marks or any(n not in amap for n in marks):
+                plan = None
+                break
+            plan.append((i, marks))
+        if plan is None:
+            continue
+        for i, marks in plan:
+            creators[i]["affiliation"] = [amap[n] for n in marks]
+        notes = result.setdefault("_validation", [])
+        if isinstance(notes, list):
+            notes.append({
+                "field": "creators",
+                "level": "info",
+                "message": "Affiliations reassigned from author superscript markers in the poster banner.",
+            })
         return
-    amap, block_start = parsed
-    author_region = region[:block_start]
-
-    plan = []
-    for i, fam in persons:
-        marks = _author_marker_nums(author_region, fam)
-        if not marks or any(n not in amap for n in marks):
-            return
-        plan.append((i, marks))
-
-    for i, marks in plan:
-        creators[i]["affiliation"] = [amap[n] for n in marks]
-    notes = result.setdefault("_validation", [])
-    if isinstance(notes, list):
-        notes.append({
-            "field": "creators",
-            "level": "info",
-            "message": "Affiliations reassigned from author superscript markers in the poster banner.",
-        })
 
 
 def _postprocess_json(
