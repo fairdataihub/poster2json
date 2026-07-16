@@ -671,6 +671,7 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
     gap_threshold = median_lh * line_height_mult
 
     block_groups = [[lines[0]]]
+    block_gaps = [[]]
     for i in range(1, len(lines)):
         prev_bottom = max(w["bottom"] for w in lines[i - 1])
         curr_top = min(w["top"] for w in lines[i])
@@ -692,10 +693,28 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
             if short_line:
                 style_break = True
 
+        # A gap far wider than the rhythm this block has itself established,
+        # together with a change of font size, is a paragraph break in a new
+        # size. Both global tests can miss one: a banner that sets its
+        # affiliation legend a point or two larger than the abstract beneath it
+        # clears neither the 1.3x size jump nor a page-median gap threshold, so
+        # legend and abstract fuse into one block and the affiliation parser
+        # cannot see where the legend ends. Judged against local spacing rather
+        # than the page median, that boundary is unambiguous. Requires an
+        # established rhythm (three lines) and a real size change, so uniform
+        # prose is never broken up on gap alone.
+        local = block_gaps[-1]
+        if not style_break and len(local) >= 2 and gap > 0:
+            med_local = sorted(local)[len(local) // 2]
+            if gap > max(3.0 * med_local, 4.0) and size_ratio > 1.1:
+                style_break = True
+
         if gap > gap_threshold or style_break:
             block_groups.append([lines[i]])
+            block_gaps.append([])
         else:
             block_groups[-1].append(lines[i])
+            block_gaps[-1].append(gap)
 
     blocks = []
     for group in block_groups:
