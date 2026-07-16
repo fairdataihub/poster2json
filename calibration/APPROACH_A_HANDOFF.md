@@ -1,0 +1,225 @@
+# Approach A handoff: xy_cut banner reading order
+
+Self-contained handoff so a fresh chat (or a person) can pick up the xy_cut
+reading-order fix with no prior context. Read `TRACK_B_PLAN.md` in this folder
+alongside this; that has the full Track B framing, this is the operational
+runbook for approach A specifically.
+
+## TL;DR
+
+The affiliation corrector (in `poster2json/extract.py`) is now correct: given
+banner text in the right reading order it reassigns author affiliations
+deterministically, and it passes on 6 of 13 numbered posters end-to-end plus 9
+of 13 on ideal-order text. Three posters (gasimova, isporeu2023, 8228476) fail
+only because `xy_cut.py` scrambles the banner during text extraction. Approach A
+fixes that reading order. It touches every poster, so regression control is the
+whole game.
+
+## Hard constraints (do not violate)
+
+- Do not merge to main until the repo owner signs off. Work only on
+  `feature/xy-cut-calibration`.
+- Never add Claude/AI attribution to commits or PRs. Commit as the user, no
+  Co-Authored-By, no "Generated with" footer. Use
+  `git -c commit.gpgsign=false commit`.
+- Precision over coverage: it is better to leave a poster's reading order
+  slightly off than to regress a currently-passing poster. Every change is
+  measured against the guard baselines before committing.
+- No em/en dashes or special characters in prose you write.
+
+## Environment and access
+
+- Processing host is hpcf, reached over Tailscale:
+  `ssh -o StrictHostKeyChecking=accept-new joneill@100.115.159.103`
+  (from home use the LAN IP 192.168.1.223 if tailscale is not up).
+- Python env: `~/myenv/bin/python` (has torch, transformers, pdfplumber,
+  PyMuPDF 1.27, rouge_score). CPU is fine; the reading-order work needs no GPU.
+- Repo path on hpcf (this is a Nextcloud vault working copy, the git repo lives
+  here):
+  `/home/joneill/Nextcloud/vaults/jmind/calmi2/poster_science/poster2json`
+  Call it `$P`. `cd $P`.
+- Editing pattern that has worked: `scp` a file down, edit locally, `scp` back,
+  then run remotely. `/tmp` on hpcf is fine for throwaway diagnostic scripts.
+- The 20-poster annotation corpus:
+  `/home/joneill/Nextcloud/vaults/jmind/calmi2/poster_science/json_schema/manual_poster_annotation/<id>/`
+  each has `<id>.pdf`, `<id>_raw.md` (human reading-order ground truth),
+  `<id>.json` (schema annotation, author->affiliation ground truth).
+- gasimova is a 21st out-of-sample check: pdf, `gasimova_clean_raw.md`, and
+  `gasimova_annotation.json` live in `/storage/poster-work/`.
+
+## Repo and branch state
+
+- Branch `feature/xy-cut-calibration`, pushed to origin. Commits so far:
+  calibration workbench, affiliation-corrector banner sub-metric + per-field
+  length-normalized rougeL, Track A corrector robustness (5 commits), Track B
+  plan, approach C fallback. Track A and C are DONE. Approach A is not started.
+- `xy_cut.py` is unchanged from main so far. It is your only real edit target
+  for approach A (plus possibly one new module constant).
+
+## The calibration harness (your measurement tool)
+
+`$P/calibration/reading_order_eval.py`. CPU-only, ~30 to 60s, no LLM.
+
+    cd $P/calibration
+    ~/myenv/bin/python reading_order_eval.py                 # scoreboard
+    ~/myenv/bin/python reading_order_eval.py --details        # + per-field rougeL
+    ~/myenv/bin/python reading_order_eval.py --sweep MIN_GAP_AREA 2.0,2.5,3.0,3.5,4.0
+    ~/myenv/bin/python reading_order_eval.py --save baselines/try_X.json
+
+It runs `extract_text_with_pdfplumber` (which drives xy_cut) on each poster and
+reports, per poster:
+- `w`      word capture vs `_raw.md`
+- `rGlob`  whole-document rougeL (banner drowns in it; do not optimize this)
+- `rField` equal-weight per-field rougeL, length-normalized. THIS is the
+  reading-order headline. Title, authors+affiliations, and each section each
+  count once regardless of length, so banner damage shows up here.
+- `scheme` numbered / single / n/a
+- `refOK`  corrector correctness on the ideal `_raw.md` (already 1.00 for the 3
+  targets, so their logic is fine)
+- `genOK`  corrector correctness on the xy_cut output (this is what approach A
+  must drive to 1.00 for the 3 targets)
+- `status` PASS / ORDER-GAP / LOGIC-GAP / single(n/a) / n/a(<2 authors)
+
+The metric that proves approach A worked is genOK going to 1.00 on the three
+ORDER-GAP posters without any other poster regressing.
+
+## Guard baselines and success criteria
+
+Reference file: `baselines/after_track_a.json` (also `before_track_b.json`,
+identical scoreboard). Current corpus averages: w=0.976, rGlobal=0.835,
+rField=0.727. AFFIL: 6/13 end-to-end, 9/13 logic-OK, 14/21 acceptable.
+
+Approach A succeeds when:
+1. genOK reaches 1.00 for gasimova and isporeu2023 (8228476 is RTL, see
+   approach D, treat separately and do not block on it).
+2. No poster currently at status PASS regresses.
+3. Corpus `rField >= 0.727` and `rGlobal >= 0.835` (ideally rField rises).
+4. Full test suite green: `cd $P && ~/myenv/bin/python -m pytest tests/
+   poster2json/tests/ -q` (currently 260 passed, 1 skipped; takes ~70s, give it
+   a generous timeout).
+
+## The three target posters (precise failure modes)
+
+Inspect live with `calibration/diagnostics/trace_banner_order.py` (prints the
+first 9 non-empty xy_cut lines for the targets). Current state:
+
+**gasimova** (the canonical case). xy_cut emits:
+```
+## Clinical Dataset Structure: ... Datasets
+## Patel HUB
+1 , Sanjay Soundarajan 1 , Nayoon Gim 2,3,4 , ... , Gasimova Bhavesh
+Aydan
+## Background
+## Results
+1 FAIR Data Innovations Hub, ... 5 John F. Hardesty ...
+```
+The full-width top banner band is vsplit into body columns: the byline is
+fragmented and reordered ("Patel HUB", "Gasimova Bhavesh", "Aydan" split off),
+and the two body section headers "## Background" / "## Results" (tops of the left
+and right columns) are emitted between the byline and the affiliation legend.
+The lead author "Aydan Gasimova" is split from her `1` marker (which is stranded
+at the very start of the byline line). Fixing the reading order so the banner
+reads title, then full byline, then full legend, top to bottom across the width,
+recovers this poster (the corrector already handles that text, verified).
+
+**isporeu2023**. The byline markers are largely lost/scrambled in extraction:
+only the ORCID-list names survive ("ORCID iDs: Ivanyi P, https://..."), and one
+author (Colombo) is missing from the extracted text entirely. This is a harder
+extraction loss than gasimova; approach A may or may not recover it depending on
+how the banner is re-grouped. Do gasimova first and re-check isporeu2023 after.
+
+**8228476**. Right-to-left (Hebrew). Authors are one per line with emails, and
+the affiliation legend arrives with its leading markers detached from the
+institution names. Needs bidi-aware handling (approach D), not just banner
+promotion. Do not let it block gasimova/isporeu2023.
+
+## xy_cut.py architecture (your edit target)
+
+File: `$P/poster2json/xy_cut.py`, ~295 lines. A Python port of xpdf's recursive
+XY-cut. Entry point `chars_to_reading_order(raw_chars, page_width, page_height)`:
+```
+tree = split_block(chars)                 # recursive largest-gap split
+tree = _promote_spanning_leaves(tree, page_width)   # pull wide leaves out of vsplits
+tree = _merge_bottom_region(tree, page_height)      # bottom band reads across width
+return traverse(tree)                     # in-order -> reading-order lines
+```
+
+Tunable module constants (top of file): `MIN_GAP_AREA=3.0`,
+`SPLIT_GAP_SLACK=0.2`, `MIN_CHUNK_WIDTH=2.0`, `MIN_GAP_SIZE=0.2`,
+`BASELINE_RANGE=0.5`, `DESCENT_ADJUST=0.35`. The harness sweeps these by
+monkeypatch (`--sweep`), so you can explore without editing the file.
+
+Two existing functions are the templates for approach A:
+- `_promote_spanning_leaves(block, page_width)`: finds leaves wider than
+  `0.7 * page_width` nested inside a vsplit and re-wraps them as hsplit siblings
+  so a spanning block is not trapped in one column.
+- `_merge_bottom_region(block, page_height)`: for a top-level vsplit starting
+  below `page_height * 0.65`, reorders its children by y so the bottom band
+  (Conclusion, References) reads across the full width instead of column by
+  column.
+
+## Approach A: the banner is the missing TOP analog
+
+Root cause: the page vsplits into columns first (the column gutters are the
+biggest gaps and reach up near the top), so the top full-width banner band gets
+partitioned into columns and interleaved with the tops of the body sections.
+
+Primary idea: add a `_merge_top_band` (mirror of `_merge_bottom_region`) that,
+for a top-level vsplit whose bbox starts in the top band
+(`bbox[1] < page_height * TOP_BAND`, start TOP_BAND ~0.22), reorders the spanning
+rows of the banner (title, byline, legend) to read top to bottom across the full
+width before the narrower column children. Add `TOP_BAND` as a new module
+constant so it is sweepable. Reuse the wide-leaf test from
+`_promote_spanning_leaves` (`> 0.7 * page_width`).
+
+Things to work out empirically (this is the "number of tries" part):
+- Whether to reorder inside the existing top-level vsplit, or to hsplit the
+  page into (top band | body) before the column vsplit. The second is cleaner
+  but a bigger change to the split order.
+- How the byline, which is one wide line, is being fragmented. It may need the
+  line clustering (`_cluster_lines`, `BASELINE_RANGE`) or the single-line guard
+  (`block_h < 1.5 * avg_fs` in `split_block`) adjusted so the byline is kept as
+  one wide leaf that then gets promoted. Lift that `1.5` and the `0.7`/`0.65`
+  literals to module constants if you want to sweep them.
+- Verify the fix does not merge the banner into the first body section (watch
+  the passing posters' rField).
+
+## Iteration protocol (follow this every change)
+
+1. `~/myenv/bin/python reading_order_eval.py --save baselines/before_try.json`
+2. Make ONE change (a new function, or one swept constant).
+3. `~/myenv/bin/python reading_order_eval.py` and eyeball: did genOK on the 3
+   targets improve, and did any per-poster w / rGlob / rField drop vs
+   `after_track_a.json`? Any PASS -> not-PASS is a regression: revert or narrow.
+4. Spot-check raw banner text with
+   `~/myenv/bin/python calibration/diagnostics/trace_banner_order.py` on the 3
+   targets AND 3 passing posters (5128504, 4564017, 10890106) to confirm you did
+   not scramble a working banner.
+5. If clean, run the full pytest suite, then commit on the feature branch.
+6. Keep changes small and independently measured. A broad change with a
+   net-positive average can still silently break individual posters; the
+   per-field, per-poster table is there to catch that.
+
+## Diagnostics available in this folder
+
+- `diagnostics/trace_banner_order.py`: prints the first 9 non-empty xy_cut lines
+  for the ORDER-GAP posters (edit the CASES dict for others). Your main eyeball
+  tool for banner reading order.
+- `diagnostics/trace_corrector_bail.py`: for a list of poster ids, prints where
+  the affiliation corrector bails (banner region, legend parse, per-author
+  marker resolution). Useful to confirm a reading-order fix actually lets the
+  corrector fire.
+- Quick corrector check on one poster's xy_cut output: import
+  `poster2json.extract as E`, `gen = E.extract_text_with_pdfplumber(pdf)`, seed
+  creators from the annotation json, call
+  `E._correct_affiliations_from_superscripts(result, gen)`, check for the
+  "Affiliations reassigned" note in `result["_validation"]`.
+
+## Non-goals for approach A
+
+- 8228476 (RTL) is approach D, separate effort. `_add_bidi_markers` already
+  exists in extract.py as a starting point.
+- The LOGIC-GAP tail (6724771 abstract bleed, 42 author-count mismatch, 4519718
+  markerless last author, 4560930 partial) is corrector-side and out of scope
+  for reading order.
+- Do not chase rGlobal; optimize genOK on the targets and rField, guard the rest.
