@@ -8,6 +8,7 @@ from the same source, expressed in fractions of average font size.
 from __future__ import annotations
 
 import bisect
+import re
 import statistics
 from dataclasses import dataclass, field
 from typing import List, Tuple
@@ -20,6 +21,13 @@ BASELINE_RANGE = 0.5
 DESCENT_ADJUST = 0.35
 TOP_BAND = 0.22
 TOP_BAND_DOMINANCE = 0.85
+SUPERSCRIPT_SIZE_RATIO = 0.85
+SUPERSCRIPT_RISE = 0.6
+SUPERSCRIPT_MIN_DIGITS = 2
+
+# Glyphs an affiliation-marker row may contain: digits, the separators posters
+# put between them, and the role/footnote symbols that ride alongside.
+_MARKER_ROW_RE = re.compile(r"[\d\s,;.+*†‡§¶#\-–—]+")
 
 
 @dataclass
@@ -168,10 +176,88 @@ def split_block(chars, depth=0) -> Block:
     return Block("leaf", bbox, sorted(chars, key=lambda c: (c["bottom"], c["x0"])), [])
 
 
+def _char_fs(c):
+    return c.get("size", c["bottom"] - c["top"])
+
+
+def _line_fs(line):
+    return max(_char_fs(c) for c in line)
+
+
+def _line_base(line):
+    return statistics.median([c["bottom"] for c in line])
+
+
+def _is_marker_row(line):
+    """True if a line is made only of affiliation-marker glyphs (digits and
+    their separators). Geometry alone cannot identify a superscript row: plenty
+    of ordinary text is smaller than, and sits inside, a neighbouring line — a
+    single letter from a rotated axis label, a byline under a title, a logo
+    beside a heading. What makes a row markers is that it carries digits and
+    nothing else.
+
+    A lone digit does not qualify. Rejoining a row rewrites line extents and so
+    shifts the median line height the block grouper keys on, re-blocking the
+    page; that is worth risking only on unambiguous evidence, and one stray
+    digit (a figure number, a data label, an axis tick) is not it. A genuine
+    stranded byline row annotates several authors and carries a marker for
+    each."""
+    txt = "".join(c["text"] for c in line)
+    return (bool(_MARKER_ROW_RE.fullmatch(txt))
+            and sum(ch.isdigit() for ch in txt) >= SUPERSCRIPT_MIN_DIGITS)
+
+
+def _is_superscript_row(small, large):
+    """True if line ``small`` is a row of affiliation markers belonging to
+    ``large``.
+
+    Four conditions, none sufficient alone: the row is marker glyphs only,
+    every glyph is materially smaller than the text it annotates, the raised
+    baseline stays within an em of that text's, and the row sits horizontally
+    inside the other line's run. The last separates markers interleaved with
+    the names they follow from a smaller element set off to the side, such as a
+    logo beside a title, which shares a baseline band but not the horizontal
+    run.
+    """
+    if not _is_marker_row(small) or _is_marker_row(large):
+        return False
+    fs_l = _line_fs(large)
+    if _line_fs(small) >= SUPERSCRIPT_SIZE_RATIO * fs_l:
+        return False
+    if abs(_line_base(small) - _line_base(large)) > SUPERSCRIPT_RISE * fs_l:
+        return False
+    sx0 = min(c["x0"] for c in small)
+    sx1 = max(c["x1"] for c in small)
+    lx0 = min(c["x0"] for c in large)
+    lx1 = max(c["x1"] for c in large)
+    return sx0 >= lx0 - fs_l and sx1 <= lx1 + fs_l
+
+
+def _merge_superscript_rows(lines):
+    """Fold a stranded row of superscript markers back into its text line.
+
+    Baseline clustering keys on ``bottom``, so a byline's affiliation markers —
+    raised half an em above the names they follow — can land just outside the
+    tolerance and become a line of their own ("1 1 2,3,4 5 5 5 1"). Ordering
+    then interleaves them with the names and the author list is unreadable.
+    Rejoining the row and re-sorting by x restores the printed order.
+    """
+    if len(lines) < 2:
+        return lines
+    out = [lines[0]]
+    for ln in lines[1:]:
+        prev = out[-1]
+        if _is_superscript_row(ln, prev) or _is_superscript_row(prev, ln):
+            out[-1] = sorted(prev + ln, key=lambda c: c["x0"])
+        else:
+            out.append(ln)
+    return out
+
+
 def _cluster_lines(chars):
     if not chars:
         return []
-    sizes = [c.get("size", c["bottom"] - c["top"]) for c in chars]
+    sizes = [_char_fs(c) for c in chars]
     avg_fs = statistics.fmean(sizes) if sizes else 1.0
     tol = BASELINE_RANGE * max(avg_fs, 1.0)
     chars = sorted(chars, key=lambda c: (c["bottom"], c["x0"]))
@@ -188,7 +274,7 @@ def _cluster_lines(chars):
             cur_base = c["bottom"]
     if cur:
         lines.append(sorted(cur, key=lambda c: c["x0"]))
-    return lines
+    return _merge_superscript_rows(lines)
 
 
 def _promote_spanning_leaves(block, page_width):

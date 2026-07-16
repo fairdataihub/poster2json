@@ -2160,12 +2160,12 @@ def _banner_region(raw_text: str, first_family: str):
 
 
 # Contact/footnote tails and inline section labels that follow the last
-# affiliation in a banner (email, URL, corresponding-author glyph, pipe links,
-# or the abstract/first section running onto the same line as the last
-# affiliation) — trimmed off the trailing entry, which is the only one not
-# bounded by a following marker.
+# affiliation in a banner (email, URL, ORCID iD list, corresponding-author
+# glyph, pipe links, or the abstract/first section running onto the same line
+# as the last affiliation) — trimmed off the trailing entry, which is the only
+# one not bounded by a following marker.
 _AFFIL_TAIL = re.compile(
-    r"\s*(?:\|| \* |https?://|www\.|\S+@\S+\.\S+"
+    r"\s*(?:\||(?<=\s)\*\s|https?://|www\.|\S+@\S+\.\S+|\bORCID\b"
     r"|\b(?:Abstract|Introduction|Background|Objectives?|Summary|Overview|"
     r"Purpose|Methods|Results|Conclusions?)\b)")
 
@@ -2194,10 +2194,20 @@ def _trim_trailing_affiliation(txt: str) -> str:
     return out
 
 
-def _parse_affiliation_block(region: str):
-    """Parse the numbered affiliation list from a (superscript-normalized) banner
-    region into ``({n: text}, block_start_index)``. Returns ``None`` unless a
-    clean sequential ``1..N`` (N>=2) run of markers is found.
+def _line_spans(text: str):
+    """(start, end) offsets of each source line, end excluding the newline."""
+    spans = []
+    pos = 0
+    for ln in text.split("\n"):
+        spans.append((pos, pos + len(ln)))
+        pos += len(ln) + 1
+    return spans
+
+
+def _build_affiliation_map(region: str, cands: list, end: int):
+    """Assemble ``({n: text}, block_start_index)`` from marker candidates, with
+    ``end`` bounding the trailing entry. ``None`` unless a clean sequential
+    ``1..N`` (N>=2) run is found.
 
     Entry boundaries are the sequential markers themselves, so an affiliation
     that lacks an institution keyword (a company "Delta Hat Ltd", an acronym
@@ -2206,9 +2216,8 @@ def _parse_affiliation_block(region: str):
     from three gates: the clean sequential run, at least one entry carrying an
     institution keyword (so a stray body list "1. ... 2. ..." does not match),
     and — downstream in the caller — every author resolving to a marker in
-    ``1..N``. Only the trailing entry can run into body text, so it alone is
+    ``1..N``. Only the trailing entry can run past the legend, so it alone is
     trimmed and length/prose-guarded."""
-    cands = [(int(m.group(1)), m.start(1), m.end()) for m in _AFFIL_MARK.finditer(region)]
     seq = []
     expect = 1
     for num, ms, me in cands:
@@ -2225,7 +2234,7 @@ def _parse_affiliation_block(region: str):
             if not txt:
                 return None
         else:
-            txt = _trim_trailing_affiliation(region[me:])
+            txt = _trim_trailing_affiliation(region[me:end])
             if not txt or _affiliation_ran_into_body(txt):
                 return None
         if _INSTITUTION_KW.search(txt):
@@ -2234,6 +2243,41 @@ def _parse_affiliation_block(region: str):
     if not has_kw:
         return None
     return amap, seq[0][1]
+
+
+def _parse_affiliation_blocks(region: str):
+    """Candidate parses of the numbered legend, most precise first.
+
+    A poster's affiliation legend is one contiguous run of text: a single line
+    in the human markdown, a single block in extracted output. Confining a
+    parse to one line bounds the trailing entry at that line's end, and stops a
+    stray marker elsewhere in the banner from opening the run — a byline ending
+    "... Bhavesh Patel 1 Aydan Gasimova" offers a perfect "1 <Capitalized>"
+    match, and entry 1 then swallows the lead author's name. Line-bounded
+    parses come first, longest run first; the whole-region parse (what earlier
+    versions did exclusively) is kept as a fallback so a legend split across
+    lines still resolves."""
+    out = []
+    for start, end in _line_spans(region):
+        cands = [(int(m.group(1)), start + m.start(1), start + m.end())
+                 for m in _AFFIL_MARK.finditer(region[start:end])]
+        parsed = _build_affiliation_map(region, cands, end)
+        if parsed:
+            out.append(parsed)
+    out.sort(key=lambda p: len(p[0]), reverse=True)
+    whole = _build_affiliation_map(
+        region,
+        [(int(m.group(1)), m.start(1), m.end()) for m in _AFFIL_MARK.finditer(region)],
+        len(region))
+    if whole:
+        out.append(whole)
+    return out
+
+
+def _parse_affiliation_block(region: str):
+    """The single best parse of the numbered legend, or ``None``."""
+    parses = _parse_affiliation_blocks(region)
+    return parses[0] if parses else None
 
 
 # A closed set of academic degrees/honorifics that posters place between an
@@ -2319,6 +2363,14 @@ def _parse_symbol_affiliation_block(region: str):
     return amap, seq[0][1]
 
 
+def _parse_symbol_affiliation_blocks(region: str):
+    """Asterisk-scheme parses, in the same list form as the numbered scheme.
+    The asterisk legends seen so far are single-line, so the whole-region parse
+    is the only candidate."""
+    parsed = _parse_symbol_affiliation_block(region)
+    return [parsed] if parsed else []
+
+
 def _author_marker_syms(author_region: str, family: str):
     """Asterisk-count markers adjacent to ``family`` (e.g. "Perdomo*,**" -> [1,2]).
     Non-asterisk markers (a contact/corresponding-author digit like the ``1`` in
@@ -2330,6 +2382,22 @@ def _author_marker_syms(author_region: str, family: str):
             counts = [len(s) for s in re.findall(r"\*{1,4}", m.group(1))]
             return counts or None
     return None
+
+
+def _author_is_markerless(author_region: str, family: str) -> bool:
+    """True if no marker glyph is printed after ``family`` at all.
+
+    Distinct from ``_author_marker_nums`` returning None, which also covers a
+    marker that IS printed but will not parse — an ambiguity that must keep the
+    corrector a no-op rather than feed the elimination rule in
+    ``_resolve_affiliations``. Mirrors the marker regexes' prefix so the two
+    agree on where a marker would have to sit."""
+    for fam in _family_alts(family):
+        if re.search(re.escape(fam) + _INITIALS_FRAG + _HONORIFIC_FRAG
+                     + r"[.,\s" + _ROLE_GLYPHS + r"]{0,4}[\d*]",
+                     author_region, re.IGNORECASE):
+            return False
+    return True
 
 
 def _top_banner_text(raw_text: str, n_lines: int = 16) -> str:
@@ -2346,33 +2414,59 @@ def _top_banner_text(raw_text: str, n_lines: int = 16) -> str:
     return " ".join(out)
 
 
+def _plan_assignment(persons, amap, auth, extract_marks):
+    """Map every person author onto markers in ``amap``, or ``None`` if the
+    poster is ambiguous. ``auth`` is the byline text to search."""
+    plan = []
+    markerless = []
+    for i, fam in persons:
+        marks = extract_marks(auth, fam)
+        if not marks:
+            # No marker printed at all is recoverable by elimination below; a
+            # marker that IS printed but will not parse is ambiguous and must
+            # abandon the poster.
+            if not _author_is_markerless(auth, fam):
+                return None
+            markerless.append(i)
+            continue
+        if any(n not in amap for n in marks):
+            return None
+        plan.append((i, marks))
+    if not markerless:
+        return plan
+    # Posters do not typeset a legend entry that no author claims, so when
+    # exactly one author carries no marker and exactly one entry goes
+    # unclaimed, that entry is theirs — forced, not guessed. Any other shape
+    # (several bare authors, or several spare entries) is genuinely ambiguous.
+    if len(markerless) != 1 or not plan:
+        return None
+    claimed = {n for _, marks in plan for n in marks}
+    spare = [n for n in amap if n not in claimed]
+    if len(spare) != 1:
+        return None
+    return plan + [(markerless[0], spare)]
+
+
 def _resolve_affiliations(persons, creators, legend_region: str, author_search):
     """Try each affiliation scheme (numbered, then asterisk) against
-    ``legend_region``. On a parse, resolve every person author's marker — searched
+    ``legend_region``, and within a scheme each candidate parse in
+    precision order. On a parse, resolve every person author's marker — searched
     in ``author_search`` when the byline is separated from the legend, else in the
     legend text before the block — and, only if all resolve, assign. Returns True
     if a scheme fired, leaving creators untouched otherwise."""
-    for parse_block, extract_marks in (
-        (_parse_affiliation_block, _author_marker_nums),
-        (_parse_symbol_affiliation_block, _author_marker_syms),
+    for parse_blocks, extract_marks in (
+        (_parse_affiliation_blocks, _author_marker_nums),
+        (_parse_symbol_affiliation_blocks, _author_marker_syms),
     ):
-        parsed = parse_block(legend_region)
-        if not parsed:
-            continue
-        amap, block_start = parsed
-        auth = author_search if author_search is not None else legend_region[:block_start]
-        plan = []
-        for i, fam in persons:
-            marks = extract_marks(auth, fam)
-            if not marks or any(n not in amap for n in marks):
-                plan = None
-                break
-            plan.append((i, marks))
-        if plan is None:
-            continue
-        for i, marks in plan:
-            creators[i]["affiliation"] = [amap[n] for n in marks]
-        return True
+        for amap, block_start in parse_blocks(legend_region):
+            auth = (author_search if author_search is not None
+                    else legend_region[:block_start])
+            plan = _plan_assignment(persons, amap, auth, extract_marks)
+            if plan is None:
+                continue
+            for i, marks in plan:
+                creators[i]["affiliation"] = [amap[n] for n in marks]
+            return True
     return False
 
 

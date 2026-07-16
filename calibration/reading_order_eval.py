@@ -49,7 +49,8 @@ EXTRA = {  # id -> (pdf, raw_md, annotation_json); pdf="" means ref-only
 }
 TUNABLE = ("MIN_GAP_AREA", "SPLIT_GAP_SLACK", "MIN_CHUNK_WIDTH",
            "MIN_GAP_SIZE", "BASELINE_RANGE", "DESCENT_ADJUST", "TOP_BAND",
-           "TOP_BAND_DOMINANCE")
+           "TOP_BAND_DOMINANCE", "SUPERSCRIPT_SIZE_RATIO", "SUPERSCRIPT_RISE",
+           "SUPERSCRIPT_MIN_DIGITS")
 
 sys.path.insert(0, REPO)
 from poster2json import xy_cut          # noqa: E402
@@ -132,24 +133,38 @@ def field_scores(gen_text, ref_md):
 
 # ---- metric 3: affiliation corrector banner sub-metric ----------------------
 def _affil_match(got, gt_names):
-    """A corrector-assigned affiliation string matches ground truth if it is
-    close to any GT name (normalized): ratio >= .72 or GT tokens subset of got."""
+    """True if an assigned affiliation string faithfully renders any GT name.
+
+    Asymmetric on purpose. An assigned string may say LESS than ground truth:
+    poster legends abbreviate what deposit metadata spells out ("STScI,
+    Baltimore, MD" for "Space Telescope Science Institute (STScI), Baltimore,
+    MD"), and that is a faithful extraction of the poster. It may not say MORE:
+    tokens ground truth lacks are byline or body text that leaked into the
+    legend through a mis-bounded entry, which is precisely the failure this
+    harness exists to catch. An earlier version accepted any string merely
+    CONTAINING the GT tokens, which scored 'Aydan Gasimova 1 FAIR Data
+    Innovations Hub...' as correct and hid two real defects.
+    """
     g = _alpha(got)
     if not g:
         return False
-    gt_toks_all = [set(_alpha(n).split()) for n in gt_names]
-    for name, toks in zip(gt_names, gt_toks_all):
+    gtoks = set(g.split())
+    for name in gt_names:
         n = _alpha(name)
+        toks = set(n.split())
+        if not toks:
+            continue
+        extra = gtoks - toks        # content GT does not have -> leaked junk
+        missing = toks - gtoks      # content GT has that the poster abbreviated
+        if len(extra) > 2:
+            continue
+        if not missing:
+            return True
+        if not extra and len(gtoks) >= 3:
+            return True             # clean abbreviation of the GT name
+        if len(missing) / len(toks) <= 0.2:
+            return True
         if difflib.SequenceMatcher(None, g, n).ratio() >= 0.72:
-            return True
-        gtoks = set(g.split())
-        if toks and (toks <= gtoks or len(toks & gtoks) / len(toks) >= 0.8):
-            return True
-        # Poster legends often abbreviate what the deposit metadata spells out
-        # ("STScI, Baltimore, MD" for "Space Telescope Science Institute
-        # (STScI), Baltimore, MD"). A got that is a clean token-subset of the
-        # GT name is a faithful extraction of the poster, not an error.
-        if len(gtoks) >= 3 and gtoks <= toks:
             return True
     return False
 
