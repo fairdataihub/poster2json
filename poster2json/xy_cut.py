@@ -18,6 +18,8 @@ MIN_CHUNK_WIDTH = 2.0
 MIN_GAP_SIZE = 0.2
 BASELINE_RANGE = 0.5
 DESCENT_ADJUST = 0.35
+TOP_BAND = 0.22
+TOP_BAND_DOMINANCE = 0.85
 
 
 @dataclass
@@ -253,6 +255,45 @@ def _promote_spanning_leaves(block, page_width):
     return Block("hsplit", block.bbox, [], new_children)
 
 
+def _collect_chars(block):
+    if block.kind == "leaf":
+        return list(block.chars)
+    out = []
+    for child in block.children:
+        out.extend(_collect_chars(child))
+    return out
+
+
+def _flatten_top_band(block, page_width, page_height):
+    """Re-read the top banner band as full-width baseline lines.
+
+    Poster banners (title, byline, affiliation legend) are stacked
+    full-width rows. Stray x-projection gaps in the band (a logo set off
+    at the margin, a byline word space aligned with a body gutter) vsplit
+    it into columns, fragmenting the byline and legend. Any vsplit that
+    lies entirely within the top band, spans most of the page width, and
+    has one child carrying nearly all the text (the others being debris,
+    not a genuine second column) is flattened to a leaf so traverse()
+    re-clusters its chars into lines across the full width. The mass
+    dominance test keeps real two-column banners (title one side, an
+    author/contact box the other) reading column by column.
+    """
+    if block.kind == "leaf":
+        return block
+    if (block.kind == "vsplit"
+            and block.bbox[3] <= page_height * TOP_BAND
+            and block.bbox[2] - block.bbox[0] > 0.7 * page_width):
+        counts = [len(_collect_chars(c)) for c in block.children]
+        total = sum(counts)
+        if total and max(counts) / total >= TOP_BAND_DOMINANCE:
+            chars = _collect_chars(block)
+            return Block("leaf", block.bbox,
+                         sorted(chars, key=lambda c: (c["bottom"], c["x0"])), [])
+    block.children = [_flatten_top_band(c, page_width, page_height)
+                      for c in block.children]
+    return block
+
+
 def _merge_bottom_region(block, page_height):
     """Merge bottom portions of top-level vsplits into horizontal reading order.
 
@@ -288,6 +329,8 @@ def chars_to_reading_order(raw_chars: list, page_width: float = 0,
     if not chars:
         return []
     tree = split_block(chars)
+    if page_width > 0 and page_height > 0:
+        tree = _flatten_top_band(tree, page_width, page_height)
     if page_width > 0:
         tree = _promote_spanning_leaves(tree, page_width)
     if page_height > 0:
