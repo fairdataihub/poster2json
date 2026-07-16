@@ -92,12 +92,23 @@ heuristics to module constants so they are sweepable: single-line guard
 `1.5 * avg_fs`, spanning-promote `0.7 * page_width`, bottom-merge
 `0.65 * page_height`.
 
-### C. Corrector-side banner fallback (cheap safety net, may fix isporeu2023 alone)
+### C. Corrector-side banner fallback (DONE, commit 0fd5166 — does not fix the 3)
 Independent of xy_cut: when `_banner_region` from the lead author does not yield a
-parseable legend, also try building the banner from the top-of-text region (first
-N lines) or search the whole pre-first-body-section span for the numbered legend.
-Lower risk than editing xy_cut and may recover isporeu2023 without touching
-reading order. Consider doing this first as a quick win, then A for gasimova.
+parseable legend, parse the legend from the top-of-document band and search each
+author marker across the full text. Implemented, tested (+2 unit tests), safe (no
+regressions, single-affiliation posters still no-op).
+
+**Outcome: recovers none of the 3 ORDER-GAP posters.** They do not match the
+"legend separated from an intact byline" pattern C targets; their bylines are
+scrambled or lost in extraction:
+- gasimova: 6 of 7 authors have adjacent markers, but the lead author's name is
+  split from her marker ("...Gasimova Bhavesh / Aydan", her `1` detached to the
+  line start), so the all-authors-resolve gate bails.
+- isporeu2023: the byline markers are absent from the extracted text entirely;
+  only the ORCID-list author names survive ("ORCID iDs: Ivanyi P, https://...").
+- 8228476: RTL, the affiliation numbers are detached from the institutions.
+C remains as a real robustness net for the wider corpus; the three corpus cases
+require A (and D for the RTL one).
 
 ### D. Bidi/RTL handling for 8228476 (separate sub-track)
 The Hebrew poster needs the affiliation markers preserved through bidi
