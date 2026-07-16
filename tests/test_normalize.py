@@ -792,3 +792,50 @@ def test_superscript_corrector_asterisk_footnote_scheme():
     affs = [c["affiliation"] for c in result["creators"]]
     assert len(affs[0]) == 2 and "Instituto" in affs[0][0] and "Universidad" in affs[0][1]
     assert len(affs[2]) == 2 and "Instituto" in affs[2][0]
+
+
+def test_superscript_corrector_legend_separated_from_byline():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    # Reading order puts the numbered legend at the top of the page and the
+    # author byline further down (after a section header). The fallback parses
+    # the legend from the top band and searches markers across the full text.
+    raw = (
+        "## Poster Title\n"
+        "1 Alpha University, Springfield; 2 Beta Institute, Capital City\n"
+        "## Results\n"
+        "Some body text about the results and methods used here.\n"
+        "Jane Doe 1, John Roe 2, Mary Poe 1,2\n"
+        "## Discussion\n"
+    )
+    result = {"creators": [
+        {"name": "Doe, Jane", "familyName": "Doe", "affiliation": ["x"]},
+        {"name": "Roe, John", "familyName": "Roe", "affiliation": ["x"]},
+        {"name": "Poe, Mary", "familyName": "Poe", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 1 and "Alpha" in affs[0][0]
+    assert len(affs[1]) == 1 and "Beta" in affs[1][0]
+    assert len(affs[2]) == 2
+
+
+def test_superscript_corrector_fallback_still_noop_single_affiliation():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    # No numbered legend anywhere: the fallback must not invent one.
+    raw = (
+        "## Title\n"
+        "University of Somewhere\n"
+        "## Results\n"
+        "Body text here about things.\n"
+        "Jane Doe, John Roe\n"
+    )
+    result = {"creators": [
+        {"name": "Doe, Jane", "familyName": "Doe", "affiliation": ["University of Somewhere"]},
+        {"name": "Roe, John", "familyName": "Roe", "affiliation": ["University of Somewhere"]},
+    ]}
+    before = [list(c["affiliation"]) for c in result["creators"]]
+    _correct_affiliations_from_superscripts(result, raw)
+    assert [c["affiliation"] for c in result["creators"]] == before
+    assert "_validation" not in result

@@ -2276,6 +2276,50 @@ def _author_marker_syms(author_region: str, family: str):
     return None
 
 
+def _top_banner_text(raw_text: str, n_lines: int = 16) -> str:
+    """The top-of-document band (first non-empty lines, header markers stripped),
+    joined into one string. Used as a fallback legend source when reading order
+    emits the numbered affiliation list apart from the author byline."""
+    out = []
+    for ln in raw_text.splitlines():
+        s = ln.strip().lstrip("#").strip()
+        if s:
+            out.append(s)
+        if len(out) >= n_lines:
+            break
+    return " ".join(out)
+
+
+def _resolve_affiliations(persons, creators, legend_region: str, author_search):
+    """Try each affiliation scheme (numbered, then asterisk) against
+    ``legend_region``. On a parse, resolve every person author's marker — searched
+    in ``author_search`` when the byline is separated from the legend, else in the
+    legend text before the block — and, only if all resolve, assign. Returns True
+    if a scheme fired, leaving creators untouched otherwise."""
+    for parse_block, extract_marks in (
+        (_parse_affiliation_block, _author_marker_nums),
+        (_parse_symbol_affiliation_block, _author_marker_syms),
+    ):
+        parsed = parse_block(legend_region)
+        if not parsed:
+            continue
+        amap, block_start = parsed
+        auth = author_search if author_search is not None else legend_region[:block_start]
+        plan = []
+        for i, fam in persons:
+            marks = extract_marks(auth, fam)
+            if not marks or any(n not in amap for n in marks):
+                plan = None
+                break
+            plan.append((i, marks))
+        if plan is None:
+            continue
+        for i, marks in plan:
+            creators[i]["affiliation"] = [amap[n] for n in marks]
+        return True
+    return False
+
+
 def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None:
     """Reassign each author's affiliations from the poster banner's numbered list
     using superscript markers in the (authoritative) raw text, anchoring the
@@ -2306,42 +2350,31 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
     if len(persons) < 2:
         return
 
+    # Primary: the byline-anchored contiguous banner (byline immediately above
+    # the numbered legend); author markers are read from the text before the
+    # legend. Fallback: when reading order separates the byline from the legend
+    # (the legend lands at the top of the page while the byline is emitted
+    # elsewhere), parse the legend from the top band and search each author's
+    # marker across the full text.
+    fired = False
     region = _banner_region(raw_text, persons[0][1])
-    if not region:
+    if region:
+        fired = _resolve_affiliations(
+            persons, creators, region.translate(_SUP_TRANS), None)
+    if not fired:
+        fired = _resolve_affiliations(
+            persons, creators, _top_banner_text(raw_text).translate(_SUP_TRANS),
+            raw_text.translate(_SUP_TRANS))
+    if not fired:
         return
-    region = region.translate(_SUP_TRANS)
 
-    # Try the numbered scheme first, then the asterisk (footnote) scheme. Each
-    # pairs a legend parser with a matching author-marker extractor and shares
-    # the same strict gates; the first that resolves every author wins.
-    for parse_block, extract_marks in (
-        (_parse_affiliation_block, _author_marker_nums),
-        (_parse_symbol_affiliation_block, _author_marker_syms),
-    ):
-        parsed = parse_block(region)
-        if not parsed:
-            continue
-        amap, block_start = parsed
-        author_region = region[:block_start]
-        plan = []
-        for i, fam in persons:
-            marks = extract_marks(author_region, fam)
-            if not marks or any(n not in amap for n in marks):
-                plan = None
-                break
-            plan.append((i, marks))
-        if plan is None:
-            continue
-        for i, marks in plan:
-            creators[i]["affiliation"] = [amap[n] for n in marks]
-        notes = result.setdefault("_validation", [])
-        if isinstance(notes, list):
-            notes.append({
-                "field": "creators",
-                "level": "info",
-                "message": "Affiliations reassigned from author superscript markers in the poster banner.",
-            })
-        return
+    notes = result.setdefault("_validation", [])
+    if isinstance(notes, list):
+        notes.append({
+            "field": "creators",
+            "level": "info",
+            "message": "Affiliations reassigned from author superscript markers in the poster banner.",
+        })
 
 
 def _postprocess_json(
