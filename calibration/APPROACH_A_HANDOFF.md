@@ -5,6 +5,21 @@ reading-order fix with no prior context. Read `TRACK_B_PLAN.md` in this folder
 alongside this; that has the full Track B framing, this is the operational
 runbook for approach A specifically.
 
+## STATUS: approach A complete (2026-07-16)
+
+Both non-RTL targets now PASS end-to-end. Commit 1bc9ef1 added a top-band
+banner flatten to xy_cut (`_flatten_top_band`, constants TOP_BAND=0.22 and
+TOP_BAND_DOMINANCE=0.85, both sweepable; sweeps show plateaus 0.22-0.30 and
+0.80-0.90), fixing gasimova. Commit ca44006 rescued "Surname X1"-style bylines
+from the single-char junk filter in extract.py (isporeu2023's reading order
+was already correct; the byline block was being discarded as chart debris).
+Scoreboard: AFFIL 8/13 end-to-end (was 6/13), corpus w=0.976 rGlobal=0.835
+rField=0.729, zero per-poster regressions vs after_track_a.json, suite green.
+Snapshots: baselines/after_approach_a.json, baselines/try_byline_rescue.json.
+Remaining: 8228476 is RTL (approach D); 42, 4519718, 4560930, 6724771 are
+LOGIC-GAP (corrector-side, out of scope here). The sections below are the
+original runbook, kept for context.
+
 ## TL;DR
 
 The affiliation corrector (in `poster2json/extract.py`) is now correct: given
