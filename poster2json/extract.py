@@ -85,6 +85,14 @@ _SECTION_KEYWORDS = frozenset({
     "contact", "contact information",
 })
 
+# "Surname X1"-style author bylines ("Ivanyi P 1 , Bullement A 2 , ...")
+# tokenize as mostly single-char words once initials, superscript markers,
+# and separating commas come apart, so the scattered-chart-debris filter
+# would drop the whole byline and the affiliation corrector never sees the
+# authors. Two or more surname+initials+marker runs in one banner-zone
+# block is a byline signature, not axis-label debris.
+_MARKED_BYLINE = re.compile(r"[A-ZÀ-ɏ][A-Za-zà-ÿ'’-]{2,}\s+[A-ZÀ-ɏ]{1,3}\s*\d")
+
 # Dense conference posters often cram several footer sections onto one
 # extracted line, marked by inline ALL-CAPS labels with a colon, e.g.
 # "...results REFERENCES: 1. ... ABBREVIATIONS: CCR, ... DISCLOSURES: ...".
@@ -988,7 +996,10 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                 _words = _t.split()
                 _single_char = sum(1 for w in _words if len(w) <= 1)
                 if len(_words) >= 2 and _single_char > len(_words) * 0.6:
-                    continue
+                    _is_byline = (blk["vpos"] < page_h * 0.25
+                                  and len(_MARKED_BYLINE.findall(_t)) >= 2)
+                    if not _is_byline:
+                        continue
                 if len(_t) <= 3 and not re.match(r'^[•●▪]+$', _t):
                     continue
                 _alpha_words = re.findall(r'[A-Za-z]{2,}', _t)
