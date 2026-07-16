@@ -2010,9 +2010,16 @@ def _is_bare_structural_label(text: str) -> bool:
 # leaves the model's output untouched.
 
 # unicode superscript digits -> ascii (the corrector sees the un-normalized text)
+# Also folds the separators/range glyphs posters use between superscript markers
+# so a marker run survives `_author_marker_nums`' capture: superscript minus
+# (U+207B) in ranges like "1-2", and the modifier-letter separators (U+02D2 and
+# kin) some layouts render between markers, e.g. "1,2".
 _SUP_TRANS = str.maketrans({
     "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
     "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+    "⁻": "-", "−": "-",           # superscript / unicode minus -> hyphen
+    "⁺": "+",                            # superscript plus (role glyph, ignored)
+    "˒": ",", "ˑ": ",", "ˏ": ",", "̓": ",",  # marker separators
 })
 
 # institution keyword (multilingual stems) — distinguishes a real numbered
@@ -2054,11 +2061,12 @@ def _affiliation_ran_into_body(txt: str) -> bool:
 
 
 def _parse_marker_run(run: str):
-    """Parse an author marker run ("1,3" / "1-3,6" / "4 2") into a list of ints,
-    expanding ranges. Returns ``None`` on anything unexpected so the caller can
-    bail (keeping the corrector a strict no-op under ambiguity)."""
+    """Parse an author marker run ("1,3" / "1-3,6" / "4 2" / "1+2") into a list
+    of ints, expanding ranges. ``+`` joins markers (some posters write "1+2" for
+    affiliations 1 and 2). Returns ``None`` on anything unexpected so the caller
+    can bail (keeping the corrector a strict no-op under ambiguity)."""
     nums = []
-    for part in re.split(r"[,\s]+", run.strip()):
+    for part in re.split(r"[,\s+*†‡§¶#]+", run.strip()):
         if not part:
             continue
         rng = re.match(r"^(\d{1,2})[–—-](\d{1,2})$", part)
@@ -2095,43 +2103,99 @@ def _banner_region(raw_text: str, first_family: str):
     return " ".join(out) if out else None
 
 
+# Contact/footnote tails that follow the last affiliation in a banner (email,
+# URL, corresponding-author glyph, pipe-separated links) — trimmed off the
+# trailing entry, which is the only one not bounded by a following marker.
+_AFFIL_TAIL = re.compile(r"\s*(?:\|| \* |https?://|www\.|\S+@\S+\.\S+)")
+
+
+def _trim_trailing_affiliation(txt: str) -> str:
+    """Cut contact/URL/footnote tails off the final (unbounded) affiliation."""
+    m = _AFFIL_TAIL.search(txt)
+    if m:
+        txt = txt[:m.start()]
+    return txt.strip().strip(",;").strip()
+
+
 def _parse_affiliation_block(region: str):
     """Parse the numbered affiliation list from a (superscript-normalized) banner
-    region into ``({n: text}, block_start_index)``. Handles ``;``-, comma- and
-    next-number-delimited lists. Returns ``None`` unless a clean sequential
-    ``1..N`` (N>=2) run of institution-bearing entries is found."""
+    region into ``({n: text}, block_start_index)``. Returns ``None`` unless a
+    clean sequential ``1..N`` (N>=2) run of markers is found.
+
+    Entry boundaries are the sequential markers themselves, so an affiliation
+    that lacks an institution keyword (a company "Delta Hat Ltd", an acronym
+    "STScI", a named institute "Sciensano") still bounds its neighbours instead
+    of being dropped and letting the previous entry swallow it. Precision comes
+    from three gates: the clean sequential run, at least one entry carrying an
+    institution keyword (so a stray body list "1. ... 2. ..." does not match),
+    and — downstream in the caller — every author resolving to a marker in
+    ``1..N``. Only the trailing entry can run into body text, so it alone is
+    trimmed and length/prose-guarded."""
     cands = [(int(m.group(1)), m.start(1), m.end()) for m in _AFFIL_MARK.finditer(region)]
-    real = []
-    for i, (num, ms, me) in enumerate(cands):
-        seg_end = cands[i + 1][1] if i + 1 < len(cands) else len(region)
-        if _INSTITUTION_KW.search(region[me:seg_end][:280]):
-            real.append((num, ms, me))
-    if len(real) < 2:
-        return None
     seq = []
     expect = 1
-    for num, ms, me in real:
+    for num, ms, me in cands:
         if num == expect:
             seq.append((num, ms, me))
             expect += 1
-    if len(seq) < 2 or seq[-1][0] != len(seq):
+    if len(seq) < 2:
         return None
     amap = {}
+    has_kw = False
     for j, (num, ms, me) in enumerate(seq):
-        end = seq[j + 1][1] if j + 1 < len(seq) else len(region)
-        txt = region[me:end].strip().strip(",;").strip()
-        if not txt or _affiliation_ran_into_body(txt):
-            return None
+        if j + 1 < len(seq):
+            txt = region[me:seq[j + 1][1]].strip().strip(",;").strip()
+            if not txt:
+                return None
+        else:
+            txt = _trim_trailing_affiliation(region[me:])
+            if not txt or _affiliation_ran_into_body(txt):
+                return None
+        if _INSTITUTION_KW.search(txt):
+            has_kw = True
         amap[num] = txt
+    if not has_kw:
+        return None
     return amap, seq[0][1]
+
+
+# A closed set of academic degrees/honorifics that posters place between an
+# author name and its affiliation marker (e.g. "Patel, Ph.D.1"). Kept tight so
+# the marker search never skips real content to grab the wrong number.
+_HONORIFIC_FRAG = (
+    r"(?:[,\s]*(?:Ph\.?\s?D\.?|M\.?\s?D\.?|M\.?\s?Sc\.?|B\.?\s?Sc\.?|D\.?\s?Phil\.?|"
+    r"Pharm\.?\s?D\.?|D\.?V\.?M\.?|M\.?P\.?H\.?|Dr\.?|Prof\.?|Assoc\.?|"
+    r"PhD|MD|MSc|BSc|MBBS|DrPH|DVM|MPH|RN|BSN|MSN|MLS|MLIS|MSLIS|DDS|DMD|"
+    r"MPhil|DPhil|PsyD|EdD|ScD|DO|OD|DPT|JD|LLM|LLB|MBA|MEng|MFA|FRCP|FRCS|"
+    r"FACP|Esq\.?)(?![A-Za-z]))*"    # marker digit may butt the degree: "MLS1"
+)
+# Role/footnote glyphs (corresponding author, equal contribution, contact) that
+# can sit right before an affiliation marker and must be stepped over, e.g.
+# "Couperus*1+2" or "Author†1".
+_ROLE_GLYPHS = r"*†‡§¶+#"
+# Given-name initials that follow a family name in "Family I" / "Family GL"
+# bylines (no comma), e.g. "Ivanyi P1", "Colombo GL3,5". Case-sensitive
+# (uppercase blocks only) so it does not swallow a lowercase word like "et al".
+_INITIALS_FRAG = r"(?:\s+(?-i:[A-Z]{1,3})\.?){0,3}"
+# Collective / group "authors" (consortia, teams) that appear in a creator list
+# but carry no affiliation marker; the corrector skips them rather than bailing.
+_COLLECTIVE_AUTHOR = re.compile(
+    r"(?i)\b(?:team|consortium|group|network|collaborat\w*|initiative|"
+    r"investigators?|committee|task\s*force|working\s*group|study\s*group|"
+    r"et\s+al|on\s+behalf)\b")
 
 
 def _author_marker_nums(author_region: str, family: str):
     """Marker numbers adjacent to ``family`` in the author byline (anchored on
-    the LLM-extracted author name). Role glyphs (``*``/``+``/contact symbols)
-    terminate the digit run and are ignored. ``None`` if no marker is found."""
-    m = re.search(re.escape(family) + r"[.\s]{0,4}(\d[\d,–—\-\s]*)",
-                  author_region, re.IGNORECASE)
+    the LLM-extracted author name). Optional given-name initials, an
+    honorific/degree run and role glyphs may sit between the name and the marker
+    (e.g. "Ivanyi P1", "Patel, Ph.D.1", "Couperus*1+2"). Role glyphs also
+    join/terminate the digit run and are ignored. ``None`` if no marker."""
+    m = re.search(
+        re.escape(family) + _INITIALS_FRAG + _HONORIFIC_FRAG
+        + r"[.,\s" + _ROLE_GLYPHS + r"]{0,4}"
+        + r"(\d[\d,+" + _ROLE_GLYPHS + r"–—\-\s]*)",
+        author_region, re.IGNORECASE)
     if not m:
         return None
     return _parse_marker_run(m.group(1))
@@ -2149,19 +2213,25 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
     creators = result.get("creators")
     if not isinstance(creators, list) or len(creators) < 2:
         return
-    families = []
-    for c in creators:
+    # Person authors only: collective/group "authors" (consortia, teams) carry
+    # no marker and are left untouched instead of forcing a no-op.
+    persons = []
+    for i, c in enumerate(creators):
         if not isinstance(c, dict):
             return
+        nm = c.get("name", "") or ""
+        if c.get("nameType") == "Organizational" or _COLLECTIVE_AUTHOR.search(nm):
+            continue
         fam = c.get("familyName") or ""
         if not fam:
-            nm = c.get("name", "")
             fam = nm.split(",")[0].strip() if "," in nm else ""
         if not fam or len(fam) < 2:
             return
-        families.append(fam)
+        persons.append((i, fam))
+    if len(persons) < 2:
+        return
 
-    region = _banner_region(raw_text, families[0])
+    region = _banner_region(raw_text, persons[0][1])
     if not region:
         return
     region = region.translate(_SUP_TRANS)
@@ -2172,14 +2242,14 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
     author_region = region[:block_start]
 
     plan = []
-    for fam in families:
+    for i, fam in persons:
         marks = _author_marker_nums(author_region, fam)
         if not marks or any(n not in amap for n in marks):
             return
-        plan.append(marks)
+        plan.append((i, marks))
 
-    for c, marks in zip(creators, plan):
-        c["affiliation"] = [amap[n] for n in marks]
+    for i, marks in plan:
+        creators[i]["affiliation"] = [amap[n] for n in marks]
     notes = result.setdefault("_validation", [])
     if isinstance(notes, list):
         notes.append({

@@ -53,34 +53,43 @@ Confirm real pass/fail with a GPU `validate_model.py` run after tuning.
    (logic ok on ref, reading order breaks it) / LOGIC-GAP (fails even on ideal
    order) / single(n/a) or n/a(<2 authors) (corrector not applicable).
 
-## Baseline (`baselines/baseline.json`)
+## Baseline and Track A progress
 
-Corpus avg: w=0.976, rGlobal=0.835, **rField=0.727**. Affiliation corrector:
-**1/13 numbered posters pass end-to-end**, 4/13 have working logic on ideal
-order. The gap splits into two independent tracks:
+Original baseline (`baselines/baseline.json`): corpus avg w=0.976, rGlobal=0.835,
+**rField=0.727**; affiliation corrector 1/13 numbered posters end-to-end,
+4/13 logic-OK on ideal order.
 
-**Track B - reading order (xy_cut). 3 ORDER-GAP posters:** gasimova, 5128504,
-8228476. Corrector logic is fine (refOK=1.00); xy_cut scrambles the banner so it
-never fires on gen. Fix in `xy_cut.py`. The banner scramble is structural: the
-top full-width title/byline/affiliation band should hsplit off before the body
+**Track A (corrector robustness, `extract.py`) — done for the common cases**
+(`baselines/after_track_a.json`, corrector-logic 4/13 -> **8/13**, full test
+suite green, +6 unit tests in `tests/test_normalize.py`). Landed, each measured
+by refOK climbing with zero regressions:
+
+| gap | example | fix |
+|---|---|---|
+| honorific between name and marker | `Patel, Ph.D.1` | honorific/degree run in `_author_marker_nums` |
+| degree abuts marker (no boundary) | `Surkis, MLS1` | degree token followed by `(?![A-Za-z])` |
+| superscript-minus range | `Timmermans1-2` | `_SUP_TRANS` folds U+207B -> `-` |
+| modifier-letter separator | `Dettori1,2` (U+02D2) | `_SUP_TRANS` folds -> `,` |
+| role glyphs in marker | `Couperus*1+2` | role-glyph gap + `+` join in `_parse_marker_run` |
+| given-name initials before marker | `Ivanyi P1`, `Colombo GL3` | uppercase-initials frag |
+| keyword-less affiliation dropped | `Delta Hat Ltd`, `STScI` | markers bound entries; >=1 keyword gate |
+| collective/group author | `the RECONS Team` | skip non-person creators |
+
+**Remaining LOGIC-GAP (5), lower priority / not pure corrector bugs:** 4564017
+(asterisk `*`/`**` affiliation scheme + compound surname "Perdomo Garcia") — a
+distinct marker alphabet, the next corrector chunk; 6724771 (14 authors, the
+abstract bleeds into the banner so the trailing affiliation swallows it — verbose
+institute names look like prose to the guard); 4560930 (partial 0.67); 42
+(annotation lists 6 authors, byline has 3 — data mismatch, not a corrector bug);
+4519718 (last author has no marker on the poster — genuine ambiguity, the
+corrector correctly declines to guess).
+
+**Track B — reading order (`xy_cut.py`). 4 ORDER-GAP posters:** gasimova,
+5128504, 8228476, isporeu2023. Corrector logic is now correct (refOK=1.00); xy_cut
+scrambles the banner so it never fires on gen. The banner scramble is structural:
+the top full-width title/byline/affiliation band should hsplit off before the body
 vsplits into columns. Likely a top-spanning-band promotion mirroring
 `_promote_spanning_leaves` / `_merge_bottom_region`.
-
-**Track A - corrector robustness (extract.py). 9 LOGIC-GAP posters.** The
-corrector no-ops on clean text for specific, fixable reasons:
-
-| gap | example | poster |
-|---|---|---|
-| honorific between name and marker | `Patel, Ph.D.¹` | 17268692 |
-| non-comma superscript separator (U+02D2 etc.) | `Dettori¹˒²` | 15963941 |
-| superscript-minus range (U+207B) not translated | `Timmermans¹⁻²` | 6724771 |
-| non-numeric markers (`*`, `**`, dagger) | `Perdomo*,**,¹` | 42 |
-
-Fix candidates: extend `_SUP_TRANS` to fold superscript minus and odd
-separators; make `_author_marker_nums` tolerate honorifics/punctuation between
-family name and marker; add asterisk/dagger marker schemes to
-`_parse_affiliation_block` / `_author_marker_nums`. Each fix is measured by
-refOK climbing on the affected posters, with no regression on the passing set.
 
 ## Usage
 

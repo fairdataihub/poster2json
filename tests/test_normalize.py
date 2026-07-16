@@ -642,3 +642,129 @@ def test_language_always_owned_by_lingua_not_llm():
     # With no body text the model's guess is still discarded, not trusted.
     out2 = _postprocess_json({"language": "en"}, raw_text="")
     assert out2["language"] is None
+
+
+def test_superscript_corrector_honorifics_between_name_and_marker():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = (
+        "Title\n"
+        "Bhavesh Patel, Ph.D.¹, Daniel Garijo, Ph.D.², on behalf of the Task Force\n"
+        "¹FAIR Data Innovations Hub, California Medical Innovations Institute, San Diego, CA, USA "
+        "²Universidad Politecnica de Madrid, Spain\n"
+        "## Background\n"
+    )
+    result = {"creators": [
+        {"name": "Patel, Bhavesh", "familyName": "Patel", "affiliation": ["x"]},
+        {"name": "Garijo, Daniel", "familyName": "Garijo", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 1 and "FAIR Data" in affs[0][0]
+    assert len(affs[1]) == 1 and "Madrid" in affs[1][0]
+
+
+def test_superscript_corrector_minus_range_and_modifier_separator():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    # U+207B superscript minus as a range ("1-2"), U+02D2 as a "," separator.
+    raw = (
+        "Title\n"
+        "Michael Timmermans¹⁻², Bert Bogaerts², Ana Ruiz¹˒²\n"
+        "¹Alpha University, ²Beta Institute\n"
+        "## Intro\n"
+    )
+    result = {"creators": [
+        {"name": "Timmermans, Michael", "familyName": "Timmermans", "affiliation": ["x"]},
+        {"name": "Bogaerts, Bert", "familyName": "Bogaerts", "affiliation": ["x"]},
+        {"name": "Ruiz, Ana", "familyName": "Ruiz", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 2                       # 1-2 range
+    assert len(affs[1]) == 1 and "Beta" in affs[1][0]
+    assert len(affs[2]) == 2                       # 1,2 via U+02D2
+
+
+def test_superscript_corrector_role_glyphs_in_marker():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = (
+        "Title\n"
+        "Andrew Couperus*1+2, Todd Henry2, Rachel Osten1\n"
+        "1 Georgia State University, Atlanta, GA 2 RECONS Institute, Chambersburg, PA\n"
+        "## Intro\n"
+    )
+    result = {"creators": [
+        {"name": "Couperus, Andrew", "familyName": "Couperus", "affiliation": ["x"]},
+        {"name": "Henry, Todd", "familyName": "Henry", "affiliation": ["x"]},
+        {"name": "Osten, Rachel", "familyName": "Osten", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert len(affs[0]) == 2                        # *1+2 -> [1, 2]
+    assert len(affs[2]) == 1 and "Georgia" in affs[2][0]
+
+
+def test_superscript_corrector_degree_abuts_marker():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = (
+        "Title\n"
+        "Alisa Surkis, PhD, MLS1, Aileen McCrillis, MSLIS1, Brian Schmidt, DDS2\n"
+        "1 NYU Health Sciences Libraries, New York University; 2 Bluestone Center for Clinical Research\n"
+        "## Intro\n"
+    )
+    result = {"creators": [
+        {"name": "Surkis, Alisa", "familyName": "Surkis", "affiliation": ["x"]},
+        {"name": "McCrillis, Aileen", "familyName": "McCrillis", "affiliation": ["x"]},
+        {"name": "Schmidt, Brian", "familyName": "Schmidt", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert "NYU" in affs[0][0]
+    assert "Bluestone" in affs[2][0]
+
+
+def test_superscript_corrector_initials_and_keywordless_affiliation():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    # "Family Initial" byline (no comma) and a keyword-less company affiliation
+    # ("Delta Hat Ltd") that must still be bounded by the sequential markers.
+    raw = (
+        "Title\n"
+        "Ivanyi P1, Bullement A2, Colombo GL1,2\n"
+        "1 Hannover Medical School, Germany; 2 Delta Hat Ltd, Nottingham, UK\n"
+        "## Intro\n"
+    )
+    result = {"creators": [
+        {"name": "Ivanyi, P", "familyName": "Ivanyi", "affiliation": ["x"]},
+        {"name": "Bullement, A", "familyName": "Bullement", "affiliation": ["x"]},
+        {"name": "Colombo, GL", "familyName": "Colombo", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert "Hannover" in affs[0][0]                 # Ivanyi P1
+    assert "Delta Hat" in affs[1][0]                # keyword-less, bounded
+    assert len(affs[2]) == 2                        # Colombo GL1,2
+
+
+def test_superscript_corrector_skips_collective_author():
+    from poster2json.extract import _correct_affiliations_from_superscripts
+
+    raw = (
+        "Title\n"
+        "Andrew Couperus1, Todd Henry2, and the RECONS Team\n"
+        "1 Georgia State University, Atlanta, GA 2 RECONS Institute, Chambersburg, PA\n"
+        "## Intro\n"
+    )
+    result = {"creators": [
+        {"name": "Couperus, Andrew", "familyName": "Couperus", "affiliation": ["x"]},
+        {"name": "Henry, Todd", "familyName": "Henry", "affiliation": ["x"]},
+        {"name": "the RECONS Team", "affiliation": ["x"]},
+    ]}
+    _correct_affiliations_from_superscripts(result, raw)
+    affs = [c["affiliation"] for c in result["creators"]]
+    assert "Georgia" in affs[0][0]
+    assert "RECONS Institute" in affs[1][0]
+    assert affs[2] == ["x"]                         # collective author untouched
