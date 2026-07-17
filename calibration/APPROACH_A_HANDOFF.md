@@ -5,11 +5,13 @@ reading-order fix with no prior context. Read `TRACK_B_PLAN.md` in this folder
 alongside this; that has the full Track B framing, this is the operational
 runbook for approach A specifically.
 
-## STATUS (2026-07-16): approach A done, LOGIC-GAP tail done, 19/21
+## STATUS (2026-07-16): approach A done, LOGIC-GAP tail done, 20/21
 
-Board: **19/21 acceptable, 11/13 numbered end-to-end, 12/13 logic-OK**, corpus
-w=0.976 rGlobal=0.835 rField=0.729, suite green (260 passed). Reference
-snapshot: `baselines/try_orcidtail.json`.
+Board: **20/21 acceptable, 12/13 numbered end-to-end, 13/13 logic-OK**, corpus
+w=0.976 rGlobal=0.835 rField=0.735, suite green (260 passed). Reference
+snapshot: `baselines/try_42gen.json`. 13/13 logic-OK means that given ideal
+reading order the corrector is now correct on every numbered poster in the
+corpus; the single remaining failure (8228476) is reading order, not logic.
 
 Read this first if you are comparing to older numbers: **the eval matcher was
 too loose and the old scoreboard was inflated.** `_affil_match` accepted any
@@ -37,8 +39,25 @@ regressions):
   point larger than the abstract under it fused into one block).
 - fe79689 line-bounded legend parse, superscript-row merge, ORCID tail, honest
   matcher.
+- a5e83de size-aware line clustering + baseline-nearest word mapping + curly
+  apostrophe normalization (42 to PASS; also rField +0.101 on 5128504).
 
-The two remaining failures are NOT reading-order bugs:
+**Poster 42's annotation was fixed in the corpus repo**
+(`fairdataihub/posters-science-extraction-api`, commit 21d238d, pushed to
+main). Its `42.json` credited the CarD-T preprint's 6 authors and 5
+affiliations; the poster prints 3 and 2, which is what `42_raw.md` and
+`42_sub-json.json` already recorded and what the annotation guide asks for
+("creators - as shown on poster"; the full .json adds looked-up ORCID/ROR/DOI,
+not extra people). If you re-run against an older corpus checkout you will see
+42 as LOGIC-GAP again; that is the stale annotation, not a regression. NOTE:
+42 is one of the two reference examples in `gerard_annotation_kit/`, which the
+guide tells annotators to study as a template, so the same error may have been
+copied into posters annotated from it. The kit's unzipped
+`reference_examples/42/42.json` was corrected too, but the distributed .zip
+files were NOT rebuilt, and five stale copies remain under `extraction-beta-dev/`
+(left alone deliberately: they are historical experiment snapshots).
+
+The one remaining failure is NOT a reading-order-logic gap in the corrector:
 
 - **8228476** — RTL (Hebrew). Still ORDER-GAP. This is approach D. Note the
   superscript-row merge is deliberately gated (SUPERSCRIPT_MIN_DIGITS=2) so it
@@ -46,16 +65,21 @@ The two remaining failures are NOT reading-order bugs:
   height `_lines_to_blocks` keys on and re-blocks the page, which cost this
   poster 0.059 rField for no gain (its banner got worse too, being RTL either
   way). Approach D should handle bidi first, then revisit.
-- **42** — NOT FIXABLE from the poster, and no code should try. Its GT lists 6
-  authors and 5 distinct affiliations; the poster prints 3 authors and 2
-  affiliations. Reddy, Dhillon and Tripathi appear only inside a References
-  citation (the CarD-T preprint), and 3 of the 5 GT affiliations (Herbert
-  Wertheim School of Public Health, Moores Cancer Center, Dept of Cellular and
-  Molecular Medicine) appear nowhere in the poster text. The annotation was
-  taken from the paper/deposit, not the poster. Raise it with the annotators;
-  it is a corpus bug, not an extraction bug.
 
 The sections below are the original runbook, kept for context.
+
+## Lesson worth keeping: a bad annotation hid a real bug
+
+42 sat at LOGIC-GAP for the whole of Track B and was written off as
+corrector-side. It was really two faults stacked: an annotation that made the
+poster unwinnable, and underneath it a genuine reading-order bug. Because the
+GT was impossible, the bug was invisible - no amount of extraction work could
+have moved the poster, so nothing pointed at xy_cut. Fixing the annotation made
+it winnable, it still failed, and the failure was then diagnosable in minutes.
+
+When a poster fails on IDEAL reading order, check the ground truth against the
+PDF before assuming the corrector is at fault. Cheap test: does every GT
+affiliation string appear anywhere in `_raw.md`? For 42, three of five did not.
 
 ## TL;DR
 
