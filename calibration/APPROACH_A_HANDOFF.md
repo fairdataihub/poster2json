@@ -139,8 +139,22 @@ matters, but the poster is RTL and blocked on approach D anyway.
   not another patch. `field_audit.py` will tell you immediately if you have
   moved anything you did not mean to.
 - **Contact fields score low across several posters** (10890106 0.282,
-  gasimova 0.280): contact blocks are not being emitted as their own section.
-  Untouched, likely tractable, and worth a look before the header redesign.
+  gasimova 0.280). Diagnosed, not fixed. The contact text IS extracted and
+  correct (10890106 gen line 33, gasimova line 49); it is simply never given a
+  `## Contact` header, so it sits inside a large body chunk and a 20-word GT
+  scores badly against a 500-word chunk. `_SECTION_KEYWORDS` already contains
+  "contact", but the header heuristic explicitly refuses any block matching
+  `_is_contact` (email/phone/URL), which is exactly what a contact block is.
+  Emitting `## Contact` for a footer block dominated by contact tokens should
+  fix the field; the risk to weigh is false positives, since bylines and
+  reference lists also carry emails and URLs.
+- **Do not chase a missing "@" in 10890106.** Its GT contact reads
+  `meike.vanderzande@wur.nl` and extraction gives `meike.vanderzandewur.nl`,
+  which looks like a dropped character and is not. Checked across the corpus:
+  the "@" count in the extracted text matches the PDF's char stream on all 20
+  PDFs. 10890106's PDF contains ZERO "@" glyphs - the poster draws the address
+  without one - and the human transcriber supplied it by eye. The pipeline is
+  faithful; the field simply cannot reach 1.000 from the text layer.
 
 ## TL;DR
 
