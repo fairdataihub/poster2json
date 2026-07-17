@@ -8,10 +8,24 @@ runbook for approach A specifically.
 ## STATUS (2026-07-16): approach A done, LOGIC-GAP tail done, 20/21
 
 Board: **20/21 acceptable, 12/13 numbered end-to-end, 13/13 logic-OK**, corpus
-w=0.976 rGlobal=0.835 rField=0.735, suite green (260 passed). Reference
-snapshot: `baselines/try_42gen.json`. 13/13 logic-OK means that given ideal
+w=0.976 rGlobal=0.835 rField=0.737, suite green (260 passed). Reference
+snapshot: `baselines/try_final.json`. 13/13 logic-OK means that given ideal
 reading order the corrector is now correct on every numbered poster in the
 corpus; the single remaining failure (8228476) is reading order, not logic.
+
+**Use the two diagnostics before trusting any number.** Corpus averages hid a
+real regression in this very session (gasimova's title fell 1.000 -> 0.706
+while its rField still ROSE, because another field gained more):
+
+    ~/myenv/bin/python calibration/diagnostics/field_audit.py \
+        calibration/baselines/after_track_a.json calibration/baselines/try_final.json
+    ~/myenv/bin/python calibration/diagnostics/annotation_audit.py
+
+`field_audit.py` diffs all 177 fields of all 21 posters between two snapshots
+(166 of 177 are byte-identical across every change made today, which is what
+"did this touch anything else" should be answered with, not an average).
+`annotation_audit.py` asks whether the ground truth claims things the poster
+does not say - the check that caught 42.
 
 Read this first if you are comparing to older numbers: **the eval matcher was
 too loose and the old scoreboard was inflated.** `_affil_match` accepted any
@@ -78,8 +92,39 @@ have moved the poster, so nothing pointed at xy_cut. Fixing the annotation made
 it winnable, it still failed, and the failure was then diagnosable in minutes.
 
 When a poster fails on IDEAL reading order, check the ground truth against the
-PDF before assuming the corrector is at fault. Cheap test: does every GT
-affiliation string appear anywhere in `_raw.md`? For 42, three of five did not.
+PDF before assuming the corrector is at fault. `annotation_audit.py` now does
+this for the whole corpus.
+
+Its verdict, so nobody re-runs the search: **42 was the only genuinely wrong
+annotation.** The audit's other flags are benign and should stay that way -
+posters print "VTT", "STScI", "Technion", "A. Perdomo" where deposit metadata
+spells them out, and expanding an abbreviation is faithful. The one worth
+attention is 8228476, whose `.json` and `_sub-json.json` disagree on author
+ORDER; the corrector anchors its banner search on the first creator, so that
+matters, but the poster is RTL and blocked on approach D anyway.
+
+## Known open items (each measured, none guessed)
+
+- **gasimova title, 1.000 -> 0.706.** The standing cost of `_flatten_top_band`,
+  which puts the whole banner on common baselines so the byline's markers can
+  reach their names. gasimova's logo sits in the top-right *between* the
+  title's two lines, so flattening interleaves it and the title becomes two
+  blocks. `LINE_MAX_GAP` keeps the logo's words out of the title's text, but
+  cannot rejoin the halves. Buys the byline (+0.154), Background (+0.396) and
+  correct affiliations for all seven authors. Fixing it properly means making
+  the flatten preserve genuine columns instead of dissolving the whole band.
+- **Tried and rejected for it** (both in git history, do not re-run blind):
+  classifying large top-zone text as title fragments cost 4519718 0.372 on its
+  banner and AISec2025 0.401; scaling the block-gap threshold to local line
+  height instead of the page median cost 10890106 its title (0.757 -> 0.495)
+  and Acknowledgements (0.954 -> 0.549).
+- **10890106 is extraction, not annotation** (its annotation is clean; audited).
+  Its weak fields are fragmentation: no block clears the header cutoff at all
+  (a narrow "Abstract nr" badge drags `col_start` to 90.6, cutoff 145.0, while
+  the title starts at 284.4), so its 72pt title stays two blocks, and Study
+  design / Conclusions scatter across blocks the metric scores one at a time.
+  The header cutoff being derived from the topmost narrow block is the common
+  thread with gasimova's title; that is the next thing worth fixing properly.
 
 ## TL;DR
 
