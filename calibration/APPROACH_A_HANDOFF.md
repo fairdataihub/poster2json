@@ -8,8 +8,8 @@ runbook for approach A specifically.
 ## STATUS (2026-07-16): approach A done, LOGIC-GAP tail done, 20/21
 
 Board: **20/21 acceptable, 12/13 numbered end-to-end, 13/13 logic-OK**, corpus
-w=0.976 rGlobal=0.835 rField=0.737, suite green (260 passed). Reference
-snapshot: `baselines/try_final.json`. 13/13 logic-OK means that given ideal
+w=0.976 rGlobal=0.835 rField=0.741, suite green (260 passed). Reference
+snapshot: `baselines/try_wmedian.json`. 13/13 logic-OK means that given ideal
 reading order the corrector is now correct on every numbered poster in the
 corpus; the single remaining failure (8228476) is reading order, not logic.
 
@@ -18,7 +18,7 @@ real regression in this very session (gasimova's title fell 1.000 -> 0.706
 while its rField still ROSE, because another field gained more):
 
     ~/myenv/bin/python calibration/diagnostics/field_audit.py \
-        calibration/baselines/after_track_a.json calibration/baselines/try_final.json
+        calibration/baselines/after_track_a.json calibration/baselines/try_wmedian.json
     ~/myenv/bin/python calibration/diagnostics/annotation_audit.py
 
 `field_audit.py` diffs all 177 fields of all 21 posters between two snapshots
@@ -55,6 +55,11 @@ regressions):
   matcher.
 - a5e83de size-aware line clustering + baseline-nearest word mapping + curly
   apostrophe normalization (42 to PASS; also rField +0.101 on 5128504).
+- f43ed24 LINE_MAX_GAP (a line ends at a five-em gap, keeping a corner logo and
+  a poster-ID badge out of the title) + rejoin a title split across lines
+  (4446908 title 0.706 -> 1.000).
+- 50a5deb page median font measured over text, not blocks (10890106 Study
+  design 0.595 -> 0.962).
 
 **Poster 42's annotation was fixed in the corpus repo**
 (`fairdataihub/posters-science-extraction-api`, commit 21d238d, pushed to
@@ -113,18 +118,29 @@ matters, but the poster is RTL and blocked on approach D anyway.
   cannot rejoin the halves. Buys the byline (+0.154), Background (+0.396) and
   correct affiliations for all seven authors. Fixing it properly means making
   the flatten preserve genuine columns instead of dissolving the whole band.
-- **Tried and rejected for it** (both in git history, do not re-run blind):
+- **Tried and rejected for it** (all in git history, do not re-run blind):
   classifying large top-zone text as title fragments cost 4519718 0.372 on its
   banner and AISec2025 0.401; scaling the block-gap threshold to local line
   height instead of the page median cost 10890106 its title (0.757 -> 0.495)
-  and Acknowledgements (0.954 -> 0.549).
+  and Acknowledgements (0.954 -> 0.549); keeping banner furniture out of
+  `col_start` dropped the board to 19/21 and made 10890106 WORSE, not better.
+  That last one diagnosed the real problem (see below), so it was worth the
+  detour, but do not simply retry it.
 - **10890106 is extraction, not annotation** (its annotation is clean; audited).
-  Its weak fields are fragmentation: no block clears the header cutoff at all
-  (a narrow "Abstract nr" badge drags `col_start` to 90.6, cutoff 145.0, while
-  the title starts at 284.4), so its 72pt title stays two blocks, and Study
-  design / Conclusions scatter across blocks the metric scores one at a time.
-  The header cutoff being derived from the topmost narrow block is the common
-  thread with gasimova's title; that is the next thing worth fixing properly.
+  Its worst fields were fragmentation. Study design is fixed (0.595 -> 0.962)
+  by 50a5deb, which measured the page's median font over text rather than over
+  blocks. Its title (0.757) is still two blocks: a narrow "Abstract nr" badge
+  drags `col_start` to 90.6, cutoff 145.0, while the title starts at 284.4, so
+  no block on the poster clears the header cutoff and the title merge cannot
+  fire. Do NOT fix this by widening the cutoff (tried; see above). The honest
+  read is that header classification is a tangle of three interacting
+  heuristics - `col_start`, `is_title_font`, and the block-gap threshold - each
+  compensating for the others' errors. It wants a redesign against the corpus,
+  not another patch. `field_audit.py` will tell you immediately if you have
+  moved anything you did not mean to.
+- **Contact fields score low across several posters** (10890106 0.282,
+  gasimova 0.280): contact blocks are not being emitted as their own section.
+  Untouched, likely tractable, and worth a look before the header redesign.
 
 ## TL;DR
 
