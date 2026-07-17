@@ -25,6 +25,7 @@ SUPERSCRIPT_SIZE_RATIO = 0.85
 SUPERSCRIPT_RISE = 0.6
 SUPERSCRIPT_MIN_DIGITS = 2
 LINE_SIZE_RATIO = 0.5
+LINE_MAX_GAP = 4.0
 
 # Glyphs an affiliation-marker row may contain: digits, the separators posters
 # put between them, and the role/footnote symbols that ride alongside.
@@ -255,6 +256,33 @@ def _merge_superscript_rows(lines):
     return out
 
 
+def _split_line_runs(line):
+    """Split a baseline cluster into contiguous horizontal runs.
+
+    Sharing a baseline does not make two pieces of text one line. A banner
+    flattened by _flatten_top_band puts everything in the band on common
+    baselines, so a logo set in the top corner lands on the title's line and a
+    poster-ID badge lands on the title's second line, and their words are then
+    read as part of the title. Whitespace settles it: word spacing runs about a
+    quarter of an em and these are separated by five, so a gap of LINE_MAX_GAP
+    ems ends the run. Applied after the superscript merge, since a marker row
+    is legitimately spread across the whole width of its byline and must not be
+    torn back apart.
+    """
+    line = sorted(line, key=lambda c: c["x0"])
+    fs = statistics.median([_char_fs(c) for c in line])
+    limit = LINE_MAX_GAP * max(fs, 1.0)
+    runs = [[line[0]]]
+    edge = line[0]["x1"]
+    for c in line[1:]:
+        if c["x0"] - edge > limit:
+            runs.append([c])
+        else:
+            runs[-1].append(c)
+        edge = max(edge, c["x1"])
+    return runs
+
+
 def _cluster_lines(chars):
     """Group chars into text lines by baseline, then reattach superscript rows.
 
@@ -293,7 +321,10 @@ def _cluster_lines(chars):
             cur_base = c["bottom"]
     if cur:
         lines.append(sorted(cur, key=lambda c: c["x0"]))
-    return _merge_superscript_rows(lines)
+    out = []
+    for ln in _merge_superscript_rows(lines):
+        out.extend(_split_line_runs(ln))
+    return out
 
 
 def _promote_spanning_leaves(block, page_width):

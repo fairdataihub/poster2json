@@ -973,6 +973,26 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                     body_blocks.append(blk)
 
             header_blocks.sort(key=lambda b: b["vpos"])
+            # A title wrapped across lines arrives as one block per line, and a
+            # logo sharing the title's band clears the title-font bar too, so
+            # ordering headers by position can sort it between the title's
+            # halves and split the title in two. The title is the largest type
+            # on the poster: rejoin every header set in that size into one
+            # block, leaving smaller headers (the logo) as their own.
+            if len(header_blocks) > 1:
+                top_fs = max(b["fontsize"] for b in header_blocks)
+                parts = [b for b in header_blocks if b["fontsize"] >= top_fs - 0.5]
+                rest = [b for b in header_blocks if b["fontsize"] < top_fs - 0.5]
+                if len(parts) > 1:
+                    merged = dict(parts[0])
+                    merged["text"] = " ".join(b["text"].strip() for b in parts if b["text"].strip())
+                    merged["hpos"] = min(b["hpos"] for b in parts)
+                    merged["vpos"] = min(b["vpos"] for b in parts)
+                    merged["width"] = max(b["hpos"] + b["width"] for b in parts) - merged["hpos"]
+                    merged["height"] = (max(b["vpos"] + b["height"] for b in parts)
+                                        - merged["vpos"])
+                    merged["cx"] = merged["hpos"] + merged["width"] / 2
+                    header_blocks = sorted([merged] + rest, key=lambda b: b["vpos"])
             meta_blocks.sort(key=lambda b: (b["vpos"], b["hpos"]))
             footer_blocks.sort(key=lambda b: b["vpos"])
             all_blocks = header_blocks + meta_blocks + body_blocks + footer_blocks
