@@ -927,8 +927,18 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             if not all_blocks:
                 continue
 
-            all_fontsizes = [blk["fontsize"] for blk in all_blocks if blk["fontsize"] > 0]
-            page_median_fs = sorted(all_fontsizes)[len(all_fontsizes) // 2] if all_fontsizes else 0
+            # The median font of a page means the size of typical TEXT, not of
+            # a typical block. Taking it per-block let a crowd of tiny figure
+            # labels and axis ticks outvote the body: 10890106 lands on 6.1pt
+            # against a 72pt title, so "title font" (1.4x median = 8.5pt) is
+            # true of every block on the poster and the test says nothing.
+            # Weighting each block by its length measures the body instead.
+            weighted_fs = []
+            for blk in all_blocks:
+                if blk["fontsize"] > 0:
+                    weighted_fs.extend([blk["fontsize"]] * max(1, len(blk["text"])))
+            page_median_fs = (sorted(weighted_fs)[len(weighted_fs) // 2]
+                              if weighted_fs else 0)
 
             text_left = min(blk["hpos"] for blk in all_blocks)
             text_right = max(blk["hpos"] + blk["width"] for blk in all_blocks)

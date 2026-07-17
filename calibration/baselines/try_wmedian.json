@@ -19,7 +19,7 @@
       "id": "10890106",
       "w": 0.948,
       "r_global": 0.684,
-      "r_field": 0.713,
+      "r_field": 0.742,
       "fields": [
         [
           "title",
@@ -43,7 +43,7 @@
         ],
         [
           "S:Study design",
-          0.595,
+          0.962,
           26
         ],
         [
@@ -53,7 +53,7 @@
         ],
         [
           "S:Results: characterization MUTZ-3 d",
-          0.625,
+          0.61,
           55
         ],
         [
@@ -545,7 +545,7 @@
       "id": "4552067",
       "w": 0.994,
       "r_global": 0.97,
-      "r_field": 0.777,
+      "r_field": 0.873,
       "fields": [
         [
           "title",
@@ -554,7 +554,7 @@
         ],
         [
           "authors+affiliations",
-          0.025,
+          1.0,
           1
         ],
         [
@@ -569,7 +569,7 @@
         ],
         [
           "S:Network of Experts",
-          0.968,
+          0.859,
           77
         ],
         [
@@ -1011,7 +1011,7 @@
       "id": "AISec2025-poster",
       "w": 0.987,
       "r_global": 0.908,
-      "r_field": 0.811,
+      "r_field": 0.773,
       "fields": [
         [
           "title",
@@ -1020,12 +1020,12 @@
         ],
         [
           "authors+affiliations",
-          0.636,
+          0.696,
           15
         ],
         [
           "S:Introduction",
-          0.707,
+          0.873,
           148
         ],
         [
@@ -1040,12 +1040,12 @@
         ],
         [
           "S:Conclusion",
-          0.857,
+          0.4,
           12
         ],
         [
           "S:Selected papers citing CyberLLMIns",
-          0.969,
+          0.936,
           128
         ]
       ],
@@ -1178,7 +1178,7 @@
       "id": "gasimova(oos)",
       "w": 0.966,
       "r_global": 0.9,
-      "r_field": 0.784,
+      "r_field": 0.797,
       "fields": [
         [
           "title",
@@ -1217,12 +1217,12 @@
         ],
         [
           "S:Conclusion",
-          0.686,
+          0.883,
           106
         ],
         [
           "S:Contact",
-          0.359,
+          0.28,
           30
         ]
       ],
