@@ -1,0 +1,20 @@
+{
+  "model": "lightonai/LightOnOCR-2-1B",
+  "dpi": 200,
+  "longest": 1540,
+  "max_new_tokens": 16384,
+  "peak_vram_gb": 4.2,
+  "runs": [
+    {
+      "id": "isporeu2023ee359130949-pdf",
+      "image": [
+        1089,
+        1540
+      ],
+      "tokens": 16384,
+      "seconds": 470.9,
+      "chars": 34984,
+      "truncated": true
+    }
+  ]
+}
