@@ -24,6 +24,7 @@ TOP_BAND_DOMINANCE = 0.85
 SUPERSCRIPT_SIZE_RATIO = 0.85
 SUPERSCRIPT_RISE = 0.6
 SUPERSCRIPT_MIN_DIGITS = 2
+LINE_SIZE_RATIO = 0.5
 
 # Glyphs an affiliation-marker row may contain: digits, the separators posters
 # put between them, and the role/footnote symbols that ride alongside.
@@ -255,6 +256,18 @@ def _merge_superscript_rows(lines):
 
 
 def _cluster_lines(chars):
+    """Group chars into text lines by baseline, then reattach superscript rows.
+
+    Clustering walks baselines upward and is greedy: a char joins the first
+    cluster within tolerance, not the nearest. That makes a stranded row of
+    small glyphs liable to be captured by whatever sits above it rather than by
+    the text it belongs to — a byline's markers set at 26pt got absorbed into a
+    96pt title 18pt away instead of the 39pt byline 15pt below, which
+    interleaved digits through the title and destroyed the author order. Chars
+    whose sizes are too far apart are therefore never put on the same line, and
+    a row split off this way is offered back to its real host by
+    _merge_superscript_rows, which checks that the row actually annotates it.
+    """
     if not chars:
         return []
     sizes = [_char_fs(c) for c in chars]
@@ -263,14 +276,20 @@ def _cluster_lines(chars):
     chars = sorted(chars, key=lambda c: (c["bottom"], c["x0"]))
     lines = []
     cur = [chars[0]]
+    cur_sizes = [_char_fs(chars[0])]
     cur_base = chars[0]["bottom"]
     for c in chars[1:]:
-        if abs(c["bottom"] - cur_base) <= tol:
+        fs = _char_fs(c)
+        cur_fs = statistics.median(cur_sizes)
+        comparable = (min(fs, cur_fs) / max(fs, cur_fs, 1e-6)) >= LINE_SIZE_RATIO
+        if comparable and abs(c["bottom"] - cur_base) <= tol:
             cur.append(c)
+            cur_sizes.append(fs)
             cur_base = statistics.fmean(ch["bottom"] for ch in cur)
         else:
             lines.append(sorted(cur, key=lambda c: c["x0"]))
             cur = [c]
+            cur_sizes = [fs]
             cur_base = c["bottom"]
     if cur:
         lines.append(sorted(cur, key=lambda c: c["x0"]))

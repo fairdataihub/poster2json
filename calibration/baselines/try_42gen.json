@@ -1,0 +1,1239 @@
+{
+  "constants": {
+    "MIN_GAP_AREA": 3.0,
+    "SPLIT_GAP_SLACK": 0.2,
+    "MIN_CHUNK_WIDTH": 2.0,
+    "MIN_GAP_SIZE": 0.2,
+    "BASELINE_RANGE": 0.5,
+    "DESCENT_ADJUST": 0.35,
+    "TOP_BAND": 0.22,
+    "TOP_BAND_DOMINANCE": 0.85,
+    "SUPERSCRIPT_SIZE_RATIO": 0.85,
+    "SUPERSCRIPT_RISE": 0.6,
+    "SUPERSCRIPT_MIN_DIGITS": 2,
+    "LINE_SIZE_RATIO": 0.5
+  },
+  "rows": [
+    {
+      "id": "10890106",
+      "w": 0.948,
+      "r_global": 0.684,
+      "r_field": 0.713,
+      "fields": [
+        [
+          "title",
+          0.757,
+          23
+        ],
+        [
+          "authors+affiliations",
+          0.6,
+          43
+        ],
+        [
+          "S:Background",
+          1.0,
+          65
+        ],
+        [
+          "S:Objective",
+          0.941,
+          17
+        ],
+        [
+          "S:Study design",
+          0.595,
+          26
+        ],
+        [
+          "S:Results: characterization hiPSC-de",
+          0.745,
+          88
+        ],
+        [
+          "S:Results: characterization MUTZ-3 d",
+          0.625,
+          55
+        ],
+        [
+          "S:Results: characterization co-cultu",
+          0.973,
+          94
+        ],
+        [
+          "S:Results: exposure of iDCs to micro",
+          0.69,
+          129
+        ],
+        [
+          "S:Conclusions",
+          0.391,
+          103
+        ],
+        [
+          "S:Acknowledgements",
+          0.954,
+          32
+        ],
+        [
+          "S:Contact",
+          0.282,
+          12
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 8,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "15963941",
+      "w": 0.958,
+      "r_global": 0.917,
+      "r_field": 0.809,
+      "fields": [
+        [
+          "title",
+          1.0,
+          17
+        ],
+        [
+          "authors+affiliations",
+          0.793,
+          54
+        ],
+        [
+          "S:INTRODUCTION",
+          1.0,
+          95
+        ],
+        [
+          "S:RESULTS",
+          0.543,
+          46
+        ],
+        [
+          "S:CONCLUSIONS",
+          1.0,
+          74
+        ],
+        [
+          "S:ACKNOWLEDGMENTS",
+          0.648,
+          46
+        ],
+        [
+          "S:REFERENCES",
+          0.676,
+          49
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 6,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "16083265",
+      "w": 0.966,
+      "r_global": 0.751,
+      "r_field": 0.701,
+      "fields": [
+        [
+          "title",
+          1.0,
+          12
+        ],
+        [
+          "authors+affiliations",
+          0.675,
+          45
+        ],
+        [
+          "S:INTRODUCTION",
+          0.582,
+          95
+        ],
+        [
+          "S:METHODS",
+          0.439,
+          96
+        ],
+        [
+          "S:RESULTS",
+          0.311,
+          162
+        ],
+        [
+          "S:CONCLUSION",
+          0.68,
+          66
+        ],
+        [
+          "S:References",
+          1.0,
+          36
+        ],
+        [
+          "S:Acknowledgements",
+          0.923,
+          21
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 5,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "17268692",
+      "w": 0.986,
+      "r_global": 0.696,
+      "r_field": 0.798,
+      "fields": [
+        [
+          "title",
+          1.0,
+          10
+        ],
+        [
+          "authors+affiliations",
+          0.6,
+          31
+        ],
+        [
+          "S:Background",
+          1.0,
+          56
+        ],
+        [
+          "S:Problem",
+          0.978,
+          46
+        ],
+        [
+          "S:Solution",
+          0.863,
+          92
+        ],
+        [
+          "S:Progress",
+          0.529,
+          225
+        ],
+        [
+          "S:Next Steps",
+          1.0,
+          45
+        ],
+        [
+          "S:Get Involved!",
+          0.758,
+          25
+        ],
+        [
+          "S:Join the Task Force!",
+          0.453,
+          12
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 2,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "42",
+      "w": 0.982,
+      "r_global": 0.817,
+      "r_field": 0.752,
+      "fields": [
+        [
+          "title",
+          0.963,
+          13
+        ],
+        [
+          "authors+affiliations",
+          0.64,
+          24
+        ],
+        [
+          "S:Contact",
+          1.0,
+          33
+        ],
+        [
+          "S:Abstract",
+          0.732,
+          78
+        ],
+        [
+          "S:Introduction",
+          1.0,
+          50
+        ],
+        [
+          "S:Methodology",
+          0.981,
+          77
+        ],
+        [
+          "S:Key Findings",
+          0.586,
+          56
+        ],
+        [
+          "S:Figure 2. CarD-T Finds New Carcino",
+          0.743,
+          13
+        ],
+        [
+          "S:Figure 3. Evidence Count Classific",
+          0.323,
+          21
+        ],
+        [
+          "S:Figure 1. Probabilistic Carcinogen",
+          0.584,
+          45
+        ],
+        [
+          "S:Figure 4. The Shifting Landscape: ",
+          0.242,
+          15
+        ],
+        [
+          "S:Discussion/Conclusions",
+          1.0,
+          104
+        ],
+        [
+          "S:References",
+          0.978,
+          182
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 3,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "4446908",
+      "w": 0.979,
+      "r_global": 0.876,
+      "r_field": 0.781,
+      "fields": [
+        [
+          "title",
+          0.706,
+          11
+        ],
+        [
+          "authors+affiliations",
+          0.667,
+          10
+        ],
+        [
+          "S:Introduction",
+          1.0,
+          144
+        ],
+        [
+          "S:Dataset & Methods",
+          0.681,
+          93
+        ],
+        [
+          "S:Content Analysis \u2014 Press Release T",
+          0.901,
+          36
+        ],
+        [
+          "S:Subjects",
+          0.958,
+          48
+        ],
+        [
+          "S:Content Analysis \u2014 Releasing Insti",
+          0.72,
+          78
+        ],
+        [
+          "S:Topics",
+          0.444,
+          18
+        ],
+        [
+          "S:Conclusion & Future Work",
+          0.646,
+          151
+        ],
+        [
+          "S:References",
+          0.965,
+          85
+        ],
+        [
+          "S:Acknowledgements",
+          0.833,
+          45
+        ],
+        [
+          "S:Contact",
+          0.846,
+          15
+        ]
+      ],
+      "affil": {
+        "scheme": "single",
+        "n_authors": 2,
+        "ref_fired": false,
+        "ref_correct": 0.0,
+        "gen_fired": false,
+        "gen_correct": 0.0,
+        "status": "single(n/a)"
+      }
+    },
+    {
+      "id": "4448680",
+      "w": 0.994,
+      "r_global": 0.877,
+      "r_field": 0.434,
+      "fields": [
+        [
+          "title",
+          1.0,
+          16
+        ],
+        [
+          "S:Cells",
+          0.442,
+          90
+        ],
+        [
+          "S:Interconnects",
+          0.289,
+          52
+        ],
+        [
+          "S:Stacks",
+          0.383,
+          73
+        ],
+        [
+          "S:Systems",
+          0.39,
+          77
+        ],
+        [
+          "S:Contact",
+          0.099,
+          16
+        ]
+      ],
+      "affil": {
+        "scheme": "single",
+        "n_authors": 2,
+        "ref_fired": false,
+        "ref_correct": 0.0,
+        "gen_fired": false,
+        "gen_correct": 0.0,
+        "status": "single(n/a)"
+      }
+    },
+    {
+      "id": "4519718",
+      "w": 0.989,
+      "r_global": 0.853,
+      "r_field": 0.966,
+      "fields": [
+        [
+          "title",
+          1.0,
+          6
+        ],
+        [
+          "authors+affiliations",
+          0.8,
+          44
+        ],
+        [
+          "S:ABSTRACT",
+          1.0,
+          69
+        ],
+        [
+          "S:INTRODUCTION",
+          1.0,
+          161
+        ],
+        [
+          "S:METHODS",
+          0.994,
+          82
+        ],
+        [
+          "S:RESULTS",
+          0.93,
+          187
+        ],
+        [
+          "S:NEXT STEPS",
+          0.906,
+          163
+        ],
+        [
+          "S:CONCLUSIONS",
+          1.0,
+          46
+        ],
+        [
+          "S:ACKNOWLEDGEMENTS",
+          1.0,
+          11
+        ],
+        [
+          "S:REFERENCES",
+          1.0,
+          50
+        ],
+        [
+          "S:CONTACT",
+          1.0,
+          17
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 4,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "4552067",
+      "w": 0.994,
+      "r_global": 0.97,
+      "r_field": 0.777,
+      "fields": [
+        [
+          "title",
+          0.4,
+          6
+        ],
+        [
+          "authors+affiliations",
+          0.025,
+          1
+        ],
+        [
+          "S:What is Portage?",
+          1.0,
+          44
+        ],
+        [
+          "S:What is Research Data Management (",
+          0.955,
+          46
+        ],
+        [
+          "S:Network of Experts",
+          0.968,
+          77
+        ],
+        [
+          "S:DMP Assistant",
+          0.989,
+          47
+        ],
+        [
+          "S:Federated Research Data Repository",
+          0.943,
+          55
+        ],
+        [
+          "S:Dataverse North",
+          1.0,
+          20
+        ],
+        [
+          "S:Training and Guidance",
+          0.715,
+          79
+        ]
+      ],
+      "affil": {
+        "scheme": "single",
+        "n_authors": 1,
+        "status": "n/a(<2 authors)"
+      }
+    },
+    {
+      "id": "4560930",
+      "w": 0.993,
+      "r_global": 0.731,
+      "r_field": 0.566,
+      "fields": [
+        [
+          "title",
+          1.0,
+          9
+        ],
+        [
+          "authors+affiliations",
+          0.863,
+          161
+        ],
+        [
+          "S:A Tale of Two Samples",
+          0.269,
+          43
+        ],
+        [
+          "S:M Dwarf Stellar Cycles - SURVEY",
+          0.66,
+          129
+        ],
+        [
+          "S:M Dwarf Twin Binaries - TWINS",
+          0.573,
+          183
+        ],
+        [
+          "S:The RECONS Program",
+          0.378,
+          61
+        ],
+        [
+          "S:TWINS",
+          0.684,
+          130
+        ],
+        [
+          "S:References",
+          0.101,
+          14
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 6,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "4564017",
+      "w": 0.973,
+      "r_global": 0.978,
+      "r_field": 0.816,
+      "fields": [
+        [
+          "title",
+          1.0,
+          11
+        ],
+        [
+          "authors+affiliations",
+          0.8,
+          31
+        ],
+        [
+          "S:ABSTRACT",
+          1.0,
+          63
+        ],
+        [
+          "S:INTRODUCTION",
+          1.0,
+          107
+        ],
+        [
+          "S:INITIAL MODELS",
+          0.533,
+          44
+        ],
+        [
+          "S:MANCHA CODE",
+          0.765,
+          75
+        ],
+        [
+          "S:DEVELOPED CONVECTION",
+          0.948,
+          226
+        ],
+        [
+          "S:FUTURE WORK",
+          0.798,
+          83
+        ],
+        [
+          "S:References",
+          0.503,
+          42
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 4,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "4607450",
+      "w": 0.972,
+      "r_global": 0.881,
+      "r_field": 0.403,
+      "fields": [
+        [
+          "title",
+          0.123,
+          17
+        ],
+        [
+          "authors+affiliations",
+          0.244,
+          36
+        ],
+        [
+          "S:Introduction",
+          0.537,
+          95
+        ],
+        [
+          "S:Materials",
+          0.415,
+          69
+        ],
+        [
+          "S:Electrophoresis analysis",
+          0.244,
+          36
+        ],
+        [
+          "S:Results",
+          0.606,
+          308
+        ],
+        [
+          "S:Discussion",
+          0.649,
+          151
+        ]
+      ],
+      "affil": {
+        "scheme": "single",
+        "n_authors": 4,
+        "ref_fired": false,
+        "ref_correct": 0.0,
+        "gen_fired": false,
+        "gen_correct": 0.0,
+        "status": "single(n/a)"
+      }
+    },
+    {
+      "id": "4737132",
+      "affil": {
+        "scheme": "single",
+        "n_authors": 1,
+        "status": "n/a(<2 authors)"
+      }
+    },
+    {
+      "id": "5128504",
+      "w": 0.977,
+      "r_global": 0.881,
+      "r_field": 0.845,
+      "fields": [
+        [
+          "title",
+          1.0,
+          8
+        ],
+        [
+          "authors+affiliations",
+          0.367,
+          28
+        ],
+        [
+          "S:Abstract",
+          0.941,
+          128
+        ],
+        [
+          "S:Introduction",
+          1.0,
+          107
+        ],
+        [
+          "S:Methodology",
+          0.953,
+          121
+        ],
+        [
+          "S:BPT Diagrams and Overlays",
+          0.657,
+          291
+        ],
+        [
+          "S:Results & Future Work",
+          1.0,
+          112
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 6,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "6724771",
+      "w": 0.961,
+      "r_global": 0.973,
+      "r_field": 0.982,
+      "fields": [
+        [
+          "title",
+          1.0,
+          16
+        ],
+        [
+          "authors+affiliations",
+          0.912,
+          232
+        ],
+        [
+          "S:METHODS",
+          1.0,
+          139
+        ],
+        [
+          "S:RESULTS",
+          1.0,
+          249
+        ],
+        [
+          "S:CONCLUSION AND PERSPECTIVES",
+          1.0,
+          135
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 14,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "8228476",
+      "w": 0.947,
+      "r_global": 0.747,
+      "r_field": 0.692,
+      "fields": [
+        [
+          "title",
+          1.0,
+          10
+        ],
+        [
+          "authors+affiliations",
+          0.174,
+          28
+        ],
+        [
+          "S:Introduction",
+          0.764,
+          104
+        ],
+        [
+          "S:The Dataset",
+          0.845,
+          58
+        ],
+        [
+          "S:Inter Annotator Agreement",
+          1.0,
+          25
+        ],
+        [
+          "S:Fine-tuning for metaphor detection",
+          0.333,
+          8
+        ],
+        [
+          "S:LM adaptation",
+          0.4,
+          6
+        ],
+        [
+          "S:Language models (pre-trained & ada",
+          0.648,
+          45
+        ],
+        [
+          "S:Results",
+          0.759,
+          27
+        ],
+        [
+          "S:Error Analysis",
+          1.0,
+          26
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 6,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": false,
+        "gen_correct": 0.0,
+        "status": "ORDER-GAP"
+      }
+    },
+    {
+      "id": "8228568",
+      "w": 1.0,
+      "r_global": 0.767,
+      "r_field": 0.816,
+      "fields": [
+        [
+          "title",
+          1.0,
+          7
+        ],
+        [
+          "authors+affiliations",
+          1.0,
+          11
+        ],
+        [
+          "S:Abstract",
+          1.0,
+          80
+        ],
+        [
+          "S:Background: Who is in and who is o",
+          0.981,
+          78
+        ],
+        [
+          "S:Research Questions",
+          0.716,
+          29
+        ],
+        [
+          "S:Qualitative Semi-structured Interv",
+          0.548,
+          21
+        ],
+        [
+          "S:Participants (n=14)",
+          0.8,
+          49
+        ],
+        [
+          "S:Results",
+          0.333,
+          18
+        ],
+        [
+          "S:Table 1. Why do researchers self-i",
+          0.841,
+          105
+        ],
+        [
+          "S:Table 2. Why do researchers NOT se",
+          0.773,
+          138
+        ],
+        [
+          "S:References",
+          0.979,
+          69
+        ]
+      ],
+      "affil": {
+        "scheme": "single",
+        "n_authors": 1,
+        "status": "n/a(<2 authors)"
+      }
+    },
+    {
+      "id": "AISec2025-poster",
+      "w": 0.987,
+      "r_global": 0.908,
+      "r_field": 0.811,
+      "fields": [
+        [
+          "title",
+          1.0,
+          12
+        ],
+        [
+          "authors+affiliations",
+          0.636,
+          15
+        ],
+        [
+          "S:Introduction",
+          0.707,
+          148
+        ],
+        [
+          "S:Methodology",
+          0.514,
+          143
+        ],
+        [
+          "S:Dataset Utility",
+          0.994,
+          161
+        ],
+        [
+          "S:Conclusion",
+          0.857,
+          12
+        ],
+        [
+          "S:Selected papers citing CyberLLMIns",
+          0.969,
+          128
+        ]
+      ],
+      "affil": {
+        "scheme": "single",
+        "n_authors": 3,
+        "ref_fired": false,
+        "ref_correct": 0.0,
+        "gen_fired": false,
+        "gen_correct": 0.0,
+        "status": "single(n/a)"
+      }
+    },
+    {
+      "id": "aysaekanger-Fairhurst_Supporting_Poster",
+      "w": 0.996,
+      "r_global": 0.661,
+      "r_field": 0.458,
+      "fields": [
+        [
+          "title",
+          1.0,
+          5
+        ],
+        [
+          "authors+affiliations",
+          0.429,
+          22
+        ],
+        [
+          "S:Grant IDs in the publishing workfl",
+          0.54,
+          225
+        ],
+        [
+          "S:Crossref",
+          0.192,
+          46
+        ],
+        [
+          "S:ORCID",
+          0.169,
+          40
+        ],
+        [
+          "S:Heard about ROR?",
+          0.418,
+          159
+        ]
+      ],
+      "affil": {
+        "scheme": "single",
+        "n_authors": 1,
+        "status": "n/a(<2 authors)"
+      }
+    },
+    {
+      "id": "isporeu2023ee359130949-pdf",
+      "w": 0.946,
+      "r_global": 0.901,
+      "r_field": 0.849,
+      "fields": [
+        [
+          "title",
+          0.543,
+          23
+        ],
+        [
+          "authors+affiliations",
+          0.608,
+          119
+        ],
+        [
+          "S:CONCLUSIONS",
+          1.0,
+          103
+        ],
+        [
+          "S:INTRODUCTION & OBJECTIVES",
+          0.949,
+          346
+        ],
+        [
+          "S:METHODS",
+          0.931,
+          393
+        ],
+        [
+          "S:RESULTS",
+          0.653,
+          357
+        ],
+        [
+          "S:DISCUSSION",
+          0.943,
+          274
+        ],
+        [
+          "S:REFERENCES",
+          0.97,
+          179
+        ],
+        [
+          "S:ABBREVIATIONS",
+          0.977,
+          64
+        ],
+        [
+          "S:DISCLOSURES",
+          0.991,
+          167
+        ],
+        [
+          "S:ACKNOWLEDGEMENTS",
+          0.771,
+          59
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 8,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    },
+    {
+      "id": "gasimova(oos)",
+      "w": 0.966,
+      "r_global": 0.9,
+      "r_field": 0.778,
+      "fields": [
+        [
+          "title",
+          0.632,
+          11
+        ],
+        [
+          "authors+affiliations",
+          0.766,
+          71
+        ],
+        [
+          "S:Background",
+          0.932,
+          47
+        ],
+        [
+          "S:Problem",
+          1.0,
+          79
+        ],
+        [
+          "S:Purpose",
+          1.0,
+          18
+        ],
+        [
+          "S:Methods",
+          0.635,
+          195
+        ],
+        [
+          "S:Results",
+          0.995,
+          206
+        ],
+        [
+          "S:Conclusion",
+          0.686,
+          106
+        ],
+        [
+          "S:Contact",
+          0.359,
+          30
+        ]
+      ],
+      "affil": {
+        "scheme": "numbered",
+        "n_authors": 7,
+        "ref_fired": true,
+        "ref_correct": 1.0,
+        "gen_fired": true,
+        "gen_correct": 1.0,
+        "status": "PASS"
+      }
+    }
+  ]
+}

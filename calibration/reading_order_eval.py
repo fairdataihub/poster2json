@@ -50,7 +50,7 @@ EXTRA = {  # id -> (pdf, raw_md, annotation_json); pdf="" means ref-only
 TUNABLE = ("MIN_GAP_AREA", "SPLIT_GAP_SLACK", "MIN_CHUNK_WIDTH",
            "MIN_GAP_SIZE", "BASELINE_RANGE", "DESCENT_ADJUST", "TOP_BAND",
            "TOP_BAND_DOMINANCE", "SUPERSCRIPT_SIZE_RATIO", "SUPERSCRIPT_RISE",
-           "SUPERSCRIPT_MIN_DIGITS")
+           "SUPERSCRIPT_MIN_DIGITS", "LINE_SIZE_RATIO")
 
 sys.path.insert(0, REPO)
 from poster2json import xy_cut          # noqa: E402

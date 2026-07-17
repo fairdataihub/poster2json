@@ -776,41 +776,49 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
 def _chars_to_word_lines(char_lines, words):
     """Map XY-cut char-level lines back to word-level lines.
 
-    For each char-level line, find the words whose characters
-    predominantly fall on that line (by spatial overlap).
+    A word goes to the candidate line whose baseline it shares, not simply to
+    the first line whose box encloses it. Enclosure alone is far too weak where
+    type sizes differ: a 96pt title line's box is tall enough to contain the
+    26pt marker row printed below it, and being first in reading order the
+    title claimed those markers before the byline they annotate could, spraying
+    digits through the title and stripping the author list of its markers.
+    Baseline distance settles it, since that is what makes a line a line.
     """
-    from bisect import bisect_left, bisect_right
-
-    word_tops = sorted(set(w["top"] for w in words))
-    word_by_pos = {}
-    for w in words:
-        key = (round(w["top"], 1), round(w["x0"], 1))
-        word_by_pos[key] = w
-
-    assigned = set()
-    result = []
+    metas = []
     for char_line in char_lines:
         if not char_line:
             continue
-        line_y_min = min(c["top"] for c in char_line)
-        line_y_max = max(c["bottom"] for c in char_line)
-        line_x_min = min(c["x0"] for c in char_line)
-        line_x_max = max(c["x1"] for c in char_line)
+        metas.append({
+            "y_min": min(c["top"] for c in char_line),
+            "y_max": max(c["bottom"] for c in char_line),
+            "x_min": min(c["x0"] for c in char_line),
+            "x_max": max(c["x1"] for c in char_line),
+            "base": float(np.median([c["bottom"] for c in char_line])),
+            "words": [],
+        })
 
-        line_words = []
-        for w in words:
-            if id(w) in assigned:
+    assigned = set()
+    for w in words:
+        w_cy = (w["top"] + w["bottom"]) / 2
+        w_cx = (w["x0"] + w["x1"]) / 2
+        best = None
+        best_d = None
+        for m in metas:
+            if not (m["y_min"] - 2 <= w_cy <= m["y_max"] + 2):
                 continue
-            w_cy = (w["top"] + w["bottom"]) / 2
-            w_cx = (w["x0"] + w["x1"]) / 2
-            if (line_y_min - 2 <= w_cy <= line_y_max + 2
-                    and line_x_min - 5 <= w_cx <= line_x_max + 5):
-                line_words.append(w)
-                assigned.add(id(w))
+            if not (m["x_min"] - 5 <= w_cx <= m["x_max"] + 5):
+                continue
+            d = abs(w["bottom"] - m["base"])
+            if best_d is None or d < best_d:
+                best, best_d = m, d
+        if best is not None:
+            best["words"].append(w)
+            assigned.add(id(w))
 
-        if line_words:
-            line_words.sort(key=lambda w: w["x0"])
-            result.append(line_words)
+    result = []
+    for m in metas:
+        if m["words"]:
+            result.append(sorted(m["words"], key=lambda w: w["x0"]))
 
     unassigned = [w for w in words if id(w) not in assigned]
     if unassigned:
@@ -2050,6 +2058,10 @@ _SUP_TRANS = str.maketrans({
     "⁻": "-", "−": "-",           # superscript / unicode minus -> hyphen
     "⁺": "+",                            # superscript plus (role glyph, ignored)
     "˒": ",", "ˑ": ",", "ˏ": ",", "̓": ",",  # marker separators
+    # Posters typeset apostrophes as curly quotes while deposit metadata and
+    # reference lists use the straight one, so "O'Neill" would not match the
+    # byline's "O’Neill" and the corrector anchored on a citation instead.
+    "’": "'", "‘": "'", "´": "'", "`": "'",
 })
 
 # institution keyword (multilingual stems) — distinguishes a real numbered
@@ -2479,6 +2491,10 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
     numbered affiliations are left untouched."""
     if not raw_text:
         return
+    # Normalize before the byline is located, not just before it is parsed:
+    # the search for the lead author's name has to see the same apostrophe the
+    # poster prints.
+    raw_text = raw_text.translate(_SUP_TRANS)
     creators = result.get("creators")
     if not isinstance(creators, list) or len(creators) < 2:
         return
@@ -2496,7 +2512,7 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
             fam = nm.split(",")[0].strip() if "," in nm else ""
         if not fam or len(fam) < 2:
             return
-        persons.append((i, fam))
+        persons.append((i, fam.translate(_SUP_TRANS)))
     if len(persons) < 2:
         return
 
