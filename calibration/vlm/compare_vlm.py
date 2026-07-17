@@ -72,19 +72,28 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--save", default=None)
     ap.add_argument("--details", action="store_true")
+    ap.add_argument("--vlm-dir", default=None,
+                    help="dir of VLM .md files under calibration/vlm "
+                         "(default: out); use to compare a resolution sweep")
+    ap.add_argument("--only-vlm", action="store_true",
+                    help="skip the control (faster when sweeping the VLM)")
     args = ap.parse_args()
 
+    vlm_dir = (os.path.join(os.path.dirname(os.path.abspath(__file__)), args.vlm_dir)
+               if args.vlm_dir else OUT)
     rows = []
     for pid, pdf, rawp in items():
         with open(rawp, encoding="utf-8") as fh:
             ref = fh.read()
         row = {"id": pid}
-        vlm_path = os.path.join(OUT, f"{pid}.md")
+        vlm_path = os.path.join(vlm_dir, f"{pid}.md")
         if os.path.exists(vlm_path):
             with open(vlm_path, encoding="utf-8") as fh:
                 row["vlm"] = score(fh.read(), ref)
-        if pdf:
+        if pdf and not args.only_vlm:
             row["ctl"] = score(E.extract_text_with_pdfplumber(pdf) or "", ref)
+        if args.vlm_dir and "vlm" not in row:
+            continue
         rows.append(row)
 
     print(f"  {'poster':40s} {'--- pdfplumber + xy_cut ---':>28} "

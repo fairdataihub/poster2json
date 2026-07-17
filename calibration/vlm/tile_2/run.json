@@ -1,0 +1,105 @@
+{
+  "model": "lightonai/LightOnOCR-2-1B",
+  "longest": 1540,
+  "tiles": 2,
+  "max_new_tokens": 4096,
+  "peak_vram_gb": 2.84,
+  "runs": [
+    {
+      "id": "10890106",
+      "image": [
+        1632,
+        1119
+      ],
+      "tiles": 4,
+      "tokens": 2865,
+      "seconds": 74.5,
+      "chars": 9443,
+      "truncated": false
+    },
+    {
+      "id": "15963941",
+      "image": [
+        1142,
+        1632
+      ],
+      "tiles": 4,
+      "tokens": 3480,
+      "seconds": 85.4,
+      "chars": 9779,
+      "truncated": false
+    },
+    {
+      "id": "16083265",
+      "image": [
+        1142,
+        1632
+      ],
+      "tiles": 4,
+      "tokens": 3039,
+      "seconds": 75.2,
+      "chars": 8779,
+      "truncated": false
+    },
+    {
+      "id": "17268692",
+      "image": [
+        1632,
+        1197
+      ],
+      "tiles": 4,
+      "tokens": 1263,
+      "seconds": 31.4,
+      "chars": 5457,
+      "truncated": false
+    },
+    {
+      "id": "42",
+      "image": [
+        1632,
+        1224
+      ],
+      "tiles": 4,
+      "tokens": 10209,
+      "seconds": 244.7,
+      "chars": 29188,
+      "truncated": true
+    },
+    {
+      "id": "4448680",
+      "image": [
+        1162,
+        1632
+      ],
+      "tiles": 4,
+      "tokens": 1527,
+      "seconds": 35.8,
+      "chars": 5305,
+      "truncated": false
+    },
+    {
+      "id": "aysaekanger-Fairhurst_Supporting_Poster",
+      "image": [
+        1154,
+        1632
+      ],
+      "tiles": 4,
+      "tokens": 1921,
+      "seconds": 44.8,
+      "chars": 8064,
+      "truncated": false
+    },
+    {
+      "id": "gasimova(oos)",
+      "image": [
+        1632,
+        1632
+      ],
+      "tiles": 4,
+      "tokens": 2441,
+      "seconds": 57.5,
+      "chars": 9015,
+      "truncated": false
+    }
+  ]
+}

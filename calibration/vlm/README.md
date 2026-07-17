@@ -65,12 +65,27 @@ with plain transformers rather than vLLM precisely because vLLM pre-allocates a
 memory pool and would fight the running engines. **Do not kill those services to
 make room.** GPU 0 (the 4090) has only ~3.5 GB free and drives the display.
 
-## Rendering
+## Rendering and the 1540px ceiling
 
-Per the model card: 200 DPI, longest side 1540px, aspect preserved. Both are
-flags on the runner (`--dpi`, `--longest`) since posters are unusually large
-(gasimova is 3312x3312pt) and resolution is the obvious thing to sweep if
-recall disappoints.
+**Read this before trying to raise resolution.** `--longest` sets the render
+size AND the processor's `longest_edge` together, and 1540 is a hard ceiling:
+
+- `PixtralImageProcessor` ships `size={"longest_edge": 1540}, do_resize=True`,
+  so it silently rescales whatever you hand it back to 1540. Rendering bigger
+  without changing the processor buys nothing and costs a second resampling
+  pass — measurably (10890106 `w` 0.942 -> 0.723). The knob is the processor.
+- Raising the processor past 1540 asserts: `PixtralVisionConfig.image_size` is
+  1540 with `patch_size` 14, so the vision RoPE table holds 110 patch positions
+  per axis and a larger image indexes off the end
+  (`modeling_pixtral.py:126  freqs = self.inv_freq[position_ids]`). The CUDA
+  assert is **async**, so the first oversized page can look like it worked while
+  computing on out-of-bounds indices. Do not trust it.
+
+1540px is ~132 DPI over A4 — self-consistent with the model card — but a
+conference poster is 3-4 feet, so it lands at ~33 DPI (17 of our 20 posters get
+under 80; see `eff_dpi.py`). `--tiles N` is the only lever: it OCRs an NxN grid
+at 1540 each, multiplying effective DPI by N. It recovers recall on the largest
+posters but destroys reading order; see FINDINGS.md.
 
 `--max-new-tokens` defaults to 6144. A generation that stops exactly at the cap
 was truncated and has silently lost recall; the runner flags those in `run.json`
@@ -79,8 +94,13 @@ and in its output rather than letting them be scored as if complete.
 ## What to watch for
 
 - **Hallucination.** A VLM can produce fluent text that is not on the poster.
-  ROUGE against `_raw.md` rewards recall and will not punish invention hard
-  enough on its own. Read some outputs before believing a headline number.
+  ROUGE rewards recall and will not punish invention. Read some outputs before
+  believing a headline number. But measure it against what the pipeline
+  CONSUMES: poster2json looks ORCIDs up from name + affiliation and never reads
+  them off the poster, so hallucinated ORCIDs are moot and the lookup keys are
+  what matter (`keys_check.py`). `fidelity_check.py` still reports invented
+  exact strings, since that is worth knowing, but it does not gate this
+  pipeline. FINDINGS.md has the retraction.
 - **LaTeX.** LightOnOCR emits `$^{1,2}$` for superscript markers. Harmless for
   raw-text scoring (`_alpha()` strips it to `12`, and the reference's `¹˒²`
   NFKD-normalizes to the same), but it would need handling before the
