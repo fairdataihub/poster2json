@@ -31,6 +31,8 @@ sys.path.insert(0, os.path.join(REPO, "calibration"))
 from poster2json import extract as E   # noqa: E402
 E.log = lambda *a, **k: None
 import reading_order_eval as REV       # noqa: E402
+sys.path.insert(0, os.path.join(REPO, "calibration/vlm"))
+from vlm_scrub import scrub            # noqa: E402
 
 CORPUS = ("/home/joneill/Nextcloud/vaults/jmind/calmi2/poster_science/"
           "json_schema/manual_poster_annotation")
@@ -77,6 +79,9 @@ def main():
                          "(default: out); use to compare a resolution sweep")
     ap.add_argument("--only-vlm", action="store_true",
                     help="skip the control (faster when sweeping the VLM)")
+    ap.add_argument("--no-scrub", action="store_true",
+                    help="score the VLM output raw, without the markup scrub "
+                         "(default: scrub HTML/code-fence markup, keep captions)")
     args = ap.parse_args()
 
     vlm_dir = (os.path.join(os.path.dirname(os.path.abspath(__file__)), args.vlm_dir)
@@ -89,7 +94,8 @@ def main():
         vlm_path = os.path.join(vlm_dir, f"{pid}.md")
         if os.path.exists(vlm_path):
             with open(vlm_path, encoding="utf-8") as fh:
-                row["vlm"] = score(fh.read(), ref)
+                _vtxt = fh.read()
+            row["vlm"] = score(_vtxt if args.no_scrub else scrub(_vtxt), ref)
         if pdf and not args.only_vlm:
             row["ctl"] = score(E.extract_text_with_pdfplumber(pdf) or "", ref)
         if args.vlm_dir and "vlm" not in row:
