@@ -18,6 +18,7 @@ It deliberately leaves "---" horizontal rules and "##" headers, which are clean
 structure. Only the tabular data payload is removed; every caption survives.
 """
 import re
+import unicodedata
 
 _FENCE_MARKER = re.compile(r"^[ \t]*```.*$", re.MULTILINE)
 
@@ -70,6 +71,32 @@ _BLANKS = re.compile(r"\n{3,}")
 _BOLD_ONLY = re.compile(r"\*\*[^*]+\*\*$")
 
 
+# Reproducibility: the model leaves typographic variants (curly quotes, en/em
+# dashes, arrows) untouched while other things get decomposed, so the character
+# set the downstream LLM converts to JSON is inconsistent. Collapse each variant
+# family to ONE ASCII form, drop box-drawing art (the model rendering a folder
+# tree as |-- lines), and NFKC-normalize the rest -- which unifies duplicate
+# encodings (micro sign U+00B5 vs greek mu U+03BC, super/subscript digits) while
+# LEAVING real content: Hebrew/Arabic/Greek letters, accented names, units.
+_BOXDRAW = re.compile(r"[─-▟]+")   # box-drawing + block elements
+_PUNCT = str.maketrans({
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "“": '"', "”": '"', "„": '"', "‟": '"',
+    "–": "-", "—": "-", "‒": "-", "―": "-", "−": "-",
+    "…": "...", " ": " ", " ": " ", " ": " ", " ": " ",
+    "→": "->", "⟶": "->", "➔": "->", "⇒": "->", "➙": "->",
+    "←": "<-", "⟵": "<-", "⇐": "<-",
+})
+
+
+def _normalize_chars(text: str) -> str:
+    text = _BOXDRAW.sub(" ", text)
+    text = text.translate(_PUNCT)
+    # NFKC collapses compatibility variants (micro->mu, super/subscripts) to a
+    # single representation; combining marks on Hebrew/accents are preserved.
+    return unicodedata.normalize("NFKC", text)
+
+
 def _strip_footer_logos(text: str) -> str:
     lines = text.splitlines()
     while lines:
@@ -112,6 +139,7 @@ def scrub(text: str) -> str:
     text = _IMAGE.sub("", text)            # drop image placeholders
     text = _delatex(text)                  # LaTeX -> plain, keep affil markers
     text = _TAG.sub("", text)              # remaining tags, keep inner text
+    text = _normalize_chars(text)          # one canonical char per variant family
     text = _TRAIL_WS.sub("\n", text)
     text = _BLANKS.sub("\n\n", text)
     text = _strip_footer_logos(text.strip())   # peel sponsor/logo lines off foot
