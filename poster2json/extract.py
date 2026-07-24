@@ -1009,9 +1009,39 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             median_fontsize = page_median_fs
 
+            # A contact block (author email/phone in the footer) is precisely
+            # what the header heuristic below refuses to promote, because it
+            # matches _is_contact. So it lands in the body with no "## Contact"
+            # header and a small ground-truth Contact section scores against a
+            # large body chunk (0.10-0.28 rougeL across the corpus). Emit the
+            # header ourselves. Gated on an email or phone number, NOT a bare
+            # URL, so a references/links block (URLs and DOIs, no email) is not
+            # mislabeled, and only in the bottom of the page so a byline with a
+            # corresponding-author email up top is left alone.
+            _contact_zone = page_h * 0.55
+            _page_contact_header = False
+
             for blk in all_blocks:
                 _t = blk["text"].strip()
                 if not _t:
+                    continue
+
+                _is_contact_footer = (
+                    blk["vpos"] > _contact_zone
+                    and (re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', _t)
+                         or re.search(r'(?:\+\d|\(\d{3}\))[\d\s().-]{6,}\d', _t)
+                         or re.search(r'\b(?:contact|correspond\w*|corresponding\s+author)\b\s*:',
+                                      _t, re.IGNORECASE)))
+                if _is_contact_footer:
+                    # One Contact header per page. If the poster already headed
+                    # its own contact section (its "## CONTACT" caught by the
+                    # keyword rule, possibly a name line above the details),
+                    # append the details as body so they join that section
+                    # rather than splitting off under a duplicate header.
+                    if not _page_contact_header:
+                        all_output_lines.append("## Contact")
+                        _page_contact_header = True
+                    all_output_lines.append(_add_bidi_markers(blk["text"]))
                     continue
 
                 # Figure/table caption: split the "Figure N"/"Table N" label
@@ -1035,6 +1065,8 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                 # the LLM splits it out instead of merging it into the body.
                 if _t.rstrip(":.").strip().lower() in _SECTION_KEYWORDS:
                     all_output_lines.append(f"## {_add_bidi_markers(_t)}")
+                    if re.search(r'contact|correspond', _t, re.IGNORECASE):
+                        _page_contact_header = True
                     continue
 
                 # Run-on block cramming multiple sections onto one line via
