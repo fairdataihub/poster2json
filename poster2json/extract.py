@@ -85,6 +85,25 @@ _SECTION_KEYWORDS = frozenset({
     "contact", "contact information",
 })
 
+# A section header printed in bold at the SAME font size as the body it
+# introduces (e.g. Times bold "Introduction" then Times regular body on one
+# line) is merged into its block: block-level bold is a majority vote and the
+# body wins, so the font heuristic never promotes it and the whole section
+# collapses into an unsplit blob. Match a known section keyword at the very
+# start of a block followed by a capitalized word -- the capital is the tell
+# that a new sentence/heading begins there, which keeps ordinary prose like
+# "Results show that ..." (lowercase continuation) from being split. Longest
+# keywords first so "materials and methods" wins over "materials".
+# Citation-list sections are excluded: a reference list legitimately begins
+# with a capitalized author surname ("References Smith J, ..."), so a following
+# capital is not a merged-header signal there and would split a real entry.
+_SECTION_PREFIX_KEYWORDS = _SECTION_KEYWORDS - {
+    "references", "reference", "bibliography"}
+_SECTION_PREFIX_RE = re.compile(
+    r"^(" + "|".join(re.escape(k) for k in
+                     sorted(_SECTION_PREFIX_KEYWORDS, key=len, reverse=True))
+    + r")\s+(?=[A-Z(])", re.IGNORECASE)
+
 # "Surname X1"-style author bylines ("Ivanyi P 1 , Bullement A 2 , ...")
 # tokenize as mostly single-char words once initials, superscript markers,
 # and separating commas come apart, so the scattered-chart-debris filter
@@ -1009,9 +1028,39 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             median_fontsize = page_median_fs
 
+            # A contact block (author email/phone in the footer) is precisely
+            # what the header heuristic below refuses to promote, because it
+            # matches _is_contact. So it lands in the body with no "## Contact"
+            # header and a small ground-truth Contact section scores against a
+            # large body chunk (0.10-0.28 rougeL across the corpus). Emit the
+            # header ourselves. Gated on an email or phone number, NOT a bare
+            # URL, so a references/links block (URLs and DOIs, no email) is not
+            # mislabeled, and only in the bottom of the page so a byline with a
+            # corresponding-author email up top is left alone.
+            _contact_zone = page_h * 0.55
+            _page_contact_header = False
+
             for blk in all_blocks:
                 _t = blk["text"].strip()
                 if not _t:
+                    continue
+
+                _is_contact_footer = (
+                    blk["vpos"] > _contact_zone
+                    and (re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', _t)
+                         or re.search(r'(?:\+\d|\(\d{3}\))[\d\s().-]{6,}\d', _t)
+                         or re.search(r'\b(?:contact|correspond\w*|corresponding\s+author)\b\s*:',
+                                      _t, re.IGNORECASE)))
+                if _is_contact_footer:
+                    # One Contact header per page. If the poster already headed
+                    # its own contact section (its "## CONTACT" caught by the
+                    # keyword rule, possibly a name line above the details),
+                    # append the details as body so they join that section
+                    # rather than splitting off under a duplicate header.
+                    if not _page_contact_header:
+                        all_output_lines.append("## Contact")
+                        _page_contact_header = True
+                    all_output_lines.append(_add_bidi_markers(blk["text"]))
                     continue
 
                 # Figure/table caption: split the "Figure N"/"Table N" label
@@ -1035,7 +1084,23 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                 # the LLM splits it out instead of merging it into the body.
                 if _t.rstrip(":.").strip().lower() in _SECTION_KEYWORDS:
                     all_output_lines.append(f"## {_add_bidi_markers(_t)}")
+                    if re.search(r'contact|correspond', _t, re.IGNORECASE):
+                        _page_contact_header = True
                     continue
+
+                # Bold section header merged inline with its body (see
+                # _SECTION_PREFIX_RE). Split "Introduction Electrophoretic ..."
+                # into a "## Introduction" header and the body after it.
+                _pfx = _SECTION_PREFIX_RE.match(_t)
+                if _pfx:
+                    _rest = _t[_pfx.end():].strip()
+                    if _rest:
+                        all_output_lines.append(
+                            f"## {_add_bidi_markers(_pfx.group(1).strip())}")
+                        all_output_lines.append(_add_bidi_markers(_rest))
+                        if re.search(r'contact|correspond', _pfx.group(1), re.IGNORECASE):
+                            _page_contact_header = True
+                        continue
 
                 # Run-on block cramming multiple sections onto one line via
                 # inline ALL-CAPS labels ("...REFERENCES: ... ABBREVIATIONS: ...")
