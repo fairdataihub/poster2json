@@ -85,6 +85,25 @@ _SECTION_KEYWORDS = frozenset({
     "contact", "contact information",
 })
 
+# A section header printed in bold at the SAME font size as the body it
+# introduces (e.g. Times bold "Introduction" then Times regular body on one
+# line) is merged into its block: block-level bold is a majority vote and the
+# body wins, so the font heuristic never promotes it and the whole section
+# collapses into an unsplit blob. Match a known section keyword at the very
+# start of a block followed by a capitalized word -- the capital is the tell
+# that a new sentence/heading begins there, which keeps ordinary prose like
+# "Results show that ..." (lowercase continuation) from being split. Longest
+# keywords first so "materials and methods" wins over "materials".
+# Citation-list sections are excluded: a reference list legitimately begins
+# with a capitalized author surname ("References Smith J, ..."), so a following
+# capital is not a merged-header signal there and would split a real entry.
+_SECTION_PREFIX_KEYWORDS = _SECTION_KEYWORDS - {
+    "references", "reference", "bibliography"}
+_SECTION_PREFIX_RE = re.compile(
+    r"^(" + "|".join(re.escape(k) for k in
+                     sorted(_SECTION_PREFIX_KEYWORDS, key=len, reverse=True))
+    + r")\s+(?=[A-Z(])", re.IGNORECASE)
+
 # "Surname X1"-style author bylines ("Ivanyi P 1 , Bullement A 2 , ...")
 # tokenize as mostly single-char words once initials, superscript markers,
 # and separating commas come apart, so the scattered-chart-debris filter
@@ -1068,6 +1087,20 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
                     if re.search(r'contact|correspond', _t, re.IGNORECASE):
                         _page_contact_header = True
                     continue
+
+                # Bold section header merged inline with its body (see
+                # _SECTION_PREFIX_RE). Split "Introduction Electrophoretic ..."
+                # into a "## Introduction" header and the body after it.
+                _pfx = _SECTION_PREFIX_RE.match(_t)
+                if _pfx:
+                    _rest = _t[_pfx.end():].strip()
+                    if _rest:
+                        all_output_lines.append(
+                            f"## {_add_bidi_markers(_pfx.group(1).strip())}")
+                        all_output_lines.append(_add_bidi_markers(_rest))
+                        if re.search(r'contact|correspond', _pfx.group(1), re.IGNORECASE):
+                            _page_contact_header = True
+                        continue
 
                 # Run-on block cramming multiple sections onto one line via
                 # inline ALL-CAPS labels ("...REFERENCES: ... ABBREVIATIONS: ...")
