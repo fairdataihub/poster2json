@@ -140,8 +140,8 @@
     "id": "15963941",
     "vlm": {
       "w": 0.945,
-      "r_global": 0.945,
-      "r_field": 0.868,
+      "r_global": 0.955,
+      "r_field": 0.869,
       "fields": [
         [
           "title",
@@ -175,7 +175,7 @@
         ],
         [
           "S:REFERENCES",
-          0.92,
+          0.929,
           49
         ]
       ]
@@ -227,8 +227,8 @@
     "id": "16083265",
     "vlm": {
       "w": 0.905,
-      "r_global": 0.904,
-      "r_field": 0.627,
+      "r_global": 0.912,
+      "r_field": 0.637,
       "fields": [
         [
           "title",
@@ -237,7 +237,7 @@
         ],
         [
           "authors+affiliations",
-          0.854,
+          0.911,
           45
         ],
         [
@@ -257,17 +257,17 @@
         ],
         [
           "S:CONCLUSION",
-          0.68,
+          0.691,
           66
         ],
         [
           "S:References",
-          0.427,
+          0.435,
           36
         ],
         [
           "S:Acknowledgements",
-          0.282,
+          0.288,
           21
         ]
       ]
@@ -324,8 +324,8 @@
     "id": "17268692",
     "vlm": {
       "w": 1.0,
-      "r_global": 0.802,
-      "r_field": 0.922,
+      "r_global": 0.809,
+      "r_field": 0.927,
       "fields": [
         [
           "title",
@@ -369,7 +369,7 @@
         ],
         [
           "S:Join the Task Force!",
-          0.96,
+          1.0,
           12
         ]
       ]
@@ -432,7 +432,7 @@
     "vlm": {
       "w": 0.897,
       "r_global": 0.729,
-      "r_field": 0.756,
+      "r_field": 0.759,
       "fields": [
         [
           "title",
@@ -461,32 +461,32 @@
         ],
         [
           "S:Methodology",
-          0.73,
+          0.733,
           77
         ],
         [
           "S:Key Findings",
-          0.824,
+          0.83,
           56
         ],
         [
           "S:Figure 2. CarD-T Finds New Carcino",
-          0.366,
+          0.377,
           13
         ],
         [
           "S:Figure 3. Evidence Count Classific",
-          0.532,
+          0.545,
           21
         ],
         [
           "S:Figure 1. Probabilistic Carcinogen",
-          0.503,
+          0.506,
           45
         ],
         [
           "S:Figure 4. The Shifting Landscape: ",
-          0.316,
+          0.319,
           15
         ],
         [
@@ -578,8 +578,8 @@
     "id": "4446908",
     "vlm": {
       "w": 0.992,
-      "r_global": 0.767,
-      "r_field": 0.803,
+      "r_global": 0.77,
+      "r_field": 0.807,
       "fields": [
         [
           "title",
@@ -603,12 +603,12 @@
         ],
         [
           "S:Content Analysis \u2014 Press Release T",
-          0.806,
+          0.82,
           36
         ],
         [
           "S:Subjects",
-          0.99,
+          1.0,
           48
         ],
         [
@@ -633,7 +633,7 @@
         ],
         [
           "S:Acknowledgements",
-          0.763,
+          0.776,
           45
         ],
         [
@@ -715,8 +715,8 @@
     "id": "4448680",
     "vlm": {
       "w": 0.994,
-      "r_global": 0.91,
-      "r_field": 0.406,
+      "r_global": 0.921,
+      "r_field": 0.411,
       "fields": [
         [
           "title",
@@ -725,27 +725,27 @@
         ],
         [
           "S:Cells",
-          0.425,
+          0.433,
           90
         ],
         [
           "S:Interconnects",
-          0.269,
+          0.275,
           52
         ],
         [
           "S:Stacks",
-          0.31,
+          0.316,
           73
         ],
         [
           "S:Systems",
-          0.345,
+          0.352,
           77
         ],
         [
           "S:Contact",
-          0.086,
+          0.088,
           16
         ]
       ]
@@ -791,9 +791,9 @@
   {
     "id": "4519718",
     "vlm": {
-      "w": 0.98,
-      "r_global": 0.98,
-      "r_field": 0.95,
+      "w": 0.975,
+      "r_global": 0.979,
+      "r_field": 0.958,
       "fields": [
         [
           "title",
@@ -822,12 +822,12 @@
         ],
         [
           "S:RESULTS",
-          0.925,
+          0.913,
           187
         ],
         [
           "S:NEXT STEPS",
-          0.906,
+          0.896,
           163
         ],
         [
@@ -847,7 +847,7 @@
         ],
         [
           "S:CONTACT",
-          0.791,
+          0.895,
           17
         ]
       ]
@@ -919,8 +919,8 @@
     "id": "4552067",
     "vlm": {
       "w": 1.0,
-      "r_global": 0.94,
-      "r_field": 0.875,
+      "r_global": 0.944,
+      "r_field": 0.88,
       "fields": [
         [
           "title",
@@ -949,7 +949,7 @@
         ],
         [
           "S:DMP Assistant",
-          0.979,
+          0.989,
           47
         ],
         [
@@ -959,12 +959,12 @@
         ],
         [
           "S:Dataverse North",
-          0.952,
+          0.976,
           20
         ],
         [
           "S:Training and Guidance",
-          0.71,
+          0.715,
           79
         ]
       ]
@@ -1026,8 +1026,8 @@
     "id": "4560930",
     "vlm": {
       "w": 0.993,
-      "r_global": 0.706,
-      "r_field": 0.647,
+      "r_global": 0.709,
+      "r_field": 0.649,
       "fields": [
         [
           "title",
@@ -1036,7 +1036,7 @@
         ],
         [
           "authors+affiliations",
-          0.677,
+          0.679,
           161
         ],
         [
@@ -1046,27 +1046,27 @@
         ],
         [
           "S:M Dwarf Stellar Cycles - SURVEY",
-          0.799,
+          0.801,
           129
         ],
         [
           "S:M Dwarf Twin Binaries - TWINS",
-          0.678,
+          0.683,
           183
         ],
         [
           "S:The RECONS Program",
-          0.449,
+          0.45,
           61
         ],
         [
           "S:TWINS",
-          0.486,
+          0.49,
           130
         ],
         [
           "S:References",
-          0.124,
+          0.125,
           14
         ]
       ]
@@ -1123,8 +1123,8 @@
     "id": "4564017",
     "vlm": {
       "w": 0.97,
-      "r_global": 0.972,
-      "r_field": 0.901,
+      "r_global": 0.981,
+      "r_field": 0.906,
       "fields": [
         [
           "title",
@@ -1158,17 +1158,17 @@
         ],
         [
           "S:DEVELOPED CONVECTION",
-          0.943,
+          0.961,
           226
         ],
         [
           "S:FUTURE WORK",
-          0.783,
+          0.798,
           83
         ],
         [
           "S:References",
-          0.491,
+          0.503,
           42
         ]
       ]
@@ -1230,8 +1230,8 @@
     "id": "4607450",
     "vlm": {
       "w": 0.979,
-      "r_global": 0.93,
-      "r_field": 0.887,
+      "r_global": 0.933,
+      "r_field": 0.888,
       "fields": [
         [
           "title",
@@ -1265,7 +1265,7 @@
         ],
         [
           "S:Discussion",
-          0.891,
+          0.901,
           151
         ]
       ]
@@ -1320,8 +1320,8 @@
     "id": "5128504",
     "vlm": {
       "w": 0.975,
-      "r_global": 0.798,
-      "r_field": 0.895,
+      "r_global": 0.802,
+      "r_field": 0.896,
       "fields": [
         [
           "title",
@@ -1350,7 +1350,7 @@
         ],
         [
           "S:BPT Diagrams and Overlays",
-          0.638,
+          0.65,
           291
         ],
         [
@@ -1407,8 +1407,8 @@
     "id": "6724771",
     "vlm": {
       "w": 1.0,
-      "r_global": 0.994,
-      "r_field": 0.996,
+      "r_global": 0.998,
+      "r_field": 0.999,
       "fields": [
         [
           "title",
@@ -1417,7 +1417,7 @@
         ],
         [
           "authors+affiliations",
-          0.994,
+          1.0,
           232
         ],
         [
@@ -1427,7 +1427,7 @@
         ],
         [
           "S:RESULTS",
-          0.988,
+          0.994,
           249
         ],
         [
@@ -1474,8 +1474,8 @@
     "id": "8228476",
     "vlm": {
       "w": 0.823,
-      "r_global": 0.767,
-      "r_field": 0.697,
+      "r_global": 0.773,
+      "r_field": 0.7,
       "fields": [
         [
           "title",
@@ -1484,12 +1484,12 @@
         ],
         [
           "authors+affiliations",
-          0.273,
+          0.28,
           28
         ],
         [
           "S:Introduction",
-          0.726,
+          0.738,
           104
         ],
         [
@@ -1499,7 +1499,7 @@
         ],
         [
           "S:Inter Annotator Agreement",
-          0.725,
+          0.735,
           25
         ],
         [
@@ -1805,7 +1805,7 @@
     "id": "aysaekanger-Fairhurst_Supporting_Poster",
     "vlm": {
       "w": 0.992,
-      "r_global": 0.604,
+      "r_global": 0.605,
       "r_field": 0.718,
       "fields": [
         [
@@ -2009,8 +2009,8 @@
     "id": "gasimova(oos)",
     "vlm": {
       "w": 0.924,
-      "r_global": 0.842,
-      "r_field": 0.924,
+      "r_global": 0.85,
+      "r_field": 0.942,
       "fields": [
         [
           "title",
@@ -2029,7 +2029,7 @@
         ],
         [
           "S:Problem",
-          0.981,
+          1.0,
           79
         ],
         [
@@ -2054,7 +2054,7 @@
         ],
         [
           "S:Contact",
-          0.857,
+          1.0,
           30
         ]
       ]
