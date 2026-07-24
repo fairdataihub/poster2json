@@ -101,6 +101,11 @@ def main():
     ap.add_argument("--longest", type=int, default=1540,
                     help="longest edge in px, for BOTH the render and the "
                          "processor (they must agree or it resamples twice)")
+    ap.add_argument("--rope-rebuild", action="store_true",
+                    help="rebuild the vision RoPE table for --longest so the "
+                         "1540px vision ceiling lifts. Extrapolates the "
+                         "positional grid; no retraining. See calibration/vlm "
+                         "RoPE findings.")
     ap.add_argument("--max-new-tokens", type=int, default=6144)
     ap.add_argument("--only", default=None, help="run a single poster id")
     ap.add_argument("--tiles", type=int, default=1,
@@ -132,6 +137,19 @@ def main():
     processor = LightOnOcrProcessor.from_pretrained(
         MODEL, size={"longest_edge": args.longest})
     print(f"processor longest_edge={processor.image_processor.size}", flush=True)
+
+    if args.rope_rebuild and args.longest > 1540:
+        from transformers.models.pixtral.modeling_pixtral import PixtralRotaryEmbedding
+        enc = model.model.vision_encoder
+        c = enc.patch_positional_embedding.config
+        c.image_size = args.longest
+        dev = next(enc.parameters()).device
+        emb = PixtralRotaryEmbedding(c).to(dev)
+        emb.inv_freq = emb.inv_freq.to(dev)
+        emb.original_inv_freq = emb.original_inv_freq.to(dev)
+        enc.patch_positional_embedding = emb
+        print(f"rebuilt vision RoPE for image_size={args.longest} "
+              f"({args.longest // 14} patches/side)", flush=True)
     print(f"model loaded in {time.time() - t0:.1f}s", flush=True)
 
     runs = []
@@ -173,6 +191,7 @@ def main():
               flush=True)
 
     meta = {"model": MODEL, "longest": args.longest, "tiles": args.tiles,
+            "rope_rebuild": args.rope_rebuild,
             "max_new_tokens": args.max_new_tokens,
             "peak_vram_gb": round(torch.cuda.max_memory_allocated() / 1e9, 2),
             "runs": runs}

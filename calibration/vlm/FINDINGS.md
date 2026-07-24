@@ -61,6 +61,11 @@ merge, no marker parsing. It also returns wrapped titles in one piece.
 
 ## Resolution: the ceiling is architectural, and posters fall off it
 
+> UPDATE 2026-07-24: "architectural" was too strong. The 1540px ceiling
+> is SOFT -- the Pixtral vision RoPE table can be rebuilt for a larger
+> image_size with no retraining (run_lightonocr.py --rope-rebuild). It
+> helps the worst-starved posters but not for free. See RESOLUTION.md.
+
 **1540px is not a setting.** `PixtralVisionConfig.image_size = 1540`,
 `patch_size = 14`, so the vision tower's 2D RoPE table holds 110 patch
 positions per axis. Hand it a bigger image and it indexes off the end:

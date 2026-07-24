@@ -1,0 +1,250 @@
+{
+  "model": "lightonai/LightOnOCR-2-1B",
+  "longest": 2464,
+  "tiles": 1,
+  "rope_rebuild": true,
+  "max_new_tokens": 6144,
+  "peak_vram_gb": 5.1,
+  "runs": [
+    {
+      "id": "10890106",
+      "image": [
+        2464,
+        1690
+      ],
+      "tiles": 1,
+      "tokens": 6144,
+      "seconds": 191.6,
+      "chars": 17244,
+      "truncated": true
+    },
+    {
+      "id": "15963941",
+      "image": [
+        1725,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 997,
+      "seconds": 31.5,
+      "chars": 3300,
+      "truncated": false
+    },
+    {
+      "id": "16083265",
+      "image": [
+        1725,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1692,
+      "seconds": 60.6,
+      "chars": 5116,
+      "truncated": false
+    },
+    {
+      "id": "17268692",
+      "image": [
+        2464,
+        1807
+      ],
+      "tiles": 1,
+      "tokens": 1021,
+      "seconds": 30.4,
+      "chars": 4379,
+      "truncated": false
+    },
+    {
+      "id": "42",
+      "image": [
+        2464,
+        1848
+      ],
+      "tiles": 1,
+      "tokens": 1622,
+      "seconds": 50.6,
+      "chars": 6396,
+      "truncated": false
+    },
+    {
+      "id": "4446908",
+      "image": [
+        1743,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 2136,
+      "seconds": 56.4,
+      "chars": 8058,
+      "truncated": false
+    },
+    {
+      "id": "4448680",
+      "image": [
+        1755,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1741,
+      "seconds": 45.5,
+      "chars": 5826,
+      "truncated": false
+    },
+    {
+      "id": "4519718",
+      "image": [
+        2464,
+        1479
+      ],
+      "tiles": 1,
+      "tokens": 1181,
+      "seconds": 31.0,
+      "chars": 5552,
+      "truncated": false
+    },
+    {
+      "id": "4552067",
+      "image": [
+        2464,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 685,
+      "seconds": 19.2,
+      "chars": 3293,
+      "truncated": false
+    },
+    {
+      "id": "4560930",
+      "image": [
+        2464,
+        1387
+      ],
+      "tiles": 1,
+      "tokens": 1860,
+      "seconds": 47.8,
+      "chars": 6126,
+      "truncated": false
+    },
+    {
+      "id": "4564017",
+      "image": [
+        1743,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1262,
+      "seconds": 33.6,
+      "chars": 4626,
+      "truncated": false
+    },
+    {
+      "id": "4607450",
+      "image": [
+        1743,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1441,
+      "seconds": 37.7,
+      "chars": 5360,
+      "truncated": false
+    },
+    {
+      "id": "5128504",
+      "image": [
+        2464,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 6144,
+      "seconds": 158.0,
+      "chars": 16112,
+      "truncated": true
+    },
+    {
+      "id": "6724771",
+      "image": [
+        1849,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1415,
+      "seconds": 37.1,
+      "chars": 5047,
+      "truncated": false
+    },
+    {
+      "id": "8228476",
+      "image": [
+        1744,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 2250,
+      "seconds": 59.3,
+      "chars": 6251,
+      "truncated": false
+    },
+    {
+      "id": "8228568",
+      "image": [
+        1744,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1338,
+      "seconds": 38.5,
+      "chars": 5230,
+      "truncated": false
+    },
+    {
+      "id": "AISec2025-poster",
+      "image": [
+        1744,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 4300,
+      "seconds": 110.8,
+      "chars": 11216,
+      "truncated": false
+    },
+    {
+      "id": "aysaekanger-Fairhurst_Supporting_Poster",
+      "image": [
+        1743,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1123,
+      "seconds": 29.1,
+      "chars": 5476,
+      "truncated": false
+    },
+    {
+      "id": "isporeu2023ee359130949-pdf",
+      "image": [
+        1743,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 4101,
+      "seconds": 104.8,
+      "chars": 13197,
+      "truncated": false
+    },
+    {
+      "id": "gasimova(oos)",
+      "image": [
+        2464,
+        2464
+      ],
+      "tiles": 1,
+      "tokens": 1284,
+      "seconds": 34.6,
+      "chars": 5477,
+      "truncated": false
+    }
+  ]
+}
