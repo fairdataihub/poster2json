@@ -149,3 +149,29 @@ Worth trying next, in order:
   emitting HTML tables. Ours scores rField 0.849 there; the VLM 0.509.
 - **8228476** (RTL Hebrew) is worse under the VLM too (0.503 vs 0.692), so
   approach D is not solved by switching extractor.
+
+
+## Re-measured on table-free ground truth (2026-07-26)
+
+The manual annotations were cleaned to selectable text only: pipe and inline
+table rows and figure-data grids were removed from every `_raw.md` and
+sub-json section, while captions, prose, headings, bullets and contact/venue
+lines were kept (5 posters touched: 10890106, 16083265, 4737132, 8228476,
+8228568). This makes the ground truth consistent with the "no table data"
+principle both extractors are held to, so number-heavy tables no longer
+penalise an extractor that correctly omits them.
+
+Extraction stage, re-scored against the cleaned ground truth:
+
+| metric | pdfplumber + xy_cut | LightOnOCR raw | LightOnOCR scrubbed |
+|---|---|---|---|
+| `w` (word capture) | **0.977** | 0.948 | 0.962 |
+| `rGlobal` | **0.831** | 0.767 | 0.823 |
+| `rField` (length-normalized) | 0.764 | 0.769 | **0.795** |
+
+The scrubbed VLM keeps its extraction-stage `rField` lead and the gap widens
+slightly versus the pre-cleanup measurement (0.795 vs 0.764, was 0.788 vs
+0.762). pdfplumber holds at `rField` 0.764 and the affiliation corrector is
+unchanged (12/13 numbered posters PASS end-to-end, 20/21 overall), so cleaning
+the ground truth introduced no regression on any passing poster. Baseline
+snapshot: `baselines/after_gt_cleanup.json`.
