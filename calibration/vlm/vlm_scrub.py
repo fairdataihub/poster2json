@@ -116,19 +116,57 @@ def _strip_footer_logos(text: str) -> str:
 # -- which the model uses to reproduce a poster's column grid -- holds whole
 # prose paragraphs. Median cell length separates them.
 _DATA_CELL_MAXLEN = 45
+_BULLET = re.compile(r"[•▪◦‣·∙]|<br\b")
+_PROSE_CELL_MINLEN = 40
+
+
+def _cell_text(c):
+    return re.sub(r"<[^>]+>", "", _IMAGE.sub("", c)).strip()   # drop ![img] then tags
+
+
+def _is_prose_cell(raw):
+    """A table cell that is genuine free text (a quote, a finding), not a short
+    label, a number, or a bulleted grid column."""
+    breaks = len(_BULLET.findall(raw))            # count on RAW (bullets/<br> intact)
+    txt = _cell_text(raw)
+    if len(txt) < _PROSE_CELL_MINLEN:             # short label / numeric cell
+        return False
+    if breaks > 2:                                # bulleted grid column (the 4448680 noise)
+        return False
+    letters = sum(ch.isalpha() for ch in txt)
+    return bool(txt) and letters >= 0.5 * len(txt)  # not a pure-numeric grid
 
 
 def _table_repl(m):
-    """Drop a data table (short cells); keep a layout table's prose."""
+    """Layout table -> keep every cell's prose. Data table -> drop the grid but
+    RESCUE any long free-text cells (interview quotes, findings) that would
+    otherwise be lost with the table; a poster's Results sometimes live in an
+    Example column. Table CLASSIFICATION (median cell length) is unchanged, so
+    layout tables are handled byte-identically to before."""
     cells = _CELL.findall(m.group(1))
     if not cells:
         return ""
     lens = sorted(len(re.sub(r"<[^>]+>", "", c).strip()) for c in cells)
     median = lens[len(lens) // 2]
     if median <= _DATA_CELL_MAXLEN:
-        return ""                                   # data within an image
+        kept = [_cell_text(c) for c in cells if _is_prose_cell(c)]
+        return ("\n\n".join(kept) + "\n") if kept else ""
     # layout grid: keep the cell text as paragraphs, one per cell
     return "\n\n".join(re.sub(r"<[^>]+>", "", c).strip() for c in cells) + "\n"
+
+
+# Figure/chart scaffolding the VLM reads out of image regions: lone panel labels
+# ("A"/"B"/"C") and an orphaned code-fence language token emitted without its
+# backticks ("plaintext"). These survive as their own lines, match no caption,
+# and drag per-field ROUGE-L precision down. (The bare-number-run variant was
+# rejected in review — it deletes real F1 result values on 8228476.)
+_SCAFFOLD_LABEL = re.compile(
+    r"^(?:[A-Za-z][.)]?|plaintext|html|python|json|text|markdown|yaml|css|bash|sql)$")
+
+
+def _strip_scaffold(text: str) -> str:
+    return "\n".join(ln for ln in text.splitlines()
+                     if not (ln.strip() and _SCAFFOLD_LABEL.match(ln.strip())))
 
 
 def scrub(text: str) -> str:
@@ -142,6 +180,7 @@ def scrub(text: str) -> str:
     text = _normalize_chars(text)          # one canonical char per variant family
     text = _TRAIL_WS.sub("\n", text)
     text = _BLANKS.sub("\n\n", text)
+    text = _strip_scaffold(text)           # drop lone panel labels / orphan fence tokens
     text = _strip_footer_logos(text.strip())   # peel sponsor/logo lines off foot
     return text.strip()
 
