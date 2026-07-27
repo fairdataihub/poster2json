@@ -47,6 +47,18 @@ MAX_JSON_TOKENS = 18000
 MAX_RETRY_TOKENS = 24000
 MAX_INPUT_TOKENS = 15000
 
+# Runaway-loop guard. Some posters send the stock 8B into a repetition loop
+# (re-emitting the creators array) that never closes the JSON and grinds to the
+# token cap. The primary pass stays byte-identical (penalty 1.0); a runaway is
+# detected by the primary generation hitting the token cap without ever emitting
+# EOS, which triggers the retry. The retry/fallback passes apply a gentle
+# repetition penalty that breaks the loop while leaving the verbatim transcript
+# intact -- 1.15 was tuned empirically: 1.3 overshoots and corrupts author names
+# ("Genta" -> "Gentaa") and concatenates words, while 1.15 recovers a clean,
+# fully-sectioned extraction. A healthy poster emits EOS on the primary pass and
+# never reaches the retry, so its output is unchanged.
+RETRY_REPETITION_PENALTY = 1.15
+
 # Schema URL
 SCHEMA_URL = "https://posters.science/schema/v0.2/poster_schema.json"
 
@@ -1511,36 +1523,56 @@ class _JsonBraceProcessor(LogitsProcessor):
         return scores
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
-    """Generate response using the Llama model."""
+def _generate(
+    model, tokenizer, prompt: str, max_tokens: int, repetition_penalty: float = 1.0
+):
+    """Generate response using the Llama model.
+
+    repetition_penalty defaults to 1.0 (a no-op: identical to plain greedy) so
+    the primary pass is unchanged. The retry/fallback passes raise it to break
+    runaway repetition loops on posters whose primary pass never closed the JSON.
+
+    Returns (text, hit_eos). hit_eos is False when generation ran to the token
+    cap without emitting an EOS token -- the signature of a runaway that never
+    closed the JSON -- which the retry ladder uses to decide whether to retry.
+    """
     messages = [{"role": "user", "content": prompt}]
     input_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
     input_length = inputs["input_ids"].shape[1]
 
-    log(f"Generating with max_tokens={max_tokens}, input_length={input_length}")
+    log(
+        f"Generating with max_tokens={max_tokens}, input_length={input_length}, "
+        f"repetition_penalty={repetition_penalty}"
+    )
 
     eos_ids = _get_eos_token_ids(tokenizer)
     processor = _JsonBraceProcessor(eos_ids, tokenizer, input_length)
 
-    streamer = ProgressStreamer(tokenizer, log_every=200)
+    gen_kwargs = dict(
+        max_new_tokens=max_tokens,
+        do_sample=False,
+        pad_token_id=tokenizer.eos_token_id,
+        streamer=ProgressStreamer(tokenizer, log_every=200),
+        logits_processor=LogitsProcessorList([processor]),
+    )
+    # Only pass the kwarg when it changes behaviour, so the primary pass stays
+    # byte-identical to the pre-fix output.
+    if repetition_penalty and repetition_penalty != 1.0:
+        gen_kwargs["repetition_penalty"] = repetition_penalty
+
     t0 = time.time()
     with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_tokens,
-            do_sample=False,
-            pad_token_id=tokenizer.eos_token_id,
-            streamer=streamer,
-            logits_processor=LogitsProcessorList([processor]),
-        )
+        outputs = model.generate(**inputs, **gen_kwargs)
     elapsed = time.time() - t0
     tokens_generated = outputs.shape[1] - input_length
+    hit_eos = outputs[0][-1].item() in eos_ids
     log(
-        f"   Generated {tokens_generated} tokens in {elapsed:.2f}s ({tokens_generated/elapsed:.1f} tok/s)"
+        f"   Generated {tokens_generated} tokens in {elapsed:.2f}s "
+        f"({tokens_generated/elapsed:.1f} tok/s), hit_eos={hit_eos}"
     )
 
-    return tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+    return tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True), hit_eos
 
 
 # ============================
@@ -3137,24 +3169,35 @@ def extract_json_with_retry(
     prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
 
     log("Starting primary JSON extraction with full prompt")
-    response = _generate(model, tokenizer, prompt, MAX_JSON_TOKENS)
+    response, hit_eos = _generate(model, tokenizer, prompt, MAX_JSON_TOKENS)
     result = _as_result_dict(_robust_json_parse(response))
     if "error" in result:
         log(f"Primary JSON parse error: {result['error']}")
     else:
         log("Primary JSON parse succeeded")
 
-    # Retry with more tokens if truncation detected
-    if "error" in result or _is_truncated(result.get("raw", "")):
+    # Retry if the primary pass failed to parse, looks truncated, or ran to the
+    # token cap without emitting EOS (a runaway loop). The last condition is
+    # essential: the robust parser can salvage a truncated runaway into a
+    # parseable-but-gutted object (e.g. a single section), which has no "error"
+    # key and would otherwise skip the retry that actually fixes it. Apply the
+    # repetition penalty on the retry (not the primary pass) to break the loop.
+    if "error" in result or not hit_eos or _is_truncated(result.get("raw", "")):
         log(f"Retrying with max_tokens={MAX_RETRY_TOKENS}")
-        response = _generate(model, tokenizer, prompt, MAX_RETRY_TOKENS)
+        response, hit_eos = _generate(
+            model, tokenizer, prompt, MAX_RETRY_TOKENS,
+            repetition_penalty=RETRY_REPETITION_PENALTY,
+        )
         result = _as_result_dict(_robust_json_parse(response))
 
     # Fallback to shorter prompt
-    if "error" in result or _is_truncated(result.get("raw", "")):
+    if "error" in result or not hit_eos or _is_truncated(result.get("raw", "")):
         log("Using fallback shorter prompt")
         fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
-        response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
+        response, hit_eos = _generate(
+            model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS,
+            repetition_penalty=RETRY_REPETITION_PENALTY,
+        )
         result = _as_result_dict(_robust_json_parse(response))
 
     result = _postprocess_json(

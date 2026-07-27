@@ -12,10 +12,11 @@ All settings live in `poster2json/extract.py`. Code anchors are given per settin
 
 | Setting | Value | Where |
 |---------|-------|-------|
-| Decoding | greedy (`do_sample=False`) | `_generate()`, line 1357 |
+| Decoding | greedy (`do_sample=False`) | `_generate()` |
 | Sampling params | none (no `temperature` / `top_p` / `top_k` / `num_beams`) | `_generate()` |
 | Primary output budget | `MAX_JSON_TOKENS = 18000` | line 46 |
 | Retry/fallback budget | `MAX_RETRY_TOKENS = 24000` | line 47 |
+| Retry repetition penalty | `RETRY_REPETITION_PENALTY = 1.15` (retry/fallback only) | line 50 |
 | Input gate | `MAX_INPUT_TOKENS = 15000` | line 48 |
 | EOS handling | `_JsonBraceProcessor` (custom `LogitsProcessor`) | line 1282 |
 | Default quantization | 4-bit NF4 (`bnb_4bit_compute_dtype=bfloat16`, double-quant) | `load_json_model()`, line 1227 |
@@ -62,13 +63,17 @@ The model's native context is 128K, so 15k-in + 24k-out sits comfortably inside 
 
 ### Retry ladder
 
-`extract_json_with_retry()` (line 2251) escalates only when the parse fails or the output looks truncated:
+`extract_json_with_retry()` escalates when the parse fails, the output looks truncated, **or the pass ran to the token cap without emitting EOS** (`hit_eos == False`):
 
-1. **Primary** — full `EXTRACTION_PROMPT` @ `MAX_JSON_TOKENS` (18k).
-2. **Retry** — same full prompt @ `MAX_RETRY_TOKENS` (24k), if step 1 errored or truncated.
-3. **Fallback** — shorter `FALLBACK_PROMPT` @ `MAX_RETRY_TOKENS` (24k), if step 2 still errored or truncated.
+1. **Primary** — full `EXTRACTION_PROMPT` @ `MAX_JSON_TOKENS` (18k), plain greedy (no penalty).
+2. **Retry** — same full prompt @ `MAX_RETRY_TOKENS` (24k) with `repetition_penalty = RETRY_REPETITION_PENALTY`, if step 1 errored, was truncated, or hit the cap without EOS.
+3. **Fallback** — shorter `FALLBACK_PROMPT` @ `MAX_RETRY_TOKENS` (24k), same penalty, if step 2 still failed those checks.
 
 Each step is followed by `_robust_json_parse()` (hand-rolled repair passes, then the `json-repair` library as a last resort). The ladder is cheap in the common case — most posters succeed on step 1 and never pay for the retries.
+
+**The `hit_eos` trigger.** `_generate()` returns `(text, hit_eos)`; `hit_eos` is False when generation reached `max_new_tokens` without the brace processor ever letting an EOS through — the signature of a runaway that never closed the JSON. This condition is required in addition to the parse-error check because `_robust_json_parse()` is strong enough to salvage a truncated runaway into a *parseable but gutted* object (e.g. a single section), which carries no `"error"` key and would otherwise skip the retry that actually repairs it.
+
+**Why a repetition penalty only on retry.** A few posters drive the stock 8B into a repetition loop — it re-emits the `creators` array indefinitely and never closes the top-level object, grinding to the 18k cap and yielding `[ERR]`. A gentle `repetition_penalty` breaks the loop. It is applied **only on the retry/fallback passes**: healthy posters emit EOS on the primary pass and never reach the retry, so their output stays byte-identical to plain greedy. The value **1.15** was tuned empirically — 1.3 overshoots, corrupting the verbatim transcript the task depends on (`Genta -> Gentaa`, `drug polymer interactions -> drugpolymerinteractions`), while 1.15 breaks the loop and recovers a clean, fully-sectioned extraction. On the poster that motivated this (16083265), it moved the end-to-end result from `[ERR]` (0 sections) to a passing extraction (16/16 sections, rougeL 0.86).
 
 ## Quantization
 
@@ -96,7 +101,7 @@ Flash Attention 2 is used automatically when `flash_attn` is importable; otherwi
 ## What we deliberately did *not* do
 
 - **No fine-tuning.** See note at top — stock instruct weights.
-- **No sampling.** Greedy only; reproducibility beats diversity for this task.
+- **No sampling.** Greedy only (`do_sample=False`); reproducibility beats diversity for this task. Generation stays deterministic even on the retry: `repetition_penalty` reshapes the greedy logits but adds no randomness, so the same poster still yields byte-identical JSON every run.
 - **No `min_new_tokens` for completeness.** It only guards one EOS token; the brace processor is the correct mechanism.
 - **No silent input truncation.** Over-long posters error out instead of being cut.
 
