@@ -3190,14 +3190,16 @@ def extract_json_with_retry(
         )
         result = _as_result_dict(_robust_json_parse(response))
 
-    # Fallback to shorter prompt
+    # Fallback to a shorter prompt. This last-resort pass stays penalty-free
+    # (plain greedy): the repetition penalty is a lossy transform justified only
+    # where it converts a failure into a success, which it does on the retry
+    # above. On the fallback no poster is rescued by it, and it measurably
+    # degrades already-failing output (e.g. the RTL poster 8228476), so it is
+    # not applied here.
     if "error" in result or not hit_eos or _is_truncated(result.get("raw", "")):
         log("Using fallback shorter prompt")
         fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
-        response, hit_eos = _generate(
-            model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS,
-            repetition_penalty=RETRY_REPETITION_PENALTY,
-        )
+        response, hit_eos = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
         result = _as_result_dict(_robust_json_parse(response))
 
     result = _postprocess_json(
