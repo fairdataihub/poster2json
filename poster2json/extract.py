@@ -2745,6 +2745,31 @@ def _postprocess_json(
                 and not _is_placeholder(cap.get("caption", ""))
             ]
 
+    # Drop redundant captions: a caption whose body (after a leading
+    # "Figure/Table N:" prefix) equals a section title, or that is duplicated
+    # across the image/table lists, carries no content the structure does not
+    # already hold. When the source has no real figures these are heading/label
+    # hallucinations that only inflate output; a poster with genuine distinct
+    # captions has none and is untouched. General: keyed on structural
+    # redundancy, never on a poster id or literal string.
+    _sec_titles = {
+        _norm_head(s.get("sectionTitle", ""))
+        for s in ((result.get("content", {}) or {}).get("sections", []) or [])
+        if isinstance(s, dict)
+    }
+    _sec_titles.discard("")
+    _seen_caps = set()
+    for key in ("imageCaptions", "tableCaptions"):
+        _kept = []
+        for cap in result.get(key, []) or []:
+            _b = _norm_head(_caption_body(cap))
+            if _b and (_b in _sec_titles or _b in _seen_caps):
+                continue
+            if _b:
+                _seen_caps.add(_b)
+            _kept.append(cap)
+        result[key] = _kept
+
     # Clean Unicode from string fields
     for key in ["researchField"]:
         if key in result and isinstance(result[key], str):
@@ -3068,6 +3093,10 @@ def _postprocess_json(
             result["creators"], get_orcid_client(),
         )
 
+    # Recover dropped trailing metadata sections (References/Contact/etc.) as
+    # titled sections, anchored on the OCR markdown headings.
+    result = _recover_tail_sections(result, raw_text)
+
     # Drop lone UTF-16 surrogates the model can emit (half of an emoji); they
     # cannot be UTF-8 encoded and would break json.dump(ensure_ascii=False).
     result = _strip_surrogates(result)
@@ -3152,6 +3181,49 @@ _MD_HEADER_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
 
 def _norm_head(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(s).lower())
+
+
+_CAPTION_PREFIX_RE = re.compile(r"^\s*(?:figure|fig|table|tbl)\.?\s*\d+\s*[:.\-]\s*", re.I)
+_META_HEAD_RE = re.compile(r"^(references?|contact|acknowledg\w*|funding)\b", re.I)
+_H2_LINE_RE = re.compile(r"^\s{0,3}#{2,3}\s+(.+?)\s*#*\s*$")
+
+
+def _caption_body(c) -> str:
+    txt = c.get("caption", "") if isinstance(c, dict) else str(c)
+    return _CAPTION_PREFIX_RE.sub("", txt).strip()
+
+
+def _recover_tail_sections(result: dict, raw_text: str) -> dict:
+    """Recover trailing metadata sections (References / Contact / Acknowledgements
+    / Funding) present as markdown headings in the OCR text but dropped by the
+    LLM. Anchored on '##' structure + a generic metadata allowlist, a min body
+    length, and title/URL exclusion -- no poster id or literal strings."""
+    if not raw_text:
+        return result
+    lines = raw_text.splitlines()
+    heads = [(i, m.group(1).strip())
+             for i, ln in enumerate(lines) for m in [_H2_LINE_RE.match(ln)] if m]
+    content = result.setdefault("content", {})
+    secs = content.setdefault("sections", [])
+    have = _norm_head(" ".join(
+        str(s.get("sectionTitle", "")) + " " + str(s.get("sectionContent", ""))
+        for s in secs if isinstance(s, dict)))
+    title_norm = _norm_head(content.get("posterTitle") or "") or _norm_head(
+        " ".join(t.get("title", "") for t in result.get("titles", []) if isinstance(t, dict)))
+    for j, (idx, title) in enumerate(heads):
+        if not _META_HEAD_RE.match(title):
+            continue
+        end = heads[j + 1][0] if j + 1 < len(heads) else len(lines)
+        body = "\n".join(lines[idx + 1:end]).strip()
+        if len(body) < 40:
+            continue
+        if title_norm and _norm_head(title) in title_norm:
+            continue
+        bn = _norm_head(body)
+        if bn and bn[:60] in have:
+            continue
+        secs.append({"sectionTitle": title, "sectionContent": body})
+    return result
 
 
 def _input_header_keys(raw_text: str) -> set:
