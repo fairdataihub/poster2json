@@ -169,9 +169,50 @@ def _strip_scaffold(text: str) -> str:
                      if not (ln.strip() and _SCAFFOLD_LABEL.match(ln.strip())))
 
 
+def _collapse_loops(text: str, k: int = 5) -> str:
+    """Collapse a VLM decode runaway -- a short token or line repeated many
+    times in a row -- to a single instance. LightOnOCR (greedy, no repetition
+    penalty) occasionally loops on fine print (e.g. one poster's cache is 63%
+    'KBA;' repeated ~4000x), and the raw markdown otherwise flows straight to
+    the structuring LLM and drowns the real content. Only a run of >k identical
+    short tokens/lines is collapsed, so normal prose (which never repeats the
+    same short token 6+ times consecutively) is untouched. O(n), no regex
+    backtracking, so it is safe on a 30k-char runaway."""
+    if not text:
+        return text
+    # 1) runs of identical (stripped) lines -> keep one
+    lines = text.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        j = i
+        while j < len(lines) and lines[j].strip() == lines[i].strip():
+            j += 1
+        if lines[i].strip() and (j - i) > k:
+            out.append(lines[i])
+        else:
+            out.extend(lines[i:j])
+        i = j
+    # 2) runs of an identical short token within a line -> keep one
+    collapsed = []
+    for ln in out:
+        toks, res, i = ln.split(" "), [], 0
+        while i < len(toks):
+            j = i
+            while j < len(toks) and toks[j] == toks[i]:
+                j += 1
+            if toks[i] and len(toks[i]) <= 20 and (j - i) > k:
+                res.append(toks[i])
+            else:
+                res.extend(toks[i:j])
+            i = j
+        collapsed.append(" ".join(res))
+    return "\n".join(collapsed)
+
+
 def scrub(text: str) -> str:
     if not text:
         return text
+    text = _collapse_loops(text)           # collapse VLM decode runaways first
     text = _FENCE_MARKER.sub("", text)     # drop ``` markers, keep caption prose
     text = _TABLE.sub(_table_repl, text)   # drop data tables, keep layout prose
     text = _IMAGE.sub("", text)            # drop image placeholders

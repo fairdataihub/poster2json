@@ -1588,7 +1588,7 @@ CRITICAL RULES:
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
 5. Copy ALL poster text EXACTLY into sections - do not paraphrase, summarize, or skip any text. Every line of the poster text below must appear in your output.
 6. "Key Findings" ≠ "References": Key Findings = discoveries/results; References = numbered citations with authors/years
-7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent.
+7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent. A caption is the poster's own "Figure N: ..." / "Table N: ..." descriptive line. If a figure has BOTH a "Figure N:" caption line AND a generated image-description in Markdown image syntax "![description](...)", put the "Figure N:" CAPTION LINE in imageCaptions and DISCARD the "![...]" description text; never write the "![...]" alt-text into imageCaptions or a section. This only affects which text becomes a caption; it does not change how sections are split.
 8. Text without a clear header (e.g. contact info, URLs, footer text) is still a section — use "sectionTitle": "" with the verbatim text as "sectionContent". Do NOT skip any poster text.
 
 JSON SCHEMA (all top-level fields are REQUIRED):
@@ -3271,7 +3271,7 @@ def extract_json_with_retry(
         # penalty on the retry (not the primary) so healthy posters are
         # untouched.
         log(f"Retrying with max_tokens={MAX_RETRY_TOKENS}")
-        r_retry, _ = _generate(
+        r_retry, retry_eos = _generate(
             model, tokenizer, prompt, MAX_RETRY_TOKENS,
             repetition_penalty=RETRY_REPETITION_PENALTY,
         )
@@ -3281,13 +3281,17 @@ def extract_json_with_retry(
 
         # A short penalty retry can summarize away a real tail (References /
         # Acknowledgements / contact) that IS present in the source, closing
-        # cleanly yet dropping content. Unless the retry already covers every
-        # input header, also run the penalty-free shorter fallback and keep
-        # whichever candidate retains the most source headers -- a candidate
-        # that dropped a header cannot beat one that kept it.
+        # cleanly yet dropping content -- so also run the penalty-free shorter
+        # fallback and keep whichever candidate retains the most source headers
+        # (a candidate that dropped a header cannot beat one that kept it).
+        # But only spend that fallback generation when it could plausibly win:
+        # the retry itself ran away (unclean) OR it dropped 2+ source headers.
+        # A clean retry already covering all-but-one header is kept as-is -- the
+        # fallback could add at most one header and usually just burns a doomed
+        # generation (measured: +15-20 min on already-recovered runaways).
         n_heads = len(input_keys)
-        retry_full = n_heads and _header_coverage(res_retry, input_keys) >= n_heads
-        if not retry_full:
+        retry_cov = _header_coverage(res_retry, input_keys)
+        if n_heads and (not retry_eos or retry_cov < n_heads - 1):
             log("Using fallback shorter prompt (best-of candidate)")
             fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
             r_fb, _ = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
