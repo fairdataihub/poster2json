@@ -3139,6 +3139,90 @@ def _as_result_dict(result):
     return {"error": f"model returned non-object JSON ({type(result).__name__})", "raw": str(result)[:500]}
 
 
+# --- runaway best-of candidate selection ------------------------------------
+# On a runaway, the first-that-parses ladder can settle on a candidate that
+# dropped whole sections present in the source (e.g. a short penalty retry that
+# summarized away the References/Acknowledgements tail). Instead we gather the
+# candidates and keep the one that covers the most section headers actually
+# present in the input markdown, so a candidate that retains a header cannot
+# lose to one that dropped it. Only runs on the runaway/failed path; a healthy
+# primary pass is returned untouched (byte-identical).
+_MD_HEADER_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
+
+
+def _norm_head(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(s).lower())
+
+
+def _input_header_keys(raw_text: str) -> set:
+    """Normalized header texts appearing as markdown headings in the input."""
+    keys = set()
+    for m in _MD_HEADER_RE.finditer(raw_text or ""):
+        k = _norm_head(m.group(1))
+        if len(k) >= 3:
+            keys.add(k)
+    return keys
+
+
+def _candidate_title_keys(result: dict) -> list:
+    """Normalized 'title-ish' strings a candidate emitted: section titles plus
+    figure/table caption entries (which carry Figure N / Table N headers).
+    Tolerates the model's pre-migration field names (posterContent, imageCaption,
+    tableCaption) since candidate selection runs before schema migration."""
+    keys = []
+    if not isinstance(result, dict):
+        return keys
+    content = result.get("content")
+    if not isinstance(content, dict):
+        content = result.get("posterContent")
+    if isinstance(content, dict):
+        for s in content.get("sections", []) or []:
+            k = _norm_head(s.get("sectionTitle", "") if isinstance(s, dict) else "")
+            if len(k) >= 3:
+                keys.append(k)
+    for cap_field in ("imageCaptions", "imageCaption", "tableCaptions", "tableCaption"):
+        caps = result.get(cap_field, []) or []
+        if isinstance(caps, str):
+            caps = [caps]
+        for c in caps:
+            k = _norm_head(c)
+            if len(k) >= 3:
+                keys.append(k)
+    return keys
+
+
+def _header_coverage(result: dict, input_keys: set) -> int:
+    """How many input headers this candidate retains. -1 for an invalid/errored
+    candidate so it never wins over any candidate that actually parsed."""
+    if not isinstance(result, dict) or "error" in result:
+        return -1
+    titles = _candidate_title_keys(result)
+    covered = 0
+    for h in input_keys:
+        if any(h in t or t in h for t in titles):
+            covered += 1
+    return covered
+
+
+def _select_runaway_candidate(candidates, input_keys):
+    """Pick the candidate covering the most input headers. Ties prefer the
+    cleaner passes (retry, then fallback, then the runaway primary salvage).
+    `candidates` is an ordered list of (label, result); label preference is
+    encoded by its index in `_CANDIDATE_PREF`."""
+    pref = {"retry": 0, "fallback": 1, "primary": 2}
+    best = None
+    best_key = None
+    for label, res in candidates:
+        cov = _header_coverage(res, input_keys)
+        # sort key: more coverage first, then preferred label, valid over error
+        key = (cov, -pref.get(label, 9))
+        if best is None or key > best_key:
+            best, best_key, best_label = res, key, label
+    log(f"   best-of runaway: chose '{best_label}' "
+        f"(coverage {best_key[0]}/{len(input_keys)} headers)")
+    return best
+
+
 def extract_json_with_retry(
     raw_text: str, model, tokenizer, extract_identifiers: bool = False
 ) -> dict:
@@ -3180,27 +3264,45 @@ def extract_json_with_retry(
     # token cap without emitting EOS (a runaway loop). The last condition is
     # essential: the robust parser can salvage a truncated runaway into a
     # parseable-but-gutted object (e.g. a single section), which has no "error"
-    # key and would otherwise skip the retry that actually fixes it. Apply the
-    # repetition penalty on the retry (not the primary pass) to break the loop.
+    # key and would otherwise skip the retry that actually fixes it.
     if "error" in result or not hit_eos or _is_truncated(result.get("raw", "")):
+        input_keys = _input_header_keys(raw_text)
+        # Candidate 1: the penalty-1.15 retry (breaks the loop). Apply the
+        # penalty on the retry (not the primary) so healthy posters are
+        # untouched.
         log(f"Retrying with max_tokens={MAX_RETRY_TOKENS}")
-        response, hit_eos = _generate(
+        r_retry, _ = _generate(
             model, tokenizer, prompt, MAX_RETRY_TOKENS,
             repetition_penalty=RETRY_REPETITION_PENALTY,
         )
-        result = _as_result_dict(_robust_json_parse(response))
+        res_retry = _as_result_dict(_robust_json_parse(r_retry))
 
-    # Fallback to a shorter prompt. This last-resort pass stays penalty-free
-    # (plain greedy): the repetition penalty is a lossy transform justified only
-    # where it converts a failure into a success, which it does on the retry
-    # above. On the fallback no poster is rescued by it, and it measurably
-    # degrades already-failing output (e.g. the RTL poster 8228476), so it is
-    # not applied here.
-    if "error" in result or not hit_eos or _is_truncated(result.get("raw", "")):
-        log("Using fallback shorter prompt")
-        fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
-        response, hit_eos = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
-        result = _as_result_dict(_robust_json_parse(response))
+        candidates = [("primary", result), ("retry", res_retry)]
+
+        # A short penalty retry can summarize away a real tail (References /
+        # Acknowledgements / contact) that IS present in the source, closing
+        # cleanly yet dropping content. Unless the retry already covers every
+        # input header, also run the penalty-free shorter fallback and keep
+        # whichever candidate retains the most source headers -- a candidate
+        # that dropped a header cannot beat one that kept it.
+        n_heads = len(input_keys)
+        retry_full = n_heads and _header_coverage(res_retry, input_keys) >= n_heads
+        if not retry_full:
+            log("Using fallback shorter prompt (best-of candidate)")
+            fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
+            r_fb, _ = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
+            res_fb = _as_result_dict(_robust_json_parse(r_fb))
+            candidates.append(("fallback", res_fb))
+
+        if n_heads:
+            result = _select_runaway_candidate(candidates, input_keys)
+        else:
+            # No headers to score against: keep the first candidate that parsed,
+            # preferring retry then fallback (original ladder behaviour).
+            for _lbl, _res in candidates[1:] + candidates[:1]:
+                if isinstance(_res, dict) and "error" not in _res:
+                    result = _res
+                    break
 
     result = _postprocess_json(
         result, raw_text=raw_text, extract_identifiers=extract_identifiers
