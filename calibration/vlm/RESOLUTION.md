@@ -98,3 +98,33 @@ better than xy_cut). The resolution ceiling is liftable and helps the worst
 posters, but not for free, so the next experiment is adaptive resolution + token
 budget, not a bigger fixed render. Settings and model-shopping are dead ends:
 the config is already optimal and there is nothing newer to buy.
+
+## 5. End-to-end test of adaptive 2464 (2026-07-28): mechanically sound, no pass gains
+
+Ran the adaptive-resolution follow-up end-to-end on the three failing starved
+posters the extraction-stage data most favored: 42, aysaekanger, isporeu,
+regenerated at `--longest 2464 --rope-rebuild --max-new-tokens 8192`, then scored
+through the full pipeline (scrub + best-of 8B).
+
+Result: it flips NONE of them to a pass.
+
+    poster        1540 (w/r/n/f)          2464 (w/r/n/f)          verdict
+    42            0.73/0.71/0.80/0.74 ❌   0.83/0.74/0.94/0.71 ❌   +extraction, 0.01 short on rougeL
+    aysaekanger   0.81/0.60/1.00/1.53 ❌   0.87/0.58/0.83/0.89 ❌   f fixed, rougeL -0.02
+    isporeu       0.62/0.67/0.33/0.78 ❌   0.53/0.66/0.43/0.73 ❌   word regressed, rougeL -0.01
+
+Two real findings, neither a win:
+- 2464 ELIMINATES the isporeu runaway: at 1540 it loops to the 16384 token cap
+  (KBA x4109); at 2464 it reads the dense cost-effectiveness table cleanly in
+  4161 tokens, KBA x0. Resolution, not decoding, is what tames that loop -- but
+  the 8B then structures the richer text into FEWER matched sections (word
+  0.62 -> 0.53), so end-to-end it does not improve.
+- 42's extraction rField (0.76 -> 0.99 at 2464) does lift its end-to-end rougeL
+  0.71 -> 0.74, but the 8B stage caps it 0.01 below the 0.75 pass line. 42's
+  bottleneck is the 8B structuring, not OCR resolution.
+
+Decision: NOT adopted. The per-poster gate kept nothing (no poster both improves
+rougeL AND changes outcome enough to justify a mixed-resolution corpus). The
+shipped caches stay at 1540. Resolution is a real mechanical lever (RoPE rebuild
+works) but is not the end-to-end lever for this corpus -- the remaining failures
+are 8B-structuring and GT-annotation-boundary issues, not OCR starvation.
