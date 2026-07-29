@@ -1588,7 +1588,7 @@ CRITICAL RULES:
 4. Each section must have its OWN "sectionTitle" and "sectionContent"
 5. Copy ALL poster text EXACTLY into sections - do not paraphrase, summarize, or skip any text. Every line of the poster text below must appear in your output.
 6. "Key Findings" ≠ "References": Key Findings = discoveries/results; References = numbered citations with authors/years
-7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent. A caption is the poster's own "Figure N: ..." / "Table N: ..." descriptive line. If a figure has BOTH a "Figure N:" caption line AND a generated image-description in Markdown image syntax "![description](...)", put the "Figure N:" CAPTION LINE in imageCaptions and DISCARD the "![...]" description text; never write the "![...]" alt-text into imageCaptions or a section. This only affects which text becomes a caption; it does not change how sections are split.
+7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent. A caption is the poster's own text describing a figure or table: a "Figure N: ..." / "Table N: ..." line, OR an unlabeled paragraph that describes the plotted elements of an adjacent figure (its points, lines, bars, colors, panels, axes) — treat that paragraph as the figure's caption even without a "Figure N" label. Never emit a bare label with no caption text (a lone "Figure 3:" entry) — omit it instead. If a figure has BOTH a caption line AND a generated image-description in Markdown image syntax "![description](...)", put the CAPTION LINE in imageCaptions and DISCARD the "![...]" description text; never write the "![...]" alt-text into imageCaptions or a section. This only affects which text becomes a caption; it does not change how sections are split.
 8. Text without a clear header (e.g. contact info, URLs, footer text) is still a section — use "sectionTitle": "" with the verbatim text as "sectionContent". Do NOT skip any poster text.
 
 JSON SCHEMA (all top-level fields are REQUIRED):
@@ -1614,7 +1614,7 @@ JSON SCHEMA (all top-level fields are REQUIRED):
 EXTRACTION NOTES:
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Write a 3-4 sentence summary of the full poster.
-- titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
+- titles: Copy the poster's OWN title verbatim from the text — never compose, paraphrase, or summarize a title. If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
 - researchField: MUST be exactly one of: "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences" — or null if unclear.
 - GROUNDING: Only extract values that appear as text on the poster — do not invent metadata. For section content, copy ALL text verbatim — do not skip or shorten.
 
@@ -3102,9 +3102,20 @@ def _postprocess_json(
     # model flattened into one body.
     result = _subsplit_sections(result)
 
+    # A composed (non-verbatim) title is replaced by the document banner.
+    result = _prefer_verbatim_title(result, raw_text)
+
+    # Enforce the caption rule: alt-text captions become their adjacent
+    # figure/table heading line (or are dropped).
+    result = _enforce_no_alt_captions(result, raw_text)
+
     # Recover dropped trailing metadata sections (References/Contact/etc.) as
     # titled sections, anchored on the OCR markdown headings.
     result = _recover_tail_sections(result, raw_text)
+
+    # Re-append verbatim source lines whose numbers/content the structured
+    # output dropped (untitled sections; existing sections never modified).
+    result = _recover_missing_content(result, [raw_text])
 
     # Drop lone UTF-16 surrogates the model can emit (half of an emoji); they
     # cannot be UTF-8 encoded and would break json.dump(ensure_ascii=False).
@@ -3189,7 +3200,12 @@ _MD_HEADER_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
 
 
 def _norm_head(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(s).lower())
+    # Diacritic-fold before stripping: the model often drops umlauts/accents
+    # ("Schlüsselstellen" -> "Schlusselstellen"), and without folding the two
+    # spellings normalize differently ("für" -> "fr" vs "fur" -> "fur").
+    s = unicodedata.normalize("NFKD", str(s))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "", s.lower())
 
 
 _CAPTION_PREFIX_RE = re.compile(r"^\s*(?:figure|fig|table|tbl)\.?\s*\d+\s*[:.\-]\s*", re.I)
@@ -3252,6 +3268,174 @@ def _subsplit_sections(result: dict) -> dict:
         made = [s for s in made if s["sectionContent"] or s["sectionTitle"]]
         out.extend(made if made else [sec])
     content["sections"] = out
+    return result
+
+
+_BANNER_HEAD_RE = re.compile(r"^\s{0,3}#{1,2}(?!#)\s+(.+?)\s*#*\s*$")
+
+# Verbatim-content recovery: tokens for deciding whether a source line carries
+# content the structured output is missing.
+_CONTENT_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+_NUM_TOKEN_RE = re.compile(r"\d+(?:\.\d+)?")
+
+# Markdown image placeholders in the SOURCE text: "![alt](url)" or the bare
+# "![alt]" LightOnOCR emits. The alt is a generated image DESCRIPTION, not the
+# poster's own text -- it must never become a caption or recovered content.
+_SRC_IMAGE_RE = re.compile(r"!\[([^\]]*)\](?:\([^)]*\))?")
+
+
+def _enforce_no_alt_captions(result: dict, raw_text: str) -> dict:
+    """Deterministically enforce the caption rule the prompt states: a caption
+    whose text matches a source image placeholder's alt-description is replaced
+    by the placeholder's adjacent figure/table heading line (the poster's own
+    caption), or dropped when no such heading exists. Keyed purely on markup
+    provenance -- the text came from an "![...]" placeholder -- so a poster
+    with no image placeholders is untouched."""
+    if not raw_text or "![" not in raw_text:
+        return result
+    lines = raw_text.splitlines()
+    alt_to_heading = {}
+    last_heading = ""
+    for ln in lines:
+        h = _MD_HEADER_RE.match(ln)
+        if h:
+            last_heading = h.group(1).strip()
+            continue
+        for m in _SRC_IMAGE_RE.finditer(ln):
+            alt = _norm_head(m.group(1))
+            if len(alt) >= 20:
+                head_ok = bool(re.match(r"^(?:figure|fig|table|tbl)\.?\s*\d",
+                                        last_heading, re.I))
+                alt_to_heading[alt] = last_heading if head_ok else ""
+    if not alt_to_heading:
+        return result
+    for key in ("imageCaptions", "tableCaptions"):
+        fixed = []
+        for cap in result.get(key, []) or []:
+            txt = cap.get("caption", "") if isinstance(cap, dict) else str(cap)
+            k = _norm_head(txt)
+            hit = None
+            for alt, heading in alt_to_heading.items():
+                if k and (k in alt or alt in k):
+                    hit = heading
+                    break
+            if hit is None:
+                fixed.append(cap)
+            elif hit:
+                log(f"   caption was image alt-text; using heading: {hit[:60]!r}")
+                fixed.append({"caption": hit} if isinstance(cap, dict) else hit)
+            # else: alt-text with no adjacent figure heading -- drop
+        result[key] = fixed
+    return result
+
+
+def _recover_missing_content(result: dict, sources) -> dict:
+    """Re-append source lines whose content the structured output dropped.
+
+    For each OCR source text of the poster (the pipeline may hold several
+    passes of the same page), any line carrying a number absent from the output
+    or >= 4 content words absent from the output is recovered VERBATIM, grouped
+    per source '##' block, as NEW untitled sections. Existing sections are
+    never modified. Uniform filter, no poster ids: it delivers only text that
+    provably exists on the page and is missing from the deliverable."""
+    content = result.setdefault("content", {})
+    secs = content.setdefault("sections", [])
+
+    def _out_text():
+        parts = []
+        for s in secs:
+            if isinstance(s, dict):
+                parts.append(str(s.get("sectionTitle", "")))
+                parts.append(str(s.get("sectionContent", "")))
+        for key in ("imageCaptions", "tableCaptions"):
+            for c in result.get(key, []) or []:
+                parts.append(c.get("caption", "") if isinstance(c, dict) else str(c))
+        for t in result.get("titles", []) or []:
+            parts.append(t.get("title", "") if isinstance(t, dict) else str(t))
+        return " ".join(parts).lower()
+
+    out = _out_text()
+    out_words = set(_CONTENT_WORD_RE.findall(out))
+    out_nums = set(_NUM_TOKEN_RE.findall(out))
+    recovered_norm = set()
+
+    for src in sources or []:
+        if not src:
+            continue
+        block_lines = []
+
+        def _flush():
+            if block_lines:
+                body = "\n".join(block_lines).strip()
+                bn = _norm_head(body)
+                if body and bn not in recovered_norm:
+                    recovered_norm.add(bn)
+                    secs.append({"sectionTitle": "", "sectionContent": body})
+            block_lines.clear()
+
+        for ln in src.splitlines():
+            if _MD_HEADER_RE.match(ln):
+                _flush()
+                continue
+            t = ln.strip()
+            if len(t) < 15:
+                continue
+            if t.startswith("!["):
+                # image placeholder alt-description: generated text, not the
+                # poster's own -- never recover it
+                continue
+            words = [w.lower() for w in _CONTENT_WORD_RE.findall(t)]
+            nums = _NUM_TOKEN_RE.findall(t)
+            missing_words = sum(1 for w in words if w not in out_words)
+            missing_nums = [n for n in nums if n not in out_nums]
+            if missing_nums or missing_words >= 4:
+                block_lines.append(t)
+                out_words.update(words)
+                out_nums.update(nums)
+        _flush()
+    return result
+
+
+def _prefer_verbatim_title(result: dict, raw_text: str) -> dict:
+    """If the generated title does not appear contiguously in the input text
+    (a composed/paraphrased title) while the document's banner heading does by
+    construction, adopt the banner verbatim. Comparative, not thresholded: a
+    verbatim generated title is never touched, so this is a no-op on the
+    corpus norm and only corrects outright title hallucination."""
+    if not raw_text:
+        return result
+    titles = result.get("titles")
+    if not (isinstance(titles, list) and titles and isinstance(titles[0], dict)):
+        return result
+    gen_title = str(titles[0].get("title", ""))
+    if not gen_title:
+        return result
+    raw_norm = _norm_head(raw_text)
+    if _norm_head(gen_title) in raw_norm:
+        return result                      # verbatim -- leave it alone
+    # An affiliation/institution header is never the title: skip a banner
+    # candidate that appears inside the output's own affiliation strings.
+    affil_norm = _norm_head(" ".join(
+        a for c in (result.get("creators") or []) if isinstance(c, dict)
+        for a in (c.get("affiliation") or [])
+        if isinstance(a, str)))
+    # First markdown heading within the top of the document. If the OCR marked
+    # no heading there, do NOT guess from plain lines -- no-op.
+    seen = 0
+    for ln in raw_text.splitlines():
+        if not ln.strip():
+            continue
+        seen += 1
+        m = _BANNER_HEAD_RE.match(ln)
+        if m and len(m.group(1).strip()) >= 15:
+            banner = m.group(1).strip()
+            if affil_norm and _norm_head(banner) in affil_norm:
+                continue                   # institution header, keep scanning
+            log(f"   title not verbatim in source; adopting banner: {banner[:60]!r}")
+            titles[0]["title"] = banner
+            break
+        if seen >= 15:
+            break
     return result
 
 
@@ -3340,22 +3524,54 @@ def _header_coverage(result: dict, input_keys: set) -> int:
     return covered
 
 
-def _select_runaway_candidate(candidates, input_keys):
-    """Pick the candidate covering the most input headers. Ties prefer the
-    cleaner passes (retry, then fallback, then the runaway primary salvage).
-    `candidates` is an ordered list of (label, result); label preference is
-    encoded by its index in `_CANDIDATE_PREF`."""
+def _title_is_verbatim(result: dict, raw_norm: str) -> int:
+    """1 if the candidate's title appears contiguously (normalized) in the
+    input text, else 0. A composed/paraphrased title is a hallucination signal;
+    verbatim titles are the corpus norm."""
+    if not isinstance(result, dict):
+        return 0
+    for t in result.get("titles", []) or []:
+        k = _norm_head(t.get("title", "") if isinstance(t, dict) else t)
+        if k:
+            return 1 if k in raw_norm else 0
+    return 0
+
+
+def _stub_caption_count(result: dict) -> int:
+    """Count label-only stub captions ('Figure 3:') a candidate emitted --
+    fabricated placeholders that count against it in candidate selection."""
+    if not isinstance(result, dict):
+        return 0
+    n = 0
+    for key in ("imageCaptions", "imageCaption", "tableCaptions", "tableCaption"):
+        caps = result.get(key, []) or []
+        if isinstance(caps, str):
+            caps = [caps]
+        for c in caps:
+            txt = c.get("caption", "") if isinstance(c, dict) else str(c)
+            if _CAPTION_STUB_RE.match(txt):
+                n += 1
+    return n
+
+
+def _select_runaway_candidate(candidates, input_keys, raw_text=""):
+    """Pick the candidate covering the most input headers; among those, prefer
+    a verbatim (non-composed) title and fewer fabricated stub captions. Ties
+    prefer the cleaner passes (retry, then fallback, then the runaway primary
+    salvage)."""
     pref = {"retry": 0, "fallback": 1, "primary": 2}
+    raw_norm = _norm_head(raw_text)
     best = None
     best_key = None
     for label, res in candidates:
         cov = _header_coverage(res, input_keys)
-        # sort key: more coverage first, then preferred label, valid over error
-        key = (cov, -pref.get(label, 9))
+        key = (cov, _title_is_verbatim(res, raw_norm),
+               -_stub_caption_count(res), -pref.get(label, 9))
         if best is None or key > best_key:
             best, best_key, best_label = res, key, label
     log(f"   best-of runaway: chose '{best_label}' "
-        f"(coverage {best_key[0]}/{len(input_keys)} headers)")
+        f"(coverage {best_key[0]}/{len(input_keys)} headers, "
+        f"verbatim_title={best_key[1]}, stubs={-best_key[2]})")
     return best
 
 
@@ -3435,7 +3651,7 @@ def extract_json_with_retry(
             candidates.append(("fallback", res_fb))
 
         if n_heads:
-            result = _select_runaway_candidate(candidates, input_keys)
+            result = _select_runaway_candidate(candidates, input_keys, raw_text)
         else:
             # No headers to score against: keep the first candidate that parsed,
             # preferring retry then fallback (original ladder behaviour).
