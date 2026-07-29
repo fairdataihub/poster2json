@@ -3363,6 +3363,7 @@ def _recover_missing_content(result: dict, sources) -> dict:
         if not src:
             continue
         block_lines = []
+        cur_head = [""]
 
         def _flush():
             if block_lines:
@@ -3370,12 +3371,18 @@ def _recover_missing_content(result: dict, sources) -> dict:
                 bn = _norm_head(body)
                 if body and bn not in recovered_norm:
                     recovered_norm.add(bn)
-                    secs.append({"sectionTitle": "", "sectionContent": body})
+                    # Title the group with its source block's own heading --
+                    # real page text, and it lets the recovered content align
+                    # with the section it belongs to.
+                    secs.append({"sectionTitle": cur_head[0],
+                                 "sectionContent": body})
             block_lines.clear()
 
         for ln in src.splitlines():
-            if _MD_HEADER_RE.match(ln):
+            h = _MD_HEADER_RE.match(ln)
+            if h:
                 _flush()
+                cur_head[0] = h.group(1).strip()
                 continue
             t = ln.strip()
             if len(t) < 15:
