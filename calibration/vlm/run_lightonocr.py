@@ -53,28 +53,35 @@ def render(path, longest):
 
 
 
-def render_tiles(path, longest, n):
-    """Page 1 as an NxN grid of tiles, each rendered at `longest` from vector.
+def render_tiles(path, longest, spec):
+    """Page 1 as a grid of tiles, each rendered at `longest` from vector.
 
     Tiling is the only resolution lever available: image_size=1540 is baked into
     the vision tower's RoPE table, so a larger image asserts rather than helps.
-    An NxN grid multiplies effective DPI by N, at N^2 forward passes. Tiles
-    overlap by 6% so a line of text falling on a seam is whole in one of them.
+    `spec` is an int N (NxN grid, historical behaviour) or "RxC" (e.g. "1x3"
+    for full-height COLUMN STRIPS -- which preserve a poster's column reading
+    order by construction, unlike a grid that cuts columns horizontally).
+    Tiles overlap by 6% so a line of text on a seam is whole in one of them.
     """
     import pypdfium2 as pdfium
+    if isinstance(spec, str) and "x" in spec:
+        rows, cols = (int(x) for x in spec.lower().split("x"))
+    else:
+        rows = cols = int(spec)
     doc = pdfium.PdfDocument(path)
     page = doc[0]
     w_pt, h_pt = page.get_width(), page.get_height()
-    if n <= 1:
+    if rows <= 1 and cols <= 1:
         scale = longest / max(w_pt, h_pt)
         return [page.render(scale=scale).to_pil().convert("RGB")]
+    n = max(rows, cols)
     full = page.render(scale=longest * n / max(w_pt, h_pt)).to_pil().convert("RGB")
     W, H = full.size
-    tw, th = W / n, H / n
+    tw, th = W / cols, H / rows
     ov = 0.06
     out = []
-    for r in range(n):
-        for c in range(n):
+    for r in range(rows):
+        for c in range(cols):
             box = (max(0, int((c - ov) * tw)), max(0, int((r - ov) * th)),
                    min(W, int((c + 1 + ov) * tw)), min(H, int((r + 1 + ov) * th)))
             out.append(full.crop(box))
@@ -108,12 +115,14 @@ def main():
                          "RoPE findings.")
     ap.add_argument("--max-new-tokens", type=int, default=6144)
     ap.add_argument("--only", default=None, help="run a single poster id")
-    ap.add_argument("--tiles", type=int, default=1,
-                    help="split the page into an NxN grid and OCR each tile at "
-                         "--longest, concatenating the results. The vision "
-                         "tower is fixed at 1540px, which is ~132 DPI over A4 "
-                         "but ~33 over a four-foot poster; tiling is the only "
-                         "way to give it page-like detail.")
+    ap.add_argument("--tiles", type=str, default="1",
+                    help="split the page into a grid and OCR each tile at "
+                         "--longest, concatenating the results. An int N gives "
+                         "an NxN grid; 'RxC' (e.g. '1x3') gives full-height "
+                         "column strips, which preserve column reading order. "
+                         "The vision tower is fixed at 1540px, which is ~132 "
+                         "DPI over A4 but ~33 over a four-foot poster; tiling "
+                         "is the only way to give it page-like detail.")
     ap.add_argument("--ids", default=None,
                     help="comma-separated poster ids to run")
     ap.add_argument("--out", default=None,

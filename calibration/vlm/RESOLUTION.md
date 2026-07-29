@@ -128,3 +128,24 @@ rougeL AND changes outcome enough to justify a mixed-resolution corpus). The
 shipped caches stay at 1540. Resolution is a real mechanical lever (RoPE rebuild
 works) but is not the end-to-end lever for this corpus -- the remaining failures
 are 8B-structuring and GT-annotation-boundary issues, not OCR starvation.
+
+## 6. Pre-registered trigger for the column-strip OCR pass (2026-07-29)
+
+Registered BEFORE any column-strip OCR is generated, so the criterion cannot be
+retrofitted to a poster after seeing its result.
+
+A poster qualifies for an additional 1xN COLUMN-STRIP OCR pass (full-height
+strips, `--tiles 1xN`, which preserve column reading order by construction,
+unlike the corpus-negative NxN grid of section 2) when its standard single-image
+pass shows DECODE-RUNAWAY evidence, defined as either:
+
+- the VLM generation ran to its token cap (`truncated: true` in run.json), OR
+- the scrub's loop-collapse pass removes more than 10% of the raw output's
+  characters (a repetition loop dominated the decode).
+
+Strip output is used ONLY as an additional verbatim-recovery source for the
+missing-content recovery pass; it never replaces the primary cache.
+
+At registration time, both criteria select exactly one corpus poster:
+isporeu2023ee359130949-pdf (token cap 16384 hit; loop-collapse removes
+20525/33316 chars). No other poster meets either criterion.
