@@ -2762,6 +2762,11 @@ def _postprocess_json(
     for key in ("imageCaptions", "tableCaptions"):
         _kept = []
         for cap in result.get(key, []) or []:
+            _txt = cap.get("caption", "") if isinstance(cap, dict) else str(cap)
+            # Label-only stub ("Figure 3:", "Table 1 ...") -- a fabricated
+            # placeholder that appears nowhere in the source; drop it.
+            if _CAPTION_STUB_RE.match(_txt):
+                continue
             _b = _norm_head(_caption_body(cap))
             if _b and (_b in _sec_titles or _b in _seen_caps):
                 continue
@@ -3093,6 +3098,10 @@ def _postprocess_json(
             result["creators"], get_orcid_client(),
         )
 
+    # Split sections at embedded level-2 headings / bold inline labels the
+    # model flattened into one body.
+    result = _subsplit_sections(result)
+
     # Recover dropped trailing metadata sections (References/Contact/etc.) as
     # titled sections, anchored on the OCR markdown headings.
     result = _recover_tail_sections(result, raw_text)
@@ -3184,13 +3193,66 @@ def _norm_head(s: str) -> str:
 
 
 _CAPTION_PREFIX_RE = re.compile(r"^\s*(?:figure|fig|table|tbl)\.?\s*\d+\s*[:.\-]\s*", re.I)
+# A caption that is ONLY a label ("Figure 3:", "Table 1 ...") with no text --
+# a fabricated stub the model emits for figures it saw but has no caption for.
+_CAPTION_STUB_RE = re.compile(
+    r"^\s*(?:figure|fig|table|tbl)\.?\s*\d*\s*[:.]?\s*(?:\.{3}|…)?\s*$", re.I)
 _META_HEAD_RE = re.compile(r"^(references?|contact|acknowledg\w*|funding)\b", re.I)
+# A trailing section can be metadata even when its HEADING is a sponsor or
+# program name no allowlist can enumerate ("BRIDGE2AI"); the BODY text is the
+# universal signature of the class ("funded by ...", "grant ...").
+_META_BODY_RE = re.compile(r"funded by|funding|\bgrant\b|acknowledg", re.I)
 _H2_LINE_RE = re.compile(r"^\s{0,3}#{2,3}\s+(.+?)\s*#*\s*$")
 
 
 def _caption_body(c) -> str:
     txt = c.get("caption", "") if isinstance(c, dict) else str(c)
     return _CAPTION_PREFIX_RE.sub("", txt).strip()
+
+
+# Sub-splitting boundaries inside a section body: an embedded LEVEL-2 markdown
+# heading, or a bold inline label lead ("**SURVEY** - ..."). Deliberately NOT
+# '###'/'####': the corpus annotation convention keeps sub-subheaded content
+# merged inside a single section, and blanket splitting regresses posters that
+# follow it. This is the VLM-markdown analogue of the pdfplumber path's
+# _SECTION_PREFIX_RE bold-inline-header rule.
+_SUBSPLIT_H2_RE = re.compile(r"^\s{0,3}##(?!#)\s+(.+?)\s*#*\s*$")
+_SUBSPLIT_BOLD_RE = re.compile(r"^\s*\*\*([^*]{2,60})\*\*\s*[-–—:]\s*(.*)$")
+
+
+def _subsplit_sections(result: dict) -> dict:
+    """Split a section whose body contains an embedded level-2 heading or a
+    bold inline label into separate titled sections. Content-blind and purely
+    syntactic; a section with no such marker is untouched."""
+    content = result.get("content")
+    if not isinstance(content, dict):
+        return result
+    out = []
+    for sec in content.get("sections", []) or []:
+        if not isinstance(sec, dict):
+            out.append(sec)
+            continue
+        body = str(sec.get("sectionContent", ""))
+        cur_title = sec.get("sectionTitle", "")
+        cur_lines = []
+        made = []
+        for ln in body.splitlines():
+            h2 = _SUBSPLIT_H2_RE.match(ln)
+            bold = _SUBSPLIT_BOLD_RE.match(ln) if not h2 else None
+            if h2 or bold:
+                if cur_lines or made == []:
+                    made.append({"sectionTitle": cur_title,
+                                 "sectionContent": "\n".join(cur_lines).strip()})
+                cur_title = (h2.group(1) if h2 else bold.group(1)).strip()
+                cur_lines = [bold.group(2)] if (bold and bold.group(2)) else []
+            else:
+                cur_lines.append(ln)
+        made.append({"sectionTitle": cur_title,
+                     "sectionContent": "\n".join(cur_lines).strip()})
+        made = [s for s in made if s["sectionContent"] or s["sectionTitle"]]
+        out.extend(made if made else [sec])
+    content["sections"] = out
+    return result
 
 
 def _recover_tail_sections(result: dict, raw_text: str) -> dict:
@@ -3211,10 +3273,12 @@ def _recover_tail_sections(result: dict, raw_text: str) -> dict:
     title_norm = _norm_head(content.get("posterTitle") or "") or _norm_head(
         " ".join(t.get("title", "") for t in result.get("titles", []) if isinstance(t, dict)))
     for j, (idx, title) in enumerate(heads):
-        if not _META_HEAD_RE.match(title):
-            continue
         end = heads[j + 1][0] if j + 1 < len(heads) else len(lines)
         body = "\n".join(lines[idx + 1:end]).strip()
+        # Metadata by heading name, OR by body evidence (sponsor/program
+        # headings whose body says "funded by"/"grant"/"acknowledg").
+        if not (_META_HEAD_RE.match(title) or _META_BODY_RE.search(body)):
+            continue
         if len(body) < 40:
             continue
         if title_norm and _norm_head(title) in title_norm:

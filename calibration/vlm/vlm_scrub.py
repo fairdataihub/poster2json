@@ -119,6 +119,21 @@ _DATA_CELL_MAXLEN = 45
 _BULLET = re.compile(r"[•▪◦‣·∙]|<br\b")
 _PROSE_CELL_MINLEN = 40
 
+# A table that sits immediately under a "## Figure N" heading is the FIGURE
+# PANEL's own stats/legend text -- selectable page text the human transcription
+# keeps (as the figure's caption block), not the standalone data grid the
+# corpus GT policy removes. Keep its cells. Deliberately Figure-only: a table
+# under a "Table N" heading IS the grid data GT removed corpus-wide.
+_FIG_HEADING = re.compile(r"^\s{0,3}#{2,4}\s*(?:figure|fig\.?)\s*\d+", re.IGNORECASE)
+
+
+def _follows_figure_heading(m) -> bool:
+    for ln in reversed(m.string[: m.start()].splitlines()):
+        if not ln.strip():
+            continue
+        return bool(_FIG_HEADING.match(ln))
+    return False
+
 
 def _cell_text(c):
     return re.sub(r"<[^>]+>", "", _IMAGE.sub("", c)).strip()   # drop ![img] then tags
@@ -148,7 +163,7 @@ def _table_repl(m):
         return ""
     lens = sorted(len(re.sub(r"<[^>]+>", "", c).strip()) for c in cells)
     median = lens[len(lens) // 2]
-    if median <= _DATA_CELL_MAXLEN:
+    if median <= _DATA_CELL_MAXLEN and not _follows_figure_heading(m):
         kept = [_cell_text(c) for c in cells if _is_prose_cell(c)]
         return ("\n\n".join(kept) + "\n") if kept else ""
     # layout grid: keep the cell text as paragraphs, one per cell
