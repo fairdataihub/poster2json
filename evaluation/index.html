@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="FAIR Data Innovations Hub" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Evaluation - poster2json</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Evaluation";
+        var mkdocs_page_input_path = "evaluation.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> poster2json
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">About</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../about/changelog/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../about/contributing/">Contributor Guide</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../about/license/">License</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">poster2json</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Evaluation</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/fairdataihub/poster2json/edit/main/evaluation.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="evaluation">Evaluation<a class="headerlink" href="#evaluation" title="Permanent link">&para;</a></h1>
+<p>Validation methodology and results for poster2json.</p>
+<h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Permanent link">&para;</a></h2>
+<p>The pipeline is validated using four complementary metrics:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Description</th>
+<th>Threshold</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Word Capture (w)</strong></td>
+<td>Proportion of reference vocabulary in extracted text</td>
+<td>≥0.75</td>
+<td>Measures lexical completeness</td>
+</tr>
+<tr>
+<td><strong>ROUGE-L (r)</strong></td>
+<td>Longest common subsequence similarity</td>
+<td>≥0.75</td>
+<td>Captures sequential text preservation</td>
+</tr>
+<tr>
+<td><strong>Number Capture (n)</strong></td>
+<td>Proportion of numeric values preserved</td>
+<td>≥0.75</td>
+<td>Validates quantitative data integrity</td>
+</tr>
+<tr>
+<td><strong>Field Proportion (f)</strong></td>
+<td>Ratio of extracted to reference JSON elements</td>
+<td>0.50–1.50</td>
+<td>Accommodates layout variability</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pass-criteria">Pass Criteria<a class="headerlink" href="#pass-criteria" title="Permanent link">&para;</a></h3>
+<p>A poster passes validation if ALL conditions are met:
+- Word Capture ≥ 0.75
+- ROUGE-L ≥ 0.75
+- Number Capture ≥ 0.75
+- Field Proportion between 0.50 and 1.50</p>
+<h2 id="metric-implementation">Metric Implementation<a class="headerlink" href="#metric-implementation" title="Permanent link">&para;</a></h2>
+<h3 id="word-capture">Word Capture<a class="headerlink" href="#word-capture" title="Permanent link">&para;</a></h3>
+<p>Measures vocabulary overlap between extracted and reference text:</p>
+<pre class="codehilite"><code class="language-python">word_capture = len(extracted_words &amp; reference_words) / len(reference_words)
+</code></pre>
+
+<ul>
+<li>Tokenized to individual words</li>
+<li>Case-insensitive comparison</li>
+<li>Excludes common stopwords</li>
+</ul>
+<h3 id="rouge-l-section-aware">ROUGE-L (Section-Aware)<a class="headerlink" href="#rouge-l-section-aware" title="Permanent link">&para;</a></h3>
+<p>Uses longest common subsequence with section-aware matching:</p>
+<pre class="codehilite"><code class="language-python">global_score = rouge_l(all_extracted_text, all_reference_text)
+section_scores = [rouge_l(ext_section, ref_section) for each pair]
+final_score = max(global_score, mean(section_scores))
+</code></pre>
+
+<p>This "forgiving ROUGE" approach accounts for structural reorganization in poster layouts.</p>
+<h3 id="number-capture">Number Capture<a class="headerlink" href="#number-capture" title="Permanent link">&para;</a></h3>
+<p>Evaluates preservation of quantitative data:</p>
+<pre class="codehilite"><code class="language-python"># Extract all numbers from text
+extracted_numbers = extract_numeric_values(extracted_text)
+reference_numbers = extract_numeric_values(reference_text)
+
+# Exclude DOIs and publication years from references
+reference_numbers = filter_doi_components(reference_numbers)
+
+number_capture = len(extracted_numbers &amp; reference_numbers) / len(reference_numbers)
+</code></pre>
+
+<h3 id="field-proportion">Field Proportion<a class="headerlink" href="#field-proportion" title="Permanent link">&para;</a></h3>
+<p>Measures structural completeness:</p>
+<pre class="codehilite"><code class="language-python">extracted_fields = count_json_fields(extracted_json)
+reference_fields = count_json_fields(reference_json)
+field_proportion = extracted_fields / reference_fields
+</code></pre>
+
+<p>The extended range (0.50–1.50) accommodates:
+- Nested vs flat section structures
+- Variable poster layouts
+- Optional metadata fields</p>
+<h2 id="text-normalization">Text Normalization<a class="headerlink" href="#text-normalization" title="Permanent link">&para;</a></h2>
+<p>Before comparison, text is normalized:</p>
+<ol>
+<li><strong>Unicode normalization</strong> (NFKD)</li>
+<li><strong>Whitespace consolidation</strong></li>
+<li><strong>Quote unification</strong> (curly → straight)</li>
+<li><strong>Dash normalization</strong> (em/en dash → hyphen)</li>
+<li><strong>Case normalization</strong> (lowercase)</li>
+</ol>
+<h2 id="validation-results">Validation Results<a class="headerlink" href="#validation-results" title="Permanent link">&para;</a></h2>
+<h3 id="current-performance-v080-pdfplumber">Current Performance (v0.8.0, pdfplumber)<a class="headerlink" href="#current-performance-v080-pdfplumber" title="Permanent link">&para;</a></h3>
+<p><strong>Overall</strong>: 19/20 (95%) passing</p>
+<table>
+<thead>
+<tr>
+<th>Poster ID</th>
+<th>Word</th>
+<th>ROUGE-L</th>
+<th>Numbers</th>
+<th>Fields</th>
+<th>Source</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10890106</td>
+<td>0.84</td>
+<td>0.77</td>
+<td>0.91</td>
+<td>0.84</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>15963941</td>
+<td>0.89</td>
+<td>0.78</td>
+<td>0.96</td>
+<td>0.86</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>16083265</td>
+<td>0.91</td>
+<td>0.90</td>
+<td>1.00</td>
+<td>0.76</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>17268692</td>
+<td>0.92</td>
+<td>0.94</td>
+<td>0.88</td>
+<td>1.02</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>42</td>
+<td>0.96</td>
+<td>0.97</td>
+<td>1.00</td>
+<td>0.88</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4446908</td>
+<td>0.92</td>
+<td>0.79</td>
+<td>0.97</td>
+<td>0.80</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4448680</td>
+<td>0.92</td>
+<td>0.85</td>
+<td>1.00</td>
+<td>0.83</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4519718</td>
+<td>0.92</td>
+<td>0.82</td>
+<td>0.94</td>
+<td>0.78</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4552067</td>
+<td>0.92</td>
+<td>0.99</td>
+<td>1.00</td>
+<td>0.77</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4560930</td>
+<td>0.87</td>
+<td>0.86</td>
+<td>0.96</td>
+<td>0.90</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4564017</td>
+<td>0.93</td>
+<td>0.87</td>
+<td>0.99</td>
+<td>0.75</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4607450</td>
+<td>0.94</td>
+<td>0.86</td>
+<td>0.85</td>
+<td>1.00</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4737132</td>
+<td>0.91</td>
+<td>0.89</td>
+<td>1.00</td>
+<td>0.93</td>
+<td>qwen_vision</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>5128504</td>
+<td>0.97</td>
+<td>0.91</td>
+<td>1.00</td>
+<td>0.83</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>6724771</td>
+<td>0.89</td>
+<td>0.85</td>
+<td>0.96</td>
+<td>0.82</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>8228476</td>
+<td>0.94</td>
+<td>0.84</td>
+<td>1.00</td>
+<td>0.91</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>8228568</td>
+<td>0.98</td>
+<td>0.89</td>
+<td>1.00</td>
+<td>0.82</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>AISec2025-poster</td>
+<td>0.90</td>
+<td>0.81</td>
+<td>0.99</td>
+<td>1.35</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>aysaekanger</td>
+<td>0.83</td>
+<td>0.71</td>
+<td>1.00</td>
+<td>1.00</td>
+<td>pdfplumber</td>
+<td>❌</td>
+</tr>
+<tr>
+<td>isporeu2023ee359130949</td>
+<td>0.94</td>
+<td>0.80</td>
+<td>1.00</td>
+<td>0.80</td>
+<td>pdfplumber</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h3 id="aggregate-metrics">Aggregate Metrics<a class="headerlink" href="#aggregate-metrics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Average Score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Word Capture</td>
+<td>0.92</td>
+</tr>
+<tr>
+<td>ROUGE-L</td>
+<td>0.85</td>
+</tr>
+<tr>
+<td>Number Capture</td>
+<td>0.97</td>
+</tr>
+<tr>
+<td>Field Proportion</td>
+<td>0.88</td>
+</tr>
+</tbody>
+</table>
+<h3 id="failure-analysis">Failure Analysis<a class="headerlink" href="#failure-analysis" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Poster ID</th>
+<th>Failing Metric</th>
+<th>Score</th>
+<th>Root Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>aysaekanger</td>
+<td>ROUGE-L</td>
+<td>0.71</td>
+<td>Dense table/flowchart poster. The reference annotation splits one visual region into many fine-grained, row-aligned sections; the section-averaged ROUGE-L then penalizes the longer merged generated sections on precision. Word capture (0.83) and number capture (1.00) both pass — the text is fully extracted, only the section segmentation differs from the annotator's.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="test-set">Test Set<a class="headerlink" href="#test-set" title="Permanent link">&para;</a></h2>
+<p>The validation set includes 20 manually annotated scientific posters:</p>
+<ul>
+<li><strong>19 PDF posters</strong>: Processed via pdfplumber</li>
+<li><strong>1 image poster</strong>: Processed via Qwen2-VL</li>
+</ul>
+<p>Posters cover diverse domains and formats:
+- Biomedical informatics, astronomy, astrophysics, bioinformatics, genetics
+- Altmetrics, research data management, research infrastructure, cybersecurity
+- Oncology, health economics, fuel cell manufacturing
+- Single and multi-column layouts
+- Various font sizes and styles
+- Tables, figures, and charts
+- Multiple languages (English, German)</p>
+<h2 id="running-validation">Running Validation<a class="headerlink" href="#running-validation" title="Permanent link">&para;</a></h2>
+<p>Validation runs from the <a href="https://github.com/fairdataihub/poster2json-validation">poster2json-validation</a> repo (the annotation directory is set in its <code>config.py</code>):</p>
+<pre class="codehilite"><code class="language-bash"># Validate the full annotated set
+python validate_model.py \
+    --output-dir ./outputs/run1 \
+    --text-extractor pdfplumber
+
+# Validate a subset of posters
+python validate_model.py --poster 4446908,8228568 --output-dir ./outputs/canary
+</code></pre>
+
+<p>Output:
+- Individual <code>{poster_id}_extracted.json</code> files
+- <code>results.json</code> with all metrics</p>
+<h2 id="reference-annotations">Reference Annotations<a class="headerlink" href="#reference-annotations" title="Permanent link">&para;</a></h2>
+<p>Ground truth annotations are stored in <code>manual_poster_annotation/</code>:</p>
+<pre class="codehilite"><code>manual_poster_annotation/
+├── {poster_id}/
+│   ├── {poster_id}.pdf         # Source poster
+│   ├── {poster_id}_sub-json.json  # Ground truth annotation
+│   └── {poster_id}_raw.md      # Extracted raw text
+</code></pre>
+
+<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../architecture/">Architecture</a> - Technical details</li>
+<li><a href="../">Overview</a> - Quick start and feature summary</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/fairdataihub/poster2json" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
