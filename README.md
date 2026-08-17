@@ -63,6 +63,7 @@ The pipeline uses:
 - **pdfplumber** for layout-aware PDF text extraction
 - **lingua-language-detector** for ISO 639-1 language detection on body text (overrides any value the model emits — body text beats metadata-fragment guessing)
 - **ROR** (`https://api.ror.org`) for affiliation canonicalisation; matched names get a ROR identifier attached
+- **ORCID** (`https://pub.orcid.org`) for author disambiguation; matched creators get an ORCID identifier attached (uses the authenticated Member API when `ORCID_CLIENT_ID` and `ORCID_CLIENT_SECRET` are set, otherwise the public API)
 
 ## Quick Start
 
