@@ -48,7 +48,20 @@ jobs:
       - name: Build package
         run: poetry build
 
+      - name: Check whether this version is already on PyPI
+        id: version_check
+        run: |
+          VERSION=$(poetry version --short)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if curl -sfI "https://pypi.org/pypi/poster2json/$VERSION/json" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "poster2json $VERSION is already published; skipping upload."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish package
+        if: steps.version_check.outputs.exists == 'false'
         run: poetry publish
 
       - name: Trigger posters-science-extraction-api redeploy
