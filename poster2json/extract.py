@@ -3010,9 +3010,9 @@ def extract_poster(
     Args:
         poster_path: Path to the poster file. PDF, PNG and JPEG are read
             directly; office documents (PowerPoint, Keynote, OpenDocument,
-            Word, Publisher) are converted to PDF with LibreOffice, and other
-            image types (TIFF, BMP, GIF, WebP, JPEG 2000, SVG, ...) to PNG
-            first. See poster2json.convert.
+            Word, Publisher) are converted to PDF with LibreOffice, SVG is
+            converted to PDF with PyMuPDF, and other raster image types (TIFF,
+            BMP, GIF, WebP, JPEG 2000, ...) to PNG first. See poster2json.convert.
         model_id: Override the default JSON structuring model
             (Llama-3.1-8B-Instruct). Accepts any HuggingFace repo id
             (e.g. google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct).

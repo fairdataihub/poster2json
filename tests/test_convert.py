@@ -199,3 +199,16 @@ def test_extract_poster_runs_pipeline_on_converted_file_with_original_suffix(tmp
     assert seen["ext"] == ".webp"
     assert ex.EXT_TO_FORMAT[".webp"] == "image/webp"
     assert ex.EXT_TO_FORMAT[".pptx"].endswith("presentationml.presentation")
+
+
+@pytest.mark.skipif(find_libreoffice() is None, reason="LibreOffice not installed")
+def test_option_like_filename_and_missing_out_dir(tmp_path, monkeypatch):
+    import fitz
+
+    # a name that would look like a command-line option if passed relatively
+    src = tmp_path / "-poster.rtf"
+    src.write_text(r"{\rtf1\ansi Option-like name\par}", encoding="ascii")
+    monkeypatch.chdir(tmp_path)
+    out_dir = tmp_path / "not" / "created" / "yet"
+    pdf = convert_office_to_pdf(Path("-poster.rtf"), out_dir)
+    assert out_dir.is_dir() and "Option-like name" in fitz.open(pdf)[0].get_text()

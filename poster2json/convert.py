@@ -106,8 +106,11 @@ def convert_office_to_pdf(src: Union[str, Path], out_dir: Union[str, Path],
     Each call uses its own throwaway LibreOffice profile, so parallel
     conversions do not fight over the user profile lock.
     """
-    src = Path(src)
-    out_dir = Path(out_dir)
+    # Absolute paths: a file name starting with "-" can never be read by
+    # LibreOffice as a command-line option.
+    src = Path(src).resolve()
+    out_dir = Path(out_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
     soffice = find_libreoffice()
     if not soffice:
         raise ConversionError(
@@ -122,7 +125,10 @@ def convert_office_to_pdf(src: Union[str, Path], out_dir: Union[str, Path],
         "--convert-to", "pdf", "--outdir", str(out_dir), str(src),
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # An argument list with no shell, so nothing in a path or the
+        # POSTER2JSON_SOFFICE value is interpreted by a shell; paths are absolute
+        # (above), so none can be taken for an option either.
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     except subprocess.TimeoutExpired:
         raise ConversionError(f"LibreOffice timed out after {timeout}s converting {src.name}")
     except OSError as e:
