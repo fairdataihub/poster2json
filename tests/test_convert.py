@@ -131,9 +131,19 @@ def test_converted_files_are_cleaned_up(tmp_path):
     assert not Path(usable).exists()
 
 
+def test_libreoffice_found_at_default_install_location_when_not_on_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("POSTER2JSON_SOFFICE", raising=False)
+    monkeypatch.setattr(convert.shutil, "which", lambda name: None)
+    fake = tmp_path / "soffice"
+    fake.write_text("")
+    monkeypatch.setattr(convert, "_LIBREOFFICE_DEFAULT_PATHS", (str(tmp_path / "nope"), str(fake)))
+    assert find_libreoffice() == str(fake)
+
+
 def test_missing_libreoffice_gives_a_clear_error(tmp_path, monkeypatch):
     monkeypatch.delenv("POSTER2JSON_SOFFICE", raising=False)
     monkeypatch.setattr(convert.shutil, "which", lambda name: None)
+    monkeypatch.setattr(convert, "_LIBREOFFICE_DEFAULT_PATHS", ())
     src = tmp_path / "poster.pptx"
     src.write_bytes(b"x")
     with pytest.raises(ConversionError, match="LibreOffice"):

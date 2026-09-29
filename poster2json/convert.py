@@ -71,8 +71,21 @@ def needs_conversion(path: Union[str, Path]) -> bool:
     return Path(path).suffix.lower() in CONVERTIBLE_SUFFIXES
 
 
+# Where the standard LibreOffice installers put the binary when it is not on
+# PATH (the macOS app bundle and the Windows installer both leave it off PATH).
+_LIBREOFFICE_DEFAULT_PATHS = (
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+    r"C:\Program Files\LibreOffice\program\soffice.exe",
+    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+)
+
+
 def find_libreoffice() -> Optional[str]:
-    """Path to the LibreOffice binary, honouring POSTER2JSON_SOFFICE."""
+    """Path to the LibreOffice binary.
+
+    POSTER2JSON_SOFFICE wins; then soffice/libreoffice on PATH; then the
+    default macOS and Windows install locations.
+    """
     override = os.environ.get("POSTER2JSON_SOFFICE")
     if override:
         return override
@@ -80,6 +93,9 @@ def find_libreoffice() -> Optional[str]:
         found = shutil.which(name)
         if found:
             return found
+    for candidate in _LIBREOFFICE_DEFAULT_PATHS:
+        if os.path.isfile(candidate):
+            return candidate
     return None
 
 
