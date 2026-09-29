@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.24] - 2026-09-25
+
+### Fixed
+
+- **Image posters no longer collapse into a single section.** Two faults combined. First, the model sometimes closes a list without closing the object inside it (`"descriptions": [{"description": "..." ],`). Strict parsing failed at that point and the salvage kept only the keys before it, so `researchField` and the entire `content` block (every section) were dropped; post-processing then rebuilt one section from the raw text. `_robust_json_parse` now runs `_repair_mismatched_closers` first, which closes containers a mismatched closer skips over (valid JSON is unchanged), so the model's own sections survive. Second, the rebuild from raw text had no section boundaries for images, because vision OCR returned headers as plain lines while the prompt and pdfplumber use `## ` header lines. Vision OCR output is now marked the same way (`_mark_ocr_headers`: markdown and bold label lines normalized, short standalone label lines directly followed by content marked, title, bullets, sentences and captions left alone), and the vision prompt asks for `## ` headers too. Cached OCR text is marked on read. The raw-text recovery step also no longer reclaims a block made only of `## ` header lines (it had produced a ghost section whose whole content was "Literature Cited"); recovered blocks with real text are unchanged and stay untitled, as before.
+- **Generation stops when the JSON is complete.** `_JsonBraceProcessor` held EOS until a bare `{`/`}` count returned to zero, so a single missing `}` kept EOS suppressed forever and the model was forced to write chatter after the JSON up to `max_new_tokens` (observed: 13,600+ tokens on a poster that needs about 3,000, over half an hour per poster on a shared GPU). It now tracks a bracket stack with the same lenient closer rule and forces EOS as soon as the outermost object closes; text after it was already discarded by the parser.
+- **Prompt-template placeholders are removed from the output.** When a poster prints no authors, the model copied the prompt example `"LastName, FirstName"` with affiliation `"Institution Name"`, which the platform then pre-filled as a real creator. Following the existing `_PLACEHOLDER_STRINGS` / `_is_placeholder` handling for captions and research field, creators whose every name field is a template placeholder are dropped (spacing and case variants included), template affiliations are removed from real creators, and template subjects (`keyword1`), descriptions and section bodies are dropped. A creator with any real name field is kept.
+
 ## [0.9.21] - 2026-06-11
 
 ### Fixed

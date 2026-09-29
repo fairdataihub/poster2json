@@ -264,7 +264,8 @@ Rules:
 - Do NOT add explanations or interpretations
 - Do NOT translate any text
 - Preserve the original language
-- Include all bullet points and lists"""
+- Include all bullet points and lists
+- Put each section header on its own line, starting with "## " (for example "## Methods")"""
 
     messages = [
         {
@@ -292,7 +293,75 @@ Rules:
         response = response.split("assistant")[-1].strip()
 
     log(f"   Completed vision OCR for: {image_path}")
-    return response
+    return _mark_ocr_headers(response)
+
+
+# A bullet or list marker at the start of an OCR line ("- ", "* ", "1. ", "a) ").
+_OCR_BULLET_RE = re.compile(r"^(?:[-*•·▪◦]|\d+[.)]|[A-Za-z][.)])\s")
+# A markdown heading of any level ("# Methods", "### Results").
+_OCR_MD_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*$")
+# A whole line wrapped in bold ("**Introduction**", "**Methods:**").
+_OCR_BOLD_LINE_RE = re.compile(r"^\*\*(.+?)\*\*\s*:?$")
+# Captions are not section headers even when they sit on their own line.
+_OCR_CAPTION_RE = re.compile(r"^(?:fig(?:ure)?|table|tab)\.?\s*\d", re.I)
+
+
+def _looks_like_ocr_header(line: str) -> bool:
+    """A short standalone label: up to 8 words, not a sentence, starts capitalized."""
+    words = line.split()
+    return (
+        1 <= len(words) <= 8
+        and len(line) <= 60
+        and (line[0].isupper() or line[0].isdigit())
+        and not line.endswith((".", ",", ";"))
+        and not _OCR_CAPTION_RE.match(line)
+    )
+
+
+def _mark_ocr_headers(text: str) -> str:
+    """Mark section headers in vision OCR output with "## ", as pdfplumber does.
+
+    The JSON prompt tells the model that lines starting with "## " are the
+    poster's section headers, and pdfplumber emits them from font size. Vision
+    OCR returns plain lines instead, so an image poster reached the model with
+    no section boundaries marked and could come back as one merged section.
+    This applies the same convention to OCR text: any markdown heading or bold
+    label line is normalized to "## ", and a short standalone label line that
+    starts a block (after a blank line) is marked as a header when its content
+    follows on the very next line. The first line is
+    the poster title and is never marked. Bullets,
+    sentences and figure/table captions are left alone. Idempotent.
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    out = []
+    seen_title = False
+    for i, raw in enumerate(lines):
+        s = raw.strip()
+        if not s:
+            out.append(raw)
+            continue
+        md = _OCR_MD_HEADING_RE.match(s)
+        if not seen_title:
+            seen_title = True
+            out.append(md.group(1).strip() if md else raw)
+            continue
+        if md:
+            out.append("## " + md.group(1).strip().rstrip(":").strip())
+            continue
+        bold = _OCR_BOLD_LINE_RE.match(s)
+        label = (bold.group(1) if bold else s).strip().rstrip(":").strip()
+        starts_block = i == 0 or not lines[i - 1].strip()
+        # A header is followed directly by its content, not by a blank line; a
+        # short content line that merely sits between blank lines is not one.
+        has_following = i + 1 < len(lines) and bool(lines[i + 1].strip())
+        if (label and (bold or starts_block) and has_following
+                and not _OCR_BULLET_RE.match(s) and _looks_like_ocr_header(label)):
+            out.append("## " + label)
+            continue
+        out.append(raw)
+    return "\n".join(out)
 
 
 # ============================
@@ -1152,7 +1221,8 @@ def get_raw_text(
                         text = f.read()
                     if len(text) > 500:
                         log(f"Using cached OCR text ({len(text)} characters)")
-                        return text, "qwen_vision_cached"
+                        # Caches written before headers were marked have none.
+                        return _mark_ocr_headers(text), "qwen_vision_cached"
 
         text = extract_text_with_qwen_vision(poster_path)
         log(f"Image OCR produced {len(text)} characters")
@@ -1322,13 +1392,21 @@ def _get_eos_token_ids(tokenizer):
 
 
 class _JsonBraceProcessor(LogitsProcessor):
-    """Suppress EOS tokens until generated JSON has balanced braces.
+    """Hold EOS until the outermost JSON object closes, then end generation.
 
     Llama 3.1 has three EOS tokens (128001, 128008, 128009).
     HuggingFace's min_new_tokens only suppresses the primary one,
     so the model hits <|eot_id|> early and produces truncated JSON.
     This processor suppresses all EOS tokens until the outermost
-    JSON object is closed (brace depth returns to 0).
+    JSON object is closed, and forces EOS as soon as it is.
+
+    Completion is tracked with a bracket stack, not a bare brace count, and a
+    closer that skips over open containers closes them (the same rule as
+    _repair_mismatched_closers). A plain count never returned to zero when the
+    model dropped one "}" (e.g. closing a list over an open object), so EOS
+    stayed suppressed forever and the model was forced to keep writing chatter
+    after the JSON until max_new_tokens. Anything after the outermost object is
+    discarded by the parser anyway, so ending there loses nothing.
     """
 
     def __init__(self, eos_token_ids, tokenizer, input_length):
@@ -1336,13 +1414,19 @@ class _JsonBraceProcessor(LogitsProcessor):
         self.tokenizer = tokenizer
         self.input_length = input_length
         self._prev_len = 0
-        self._depth = 0
+        self._stack = []
         self._in_string = False
         self._escape = False
         self._seen_brace = False
 
+    @property
+    def complete(self) -> bool:
+        return self._seen_brace and not self._stack
+
     def _update_depth(self, text):
         for ch in text:
+            if self.complete:
+                return
             if self._escape:
                 self._escape = False
                 continue
@@ -1352,12 +1436,18 @@ class _JsonBraceProcessor(LogitsProcessor):
             if ch == '"':
                 self._in_string = not self._in_string
                 continue
-            if not self._in_string:
-                if ch == '{':
-                    self._depth += 1
-                    self._seen_brace = True
-                elif ch == '}':
-                    self._depth -= 1
+            if self._in_string:
+                continue
+            if ch in "{[":
+                if ch == "[" and not self._seen_brace:
+                    continue  # the JSON we want is an object; ignore a leading list
+                self._stack.append(ch)
+                self._seen_brace = True
+            elif ch in "}]" and self._stack:
+                want = "{" if ch == "}" else "["
+                if want in self._stack:
+                    while self._stack.pop() != want:
+                        pass
 
     def __call__(self, input_ids, scores):
         gen = input_ids[0, self.input_length :]
@@ -1372,9 +1462,15 @@ class _JsonBraceProcessor(LogitsProcessor):
             )
             self._update_depth(new_text)
             self._prev_len = n
-        if not self._seen_brace or self._depth > 0:
+        if not self.complete:
             for eid in self.eos_token_ids:
                 scores[:, eid] = float("-inf")
+        else:
+            # The outermost object is closed: end generation here.
+            forced = torch.full_like(scores, float("-inf"))
+            for eid in self.eos_token_ids:
+                forced[:, eid] = 0.0
+            return forced
         return scores
 
 
@@ -1500,6 +1596,60 @@ def _is_truncated(json_str: str) -> bool:
     if json_str.rstrip().endswith((",", ":", '"')):
         return True
     return False
+
+
+def _repair_mismatched_closers(s: str) -> str:
+    """Insert closers the model skipped, e.g. a "]" arriving while an object is open.
+
+    The model sometimes closes a list without closing the object inside it:
+    ``"descriptions": [{"description": "..." ],``. Strict parsing then fails
+    there and the salvage keeps only the keys before the error, which silently
+    dropped the whole ``content`` block (every section) for an image poster.
+    Walking the brackets outside strings, a closer that does not match the
+    innermost open container first closes the containers it skips over; a
+    closer with nothing to close is dropped. Everything after the top-level
+    object closes (model chatter) is kept verbatim for later extraction. Valid
+    JSON passes through unchanged.
+    """
+    if not s:
+        return s
+    closer_for = {"{": "}", "[": "]"}
+    out = []
+    stack = []
+    in_str = False
+    esc = False
+    started = False
+    for i, ch in enumerate(s):
+        if started and not stack:
+            out.append(s[i:])
+            break
+        if in_str:
+            out.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+        elif ch in "{[":
+            stack.append(ch)
+            started = True
+            out.append(ch)
+        elif ch in "}]":
+            want = "{" if ch == "}" else "["
+            if want in stack:
+                while stack[-1] != want:
+                    out.append(closer_for[stack.pop()])
+                stack.pop()
+                out.append(ch)
+            # else: a stray closer with nothing to close; drop it
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def _extract_first_json_object(s: str) -> str:
@@ -1717,6 +1867,9 @@ def _robust_json_parse(response: str) -> dict:
 
     json_str = response[start:]
     json_str = _repair_unescaped_quotes(json_str)
+    # Close anything the model left open before a mismatched closer, so the
+    # first object is extracted whole instead of salvaged up to the error.
+    json_str = _repair_mismatched_closers(json_str)
 
     extracted = _extract_first_json_object(json_str)
     if extracted:
@@ -1897,12 +2050,70 @@ _PLACEHOLDER_STRINGS = frozenset({
     "yyyy-mm-dd", "yyyy", "http://example.com",
     "https://example.com", "conference url",
     "poster title", "main poster title",
+    # Example values from EXTRACTION_PROMPT / FALLBACK_PROMPT, which the model
+    # echoes when the poster has nothing to put there.
+    "institution", "affiliation", "university name", "organization name",
+    "a 3-4 sentence summary of the full poster",
+    "3-4 sentence summary of the full poster",
+    "full verbatim text of this section from the poster",
+    "full verbatim text of this section",
+})
+
+# "keyword1", "keyword 2", "keyword": the subjects example in the prompt.
+_KEYWORD_PLACEHOLDER_RE = re.compile(r"keyword\s*\d*")
+
+
+def _is_placeholder(value) -> bool:
+    """Return True if value matches a known template/placeholder string.
+
+    Case-insensitive; a trailing "." or "..." is ignored, because the prompt's
+    examples end in an ellipsis that the model sometimes keeps.
+    """
+    if not isinstance(value, str):
+        return False
+    v = value.strip().lower().rstrip(".…").strip()
+    return v in _PLACEHOLDER_STRINGS or bool(_KEYWORD_PLACEHOLDER_RE.fullmatch(v))
+
+
+# Person names the extraction prompt uses as its own example
+# ("LastName, FirstName"). The model copies them when a poster prints no
+# authors. Compared on letters and commas only, so spacing and case variants
+# ("Last Name, First Name", "LASTNAME,FIRSTNAME") match too.
+_PLACEHOLDER_NAME_KEYS = frozenset({
+    "lastname,firstname", "firstname,lastname", "lastname", "firstname",
+    "firstnamelastname", "lastnamefirstname", "familyname,givenname",
+    "givenname,familyname", "familyname", "givenname", "family,given",
+    "given,family", "last,first", "first,last", "authorname", "author",
+    "name", "fullname",
 })
 
 
-def _is_placeholder(value: str) -> bool:
-    """Return True if value matches a known template/placeholder string."""
-    return value.strip().lower() in _PLACEHOLDER_STRINGS
+def _placeholder_name_key(value) -> str:
+    return re.sub(r"[^a-z,]", "", str(value).lower())
+
+
+def _is_placeholder_person(person: dict) -> bool:
+    """True when every name field a creator carries is a template placeholder."""
+    keys = [
+        _placeholder_name_key(person.get(k))
+        for k in ("name", "givenName", "familyName")
+        if isinstance(person.get(k), str) and person.get(k).strip()
+    ]
+    return bool(keys) and all(k in _PLACEHOLDER_NAME_KEYS for k in keys)
+
+
+def _drop_placeholder_affiliations(person: dict) -> None:
+    """Remove template affiliations ("Institution Name") from one creator."""
+    aff = person.get("affiliation")
+    if isinstance(aff, str):
+        if _is_placeholder(aff):
+            person["affiliation"] = []
+    elif isinstance(aff, list):
+        person["affiliation"] = [
+            a for a in aff
+            if not _is_placeholder(a if isinstance(a, str)
+                                   else (a.get("name", "") if isinstance(a, dict) else ""))
+        ]
 
 
 def _needs_ror_enrichment(persons) -> bool:
@@ -2238,6 +2449,9 @@ def _postprocess_json(
     # it runs over an already-merged record.
     descs = result.get("descriptions")
     if isinstance(descs, list):
+        descs = [d for d in descs
+                 if not (isinstance(d, dict) and _is_placeholder(d.get("description")))]
+        result["descriptions"] = descs
         for d in descs:
             if isinstance(d, dict) and d.get("description"):
                 if d.get("descriptionType") != "Abstract":
@@ -2306,7 +2520,8 @@ def _postprocess_json(
                 title = _strip_markdown(title)
                 content = _strip_markdown(content)
                 if (content and len(content) > 10
-                        and not _is_bare_structural_label(content)):
+                        and not _is_bare_structural_label(content)
+                        and not _is_placeholder(content)):
                     entry = {"sectionContent": content}
                     if title:
                         entry["sectionTitle"] = title
@@ -2354,23 +2569,31 @@ def _postprocess_json(
                 # ("**STUDY OBJECTIVES:**"), and those decorated tokens would not
                 # match the clean captured words, so an already-captured label
                 # would be wrongly reclaimed as a "missing" block.
+                # A "## " line is a header (pdfplumber font size, or
+                # _mark_ocr_headers for vision OCR). Header text still flows into
+                # a reclaimed block as before, but a block made only of header
+                # lines is dropped: it is a bare label such as "Literature Cited",
+                # not content the model missed.
                 raw_lines = []
                 for ln in raw_text.split("\n"):
                     ln = ln.strip()
-                    if ln.startswith("## "):
+                    is_header = ln.startswith("## ")
+                    if is_header:
                         ln = ln.lstrip("# ").strip()
-                    raw_lines.append(_strip_markdown(ln))
-                all_uncaptured_blocks = []
+                    raw_lines.append((is_header, _strip_markdown(ln)))
+                all_uncaptured_blocks = []  # (has non-header line, lines)
                 current_block = []
-                for ln in raw_lines:
+                current_has_body = False
+                for is_header, ln in raw_lines:
                     if not ln:
                         continue
                     # Never reclaim a bare section-label header ("Methodology",
                     # "Introduction Results", ...) as recovered content.
                     if _is_section_label_only(ln):
                         if current_block and len(" ".join(current_block)) > 10:
-                            all_uncaptured_blocks.append(current_block)
+                            all_uncaptured_blocks.append((current_has_body, current_block))
                         current_block = []
+                        current_has_body = False
                         continue
                     # Match on bare words (drop trailing punctuation) so a label
                     # like "STUDY OBJECTIVES:" matches the captured "objectives".
@@ -2381,14 +2604,18 @@ def _postprocess_json(
                     hit = sum(1 for w in words if w in captured)
                     if hit / len(words) < 0.5:
                         current_block.append(ln)
+                        current_has_body = current_has_body or not is_header
                     else:
                         if current_block and len(" ".join(current_block)) > 10:
-                            all_uncaptured_blocks.append(current_block)
+                            all_uncaptured_blocks.append((current_has_body, current_block))
                         current_block = []
+                        current_has_body = False
                 if current_block and len(" ".join(current_block)) > 10:
-                    all_uncaptured_blocks.append(current_block)
+                    all_uncaptured_blocks.append((current_has_body, current_block))
 
-                for block in all_uncaptured_blocks:
+                for has_body, block in all_uncaptured_blocks:
+                    if not has_body:
+                        continue
                     blob = _strip_markdown("\n".join(block))
                     # Drop section-label echoes and bare structural labels
                     # ("Title and Subtitle:", "THEMES:") that the OCR emitted but
@@ -2492,9 +2719,16 @@ def _postprocess_json(
         _persons = result.get(_person_field)
         if not isinstance(_persons, list):
             continue
+        # Drop template echoes ("LastName, FirstName" / "Institution Name")
+        # the model emits when the poster prints no authors. An empty list is
+        # the honest answer; a placeholder would be submitted as a real creator.
+        _persons = [p for p in _persons
+                    if not (isinstance(p, dict) and _is_placeholder_person(p))]
+        result[_person_field] = _persons
         for creator in _persons:
             if not isinstance(creator, dict):
                 continue
+            _drop_placeholder_affiliations(creator)
             if "name" in creator:
                 creator["name"] = _clean_unicode_artifacts(creator.get("name", ""))
             creator["nameType"] = (
@@ -2517,6 +2751,11 @@ def _postprocess_json(
         from .normalize import normalize_subjects
 
         result["subjects"] = normalize_subjects(result["subjects"])
+        if isinstance(result["subjects"], list):
+            result["subjects"] = [
+                s for s in result["subjects"]
+                if not _is_placeholder(s.get("subject") if isinstance(s, dict) else s)
+            ]
 
     # Language is owned entirely by the lingua-based detector, never the LLM.
     # The model has been observed to hallucinate `language` from English
