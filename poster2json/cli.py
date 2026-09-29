@@ -220,8 +220,10 @@ def validate(input_file: str, verbose: bool):
 )
 @click.option(
     "--pattern",
-    default="*.pdf,*.jpg,*.png",
-    help="File patterns to process (comma-separated)"
+    default=None,
+    help="File patterns to process (comma-separated). Default: every supported "
+         "format (PDF, images, and office documents that are converted first), "
+         "matched case-insensitively."
 )
 def batch(input_dir: str, output_dir: str, pattern: str):
     """
@@ -243,11 +245,19 @@ def batch(input_dir: str, output_dir: str, pattern: str):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Find files matching patterns
-    patterns = [p.strip() for p in pattern.split(",")]
-    files = []
-    for pat in patterns:
-        files.extend(input_path.glob(pat))
+    # Find files: every supported suffix by default (case-insensitive, so
+    # POSTER.PDF and poster.jpeg are not skipped), or the given patterns.
+    if pattern:
+        patterns = [p.strip() for p in pattern.split(",")]
+        files = []
+        for pat in patterns:
+            files.extend(input_path.glob(pat))
+    else:
+        from .convert import SUPPORTED_SUFFIXES
+
+        pattern = "all supported formats"
+        files = [f for f in input_path.iterdir()
+                 if f.is_file() and f.suffix.lower() in SUPPORTED_SUFFIXES]
     files = sorted(set(files))
     
     if not files:

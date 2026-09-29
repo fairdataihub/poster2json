@@ -7,7 +7,7 @@
 <h1>poster2json</h1>
 
 <p>
-Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models.
+Convert scientific posters (PDF, images, PowerPoint and other office files) to structured JSON metadata using Large Language Models.
 </p>
 
 <br />
@@ -55,7 +55,7 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 
 ## Description
 
-**poster2json** extracts structured metadata from scientific conference posters (PDF or image format) into machine-actionable JSON conforming to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema).
+**poster2json** extracts structured metadata from scientific conference posters (PDF, image, or office format) into machine-actionable JSON conforming to the [poster-json-schema](https://github.com/fairdataihub/poster-json-schema).
 
 The pipeline uses:
 
@@ -160,7 +160,20 @@ Notes on the auto-populated fields:
 - `researchField` must be one of the four OpenAlex top-level domains: `Health Sciences`, `Life Sciences`, `Physical Sciences`, `Social Sciences`. Null when the model can't pick one confidently.
 - `affiliation` gets ROR enrichment when the matcher returns a high-confidence chosen result. Strings without a confident match pass through unchanged. Set `POSTER2JSON_ROR=0` to disable.
 - `publisher` and `publicationYear` are always emitted as `null`. They are platform-owned and set when the poster is published, not by extraction.
-- `formats` is derived from the input file's extension, not the model.
+- `formats` is derived from the input file's extension, not the model. A converted poster reports its original type (e.g. a `.pptx` stays `application/vnd.openxmlformats-officedocument.presentationml.presentation`).
+
+## Supported input formats
+
+| Input | How it is read |
+| ----- | -------------- |
+| PDF | pdfplumber text with reading-order reconstruction; vision OCR if the PDF has no usable text |
+| PNG, JPEG | vision OCR (Qwen2-VL) |
+| PowerPoint, Keynote, OpenDocument, Word, Publisher (`.ppt` `.pptx` `.pptm` `.pps` `.ppsx` `.pot` `.potx` `.odp` `.key` `.odg` `.pub` `.doc` `.docx` `.odt` `.rtf`) | converted to PDF with LibreOffice (text stays selectable), then read as a PDF. Needs LibreOffice installed |
+| SVG | converted to PDF with PyMuPDF (SVG text stays selectable), then read as a PDF |
+| TIFF, BMP, GIF, WebP, JPEG 2000, JFIF, PNM, TGA (`.tif` `.tiff` `.bmp` `.gif` `.webp` `.jp2` `.jpx` ...) | converted to an RGB PNG sized for the OCR model (first page or frame, transparency on white), then vision OCR |
+| HEIC/HEIF, AVIF | as above, when the `pillow-heif` / AVIF Pillow plugin is installed |
+
+Set `POSTER2JSON_SOFFICE` to point at a LibreOffice binary that is not on `PATH`. A file that cannot be converted returns an error with `errorCode: "CONVERSION_FAILED"`.
 
 ## System Requirements
 
@@ -170,6 +183,7 @@ Notes on the auto-populated fields:
 | RAM         | ≥32GB recommended                |
 | Python      | 3.10+                            |
 | OS          | Linux, macOS, Windows (via WSL2) |
+| LibreOffice | Only for office formats (`.pptx`, `.ppt`, `.docx`, ...); `soffice` on `PATH` |
 
 ## Performance
 
