@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2026-09-30
+
+### Reverted
+
+- **The 0.10.0 file-format conversion is rolled back.** The team is holding back on major changes for now, so the conversion of office documents, SVG and other image types before extraction (`poster2json/convert.py`) is removed. The code is identical to 0.9.24: PDF, PNG and JPEG are read as before, and other formats return the unsupported-format error again. This is released as 0.10.1 rather than by removing 0.10.0 so that installs picking the latest version get the rolled-back code.
+
 ## [0.9.24] - 2026-09-25
 
 ### Fixed
