@@ -48,16 +48,9 @@ def test_is_supported_format_images():
     assert is_supported_format("poster.png") is True
 
 
-def test_is_supported_format_convertible():
-    for name in ("poster.pptx", "poster.PPT", "poster.docx", "poster.key",
-                 "poster.tif", "poster.TIFF", "poster.svg", "poster.webp", "poster.gif"):
-        assert is_supported_format(name) is True, name
-
-
 def test_is_supported_format_unsupported():
     assert is_supported_format("poster.txt") is False
-    assert is_supported_format("poster.mp4") is False
-    assert is_supported_format("poster.zip") is False
+    assert is_supported_format("poster.docx") is False
     assert is_supported_format("poster") is False
 
 

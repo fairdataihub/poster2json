@@ -27,8 +27,6 @@ from typing import Optional, Tuple
 import numpy as np
 import torch
 from PIL import Image
-
-from .convert import VISION_MAX_SIDE, ConversionError, prepared_input
 from transformers import (
     AutoModelForCausalLM,
     AutoProcessor,
@@ -52,51 +50,12 @@ MAX_INPUT_TOKENS = 15000
 # Schema URL
 SCHEMA_URL = "https://posters.science/schema/v0.2/poster_schema.json"
 
-# File extension → MIME type per DataCite metadata schema 4.7. This describes
-# the file as deposited, so a converted poster (e.g. .pptx read via a PDF)
-# still reports its original type.
+# File extension → MIME type per DataCite metadata schema 4.7
 EXT_TO_FORMAT = {
     ".pdf": "application/pdf",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
-    ".jfif": "image/jpeg",
-    ".jpe": "image/jpeg",
-    ".pjpeg": "image/jpeg",
-    ".tif": "image/tiff",
-    ".tiff": "image/tiff",
-    ".bmp": "image/bmp",
-    ".dib": "image/bmp",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-    ".jp2": "image/jp2",
-    ".j2k": "image/jp2",
-    ".jpf": "image/jpx",
-    ".jpx": "image/jpx",
-    ".svg": "image/svg+xml",
-    ".heic": "image/heic",
-    ".heif": "image/heif",
-    ".avif": "image/avif",
-    ".ppm": "image/x-portable-pixmap",
-    ".pgm": "image/x-portable-graymap",
-    ".pbm": "image/x-portable-bitmap",
-    ".pnm": "image/x-portable-anymap",
-    ".tga": "image/x-tga",
-    ".ppt": "application/vnd.ms-powerpoint",
-    ".pps": "application/vnd.ms-powerpoint",
-    ".pot": "application/vnd.ms-powerpoint",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".pptm": "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
-    ".ppsx": "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
-    ".potx": "application/vnd.openxmlformats-officedocument.presentationml.template",
-    ".odp": "application/vnd.oasis.opendocument.presentation",
-    ".key": "application/vnd.apple.keynote",
-    ".odg": "application/vnd.oasis.opendocument.graphics",
-    ".pub": "application/x-mspublisher",
-    ".doc": "application/msword",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".odt": "application/vnd.oasis.opendocument.text",
-    ".rtf": "application/rtf",
 }
 
 # Scraping publication/funder identifiers out of poster text (top-level
@@ -278,7 +237,7 @@ def extract_text_with_qwen_vision(image_path: str) -> str:
 
     image = Image.open(image_path).convert("RGB")
     original_size = image.size
-    max_size = VISION_MAX_SIDE
+    max_size = 1280
     if max(image.size) > max_size:
         ratio = max_size / max(image.size)
         image = image.resize(
@@ -3008,11 +2967,7 @@ def extract_poster(
     Extract structured JSON metadata from a scientific poster.
 
     Args:
-        poster_path: Path to the poster file. PDF, PNG and JPEG are read
-            directly; office documents (PowerPoint, Keynote, OpenDocument,
-            Word, Publisher) are converted to PDF with LibreOffice, SVG is
-            converted to PDF with PyMuPDF, and other raster image types (TIFF,
-            BMP, GIF, WebP, JPEG 2000, ...) to PNG first. See poster2json.convert.
+        poster_path: Path to the poster file (PDF, JPG, or PNG).
         model_id: Override the default JSON structuring model
             (Llama-3.1-8B-Instruct). Accepts any HuggingFace repo id
             (e.g. google/gemma-2-9b-it, Qwen/Qwen2.5-7B-Instruct).
@@ -3027,31 +2982,6 @@ def extract_poster(
     if extract_identifiers is None:
         extract_identifiers = _identifiers_flag_default()
     log(f"Processing poster: {poster_path}")
-    original_ext = Path(poster_path).suffix.lower()
-    try:
-        with prepared_input(poster_path) as usable_path:
-            if usable_path != str(poster_path):
-                log(f"Converted {original_ext} poster to {Path(usable_path).suffix} for extraction")
-            return _extract_prepared(
-                usable_path, original_ext, model_id, quantization, extract_identifiers
-            )
-    except ConversionError as e:
-        log(f"Conversion failed: {e}")
-        return {"error": str(e), "errorCode": "CONVERSION_FAILED"}
-
-
-def _extract_prepared(
-    poster_path: str,
-    original_ext: str,
-    model_id: Optional[str],
-    quantization: Optional[str],
-    extract_identifiers: bool,
-) -> dict:
-    """Run the pipeline on a file it reads directly (PDF, PNG or JPEG).
-
-    ``original_ext`` is the suffix of the file as deposited, used for the
-    ``formats`` MIME type when the poster was converted first.
-    """
 
     # For image posters (and PDFs that may need vision OCR fallback):
     # unload the JSON model BEFORE the vision model loads. Qwen2-VL-7B
@@ -3119,7 +3049,7 @@ def _extract_prepared(
                 generated, pdf_links, extract_identifiers
             )
 
-        fmt = EXT_TO_FORMAT.get(original_ext)
+        fmt = EXT_TO_FORMAT.get(ext)
         if fmt and "error" not in generated:
             generated["formats"] = [fmt]
 

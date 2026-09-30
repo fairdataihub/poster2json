@@ -5,19 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.0] - 2026-09-28
-
-### Added
-
-- **Posters in formats other than PDF, PNG and JPEG are converted before extraction** (`poster2json/convert.py`, chosen by file suffix, no model needed).
-  - Office documents (`.ppt`, `.pptx`, `.pptm`, `.pps`, `.ppsx`, `.pot`, `.potx`, `.odp`, `.key`, `.odg`, `.pub`, `.doc`, `.docx`, `.odt`, `.rtf`) become a PDF through headless LibreOffice. The text stays selectable, so the PDF goes through pdfplumber like any poster PDF and falls back to vision OCR only when it has no text. Each conversion uses a throwaway LibreOffice profile, so parallel conversions do not collide. LibreOffice is needed only for these formats; `POSTER2JSON_SOFFICE` points at a binary off `PATH`.
-  - SVG becomes a PDF through PyMuPDF, keeping `<text>` selectable; an SVG with outlined text falls back to vision OCR of the rendered page.
-  - Other raster images (`.tif`, `.tiff`, `.bmp`, `.gif`, `.webp`, `.jp2`, `.jpx`, `.jfif`, PNM, TGA, and HEIC/HEIF or AVIF when their Pillow plugin is installed) become an RGB PNG capped at the vision model's 1280 px input size: first page or frame only, EXIF rotation applied, transparency flattened onto white, CMYK and 16-bit converted properly.
-  - `formats` still reports the file as deposited (e.g. the PowerPoint MIME type for a `.pptx`). A file that cannot be converted returns `{"error": ..., "errorCode": "CONVERSION_FAILED"}`.
-- `is_supported_format` / `get_poster_format` cover the converted formats (`get_poster_format` returns `"office"` for office documents), and `poster2json batch` with no `--pattern` now picks up every supported format, case-insensitively.
-
-Verified on real deposits on GPU: a PowerPoint `.pptx` and a legacy `.ppt` (read as selectable PDF text), a 9933 x 14043 CMYK TIFF (all seven authors extracted), and an SVG poster.
-
 ## [0.9.24] - 2026-09-25
 
 ### Fixed
