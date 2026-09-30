@@ -1,6 +1,6 @@
 # poster2json
 
-Convert scientific posters (PDF/images) to structured JSON metadata using Large Language Models.
+Convert scientific posters (PDF, images, PowerPoint and other office files) to structured JSON metadata using Large Language Models.
 
 ## Overview
 
@@ -68,6 +68,7 @@ See [Evaluation](evaluation.md) for detailed metrics.
 
 - NVIDIA GPU with ≥16GB VRAM
 - Python 3.10+
+- LibreOffice, only for office formats (`.pptx`, `.ppt`, `.docx`, ...)
 
 ## Links
 
