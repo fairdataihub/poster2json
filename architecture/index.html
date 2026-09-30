@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="author" content="FAIR Data Innovations Hub" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>Architecture - poster2json</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "Architecture";
+        var mkdocs_page_input_path = "architecture.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+      <script>hljs.highlightAll();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> poster2json
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">About</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../about/changelog/">Release Notes</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../about/contributing/">Contributor Guide</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../about/license/">License</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">poster2json</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" aria-label="Docs"></a></li>
+      <li class="breadcrumb-item active">Architecture</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/fairdataihub/poster2json/edit/main/architecture.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
+<p>Technical architecture and methodology for poster2json.</p>
+<h2 id="pipeline-overview">Pipeline Overview<a class="headerlink" href="#pipeline-overview" title="Permanent link">&para;</a></h2>
+<pre class="codehilite"><code>┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Input Poster   │────▶│  Raw Text       │────▶│  Structured     │
+│  (PDF/Image)    │     │  Extraction     │     │  JSON Output    │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                              │                        │
+                    ┌─────────┴─────────┐    ┌────────┴────────┐
+                    │                   │    │                 │
+               [PDF Files]        [Image Files]    [Transformers]
+                    │                   │         Llama 3.1 8B
+               [pdfplumber]      [Qwen2-VL-7B]   Section-aware
+               Text Layout       Vision OCR      JSON Generation
+</code></pre>
+
+<h2 id="models">Models<a class="headerlink" href="#models" title="Permanent link">&para;</a></h2>
+<h3 id="llama-31-8b-instruct-default-json-structuring-model">Llama 3.1 8B Instruct (default JSON structuring model)<a class="headerlink" href="#llama-31-8b-instruct-default-json-structuring-model" title="Permanent link">&para;</a></h3>
+<p><strong>Model</strong>: <a href="https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction">fairdataihub/Llama-3.1-8B-Poster-Extraction</a> — a verbatim mirror of Meta's <code>Llama-3.1-8B-Instruct</code>. The repo name has historical reasons; the weights themselves are not fine-tuned.</p>
+<p>Any HuggingFace instruct model works; pass <code>--model &lt;repo-id&gt;</code> to swap (e.g. <code>google/gemma-2-9b-it</code>, <code>Qwen/Qwen2.5-7B-Instruct</code>). The default loads at 4-bit NF4 quantization (~6GB VRAM); use <code>--quantization 8bit</code> or <code>fp16</code> for higher precision.</p>
+<ul>
+<li>8B parameters</li>
+<li>128K context window</li>
+<li>Strong section identification</li>
+</ul>
+<h3 id="qwen2-vl-7b-instruct">Qwen2-VL-7B-Instruct<a class="headerlink" href="#qwen2-vl-7b-instruct" title="Permanent link">&para;</a></h3>
+<p><strong>Model</strong>: <a href="https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct">Qwen/Qwen2-VL-7B-Instruct</a></p>
+<p>Vision-language model for image-based poster OCR:</p>
+<ul>
+<li>7B parameters</li>
+<li>Direct pixel-to-text extraction</li>
+<li>Multi-language support</li>
+<li>Layout-aware text recognition</li>
+</ul>
+<h2 id="stage-1-raw-text-extraction">Stage 1: Raw Text Extraction<a class="headerlink" href="#stage-1-raw-text-extraction" title="Permanent link">&para;</a></h2>
+<h3 id="pdf-processing-pdfplumber">PDF Processing (pdfplumber)<a class="headerlink" href="#pdf-processing-pdfplumber" title="Permanent link">&para;</a></h3>
+<p>For PDF files, the pipeline uses <code>pdfplumber</code> to:</p>
+<ol>
+<li>Extract character-level text with positional coordinates and font metadata</li>
+<li>Reconstruct reading order from layout geometry (handles multi-column posters)</li>
+<li>Detect section headers from font-size and weight cues</li>
+<li>Emit Markdown-style headed text for downstream prompting</li>
+</ol>
+<pre class="codehilite"><code class="language-python"># Simplified extraction flow
+pdf_path → pdfplumber chars → reading-order reconstruction (xy_cut) → raw_text
+</code></pre>
+
+<p>Reading order is reconstructed by <code>poster2json/xy_cut.py</code>, which clusters characters
+into lines and blocks and orders them top-to-bottom, left-to-right within detected
+columns. PyMuPDF is retained as a secondary fallback when pdfplumber yields too little
+text.</p>
+<h3 id="image-processing-qwen2-vl">Image Processing (Qwen2-VL)<a class="headerlink" href="#image-processing-qwen2-vl" title="Permanent link">&para;</a></h3>
+<p>For image files (JPG, PNG), the pipeline uses Qwen2-VL:</p>
+<ol>
+<li>Load image directly into vision-language model</li>
+<li>Generate text transcription via multimodal inference</li>
+<li>Preserve section headers and content structure</li>
+</ol>
+<pre class="codehilite"><code class="language-python"># Simplified extraction flow
+image_path → load_image() → Qwen2-VL → raw_text
+</code></pre>
+
+<h2 id="stage-2-json-structuring">Stage 2: JSON Structuring<a class="headerlink" href="#stage-2-json-structuring" title="Permanent link">&para;</a></h2>
+<p>Raw text is structured into JSON using Llama 3.1 8B with section-aware prompting.</p>
+<h3 id="prompt-engineering">Prompt Engineering<a class="headerlink" href="#prompt-engineering" title="Permanent link">&para;</a></h3>
+<p>The prompt explicitly:
+- Enumerates common poster sections (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References)
+- Distinguishes semantically similar sections (e.g., "Key Findings" vs "References")
+- Instructs verbatim text preservation</p>
+<h3 id="adaptive-token-management">Adaptive Token Management<a class="headerlink" href="#adaptive-token-management" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Initial attempt</strong>: 18,000 output tokens</li>
+<li><strong>If truncated</strong>: Retry with 24,000 tokens</li>
+<li><strong>If still truncating</strong>: Switch to condensed prompt format</li>
+</ol>
+<h3 id="json-repair">JSON Repair<a class="headerlink" href="#json-repair" title="Permanent link">&para;</a></h3>
+<p>Post-processing handles common LLM output issues:</p>
+<ul>
+<li>Unescaped quotes in scientific notation</li>
+<li>Trailing commas in arrays/objects</li>
+<li>Unicode encoding errors</li>
+<li>Truncated JSON completion</li>
+</ul>
+<h2 id="post-processing">Post-Processing<a class="headerlink" href="#post-processing" title="Permanent link">&para;</a></h2>
+<p>After JSON extraction, the pipeline applies:</p>
+<ol>
+<li><strong>Schema validation</strong>: Ensures output matches poster-json-schema</li>
+<li><strong>Caption normalization</strong>: Converts to <code>captions</code> array format</li>
+<li><strong>Section deduplication</strong>: Removes duplicate content</li>
+<li><strong>Unicode cleaning</strong>: Removes bidirectional characters</li>
+<li><strong>Table/chart data cleaning</strong>: Removes axis labels from section content</li>
+</ol>
+<h2 id="normalization-and-enrichment">Normalization and Enrichment<a class="headerlink" href="#normalization-and-enrichment" title="Permanent link">&para;</a></h2>
+<p>After post-processing, the pipeline runs a series of normalization and enrichment steps that add or clean up metadata fields beyond what the LLM produces.</p>
+<h3 id="identifier-extraction">Identifier extraction<a class="headerlink" href="#identifier-extraction" title="Permanent link">&para;</a></h3>
+<p>DOIs, arXiv IDs, and other identifiers are extracted from the raw poster text using regex patterns. PDF link annotations are also parsed to find embedded URLs and DOIs. These populate the top-level <code>identifiers[]</code> and <code>relatedIdentifiers[]</code> arrays. The LLM prompt does not ask for identifiers; they come entirely from pattern matching.</p>
+<p>Each identifier's <code>identifierType</code> is auto-classified based on its format (DOI, arXiv, URL, etc.).</p>
+<h3 id="orcid-enrichment">ORCID enrichment<a class="headerlink" href="#orcid-enrichment" title="Permanent link">&para;</a></h3>
+<p>ORCIDs are extracted from poster text via regex, then matched to the appropriate creator. If an ORCID is found, the <code>nameIdentifiers</code> array is populated with the ORCID value, and <code>nameIdentifierScheme</code> and <code>schemeURI</code> are set automatically.</p>
+<h3 id="ror-enrichment">ROR enrichment<a class="headerlink" href="#ror-enrichment" title="Permanent link">&para;</a></h3>
+<p>Affiliation names are looked up against the <a href="https://ror.org">ROR API</a>. When a match is found, <code>affiliationIdentifier</code>, <code>affiliationIdentifierScheme</code>, and <code>schemeURI</code> are populated.</p>
+<h3 id="publisher">Publisher<a class="headerlink" href="#publisher" title="Permanent link">&para;</a></h3>
+<p><code>publisher</code> is always emitted as <code>null</code>. It is platform-owned and assigned when the poster is published (the hosting repository), so extraction does not populate or enrich it.</p>
+<h3 id="language-detection">Language detection<a class="headerlink" href="#language-detection" title="Permanent link">&para;</a></h3>
+<p>The <code>language</code> field is detected from the raw poster text using the <code>lingua</code> language detector, overwriting any value the LLM may have produced. The result is an ISO 639-1 code (e.g., "en"), or null when the text is too short (&lt;200 chars / &lt;50 non-ASCII codepoints) or the detector is unsure.</p>
+<h3 id="description-type">Description type<a class="headerlink" href="#description-type" title="Permanent link">&para;</a></h3>
+<p><code>descriptionType</code> is not requested from the model; it is set deterministically to <code>"Other"</code>, since the description is a machine-generated summary. <code>"Abstract"</code> is reserved for an author-provided formal abstract, which the platform attaches downstream.</p>
+<h3 id="rights">Rights<a class="headerlink" href="#rights" title="Permanent link">&para;</a></h3>
+<p><code>rightsList</code> is stripped from the output. The license is chosen by the user at publish time rather than inferred from the poster.</p>
+<h3 id="funding-normalization">Funding normalization<a class="headerlink" href="#funding-normalization" title="Permanent link">&para;</a></h3>
+<p>Award numbers are cleaned (whitespace normalization, punctuation stripping, uppercasing). Invalid URIs in <code>awardUri</code> and <code>schemeUri</code> are removed. Funder identifiers are cross-referenced against the Crossref Funder Registry.</p>
+<h3 id="subject-normalization">Subject normalization<a class="headerlink" href="#subject-normalization" title="Permanent link">&para;</a></h3>
+<p>Keywords go through Unicode NFKC normalization, whitespace collapsing, and case-insensitive deduplication.</p>
+<h2 id="memory-management">Memory Management<a class="headerlink" href="#memory-management" title="Permanent link">&para;</a></h2>
+<h3 id="gpu-memory-optimization">GPU Memory Optimization<a class="headerlink" href="#gpu-memory-optimization" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Models loaded one at a time to minimize VRAM usage</li>
+<li>Automatic 8-bit quantization for GPUs with &lt;16GB VRAM</li>
+<li>Model unloading between stages</li>
+</ul>
+<h3 id="automatic-gpu-selection">Automatic GPU Selection<a class="headerlink" href="#automatic-gpu-selection" title="Permanent link">&para;</a></h3>
+<pre class="codehilite"><code class="language-python">def get_best_gpu():
+    # Select GPU with most available memory
+    # Accounts for other processes using GPU
+    # Falls back to CPU if no GPU available
+</code></pre>
+
+<h2 id="output-schema">Output Schema<a class="headerlink" href="#output-schema" title="Permanent link">&para;</a></h2>
+<p>Outputs conform to <a href="https://github.com/fairdataihub/poster-json-schema">poster-json-schema</a>:</p>
+<pre class="codehilite"><code class="language-json">{
+  &quot;$schema&quot;: &quot;https://posters.science/schema/v0.2/poster_schema.json&quot;,
+  &quot;creators&quot;: [...],
+  &quot;titles&quot;: [...],
+  &quot;content&quot;: {
+    &quot;sections&quot;: [
+      {&quot;sectionTitle&quot;: &quot;...&quot;, &quot;sectionContent&quot;: &quot;...&quot;}
+    ]
+  },
+  &quot;imageCaptions&quot;: [
+    {&quot;id&quot;: &quot;fig1&quot;, &quot;caption&quot;: &quot;Figure 1. Description&quot;}
+  ],
+  &quot;tableCaptions&quot;: [
+    {&quot;id&quot;: &quot;table1&quot;, &quot;caption&quot;: &quot;Table 1. Description&quot;}
+  ]
+}
+</code></pre>
+
+<h2 id="file-structure">File Structure<a class="headerlink" href="#file-structure" title="Permanent link">&para;</a></h2>
+<pre class="codehilite"><code>poster2json/
+├── extract.py        # Core pipeline: text extraction + JSON structuring + post-processing
+│   ├── get_raw_text()                  # Stage 1 dispatch: PDF / image
+│   ├── extract_text_with_pdfplumber()  # Layout-aware PDF extraction
+│   ├── extract_json_with_retry()       # Stage 2: JSON structuring
+│   └── _postprocess_json()             # Post-processing + normalization hooks
+├── xy_cut.py         # Reading-order reconstruction for multi-column layouts
+├── cli.py            # Command-line interface
+├── gui.py            # Optional graphical interface
+├── identifiers.py    # DOI / arXiv / URL extraction
+├── orcid.py          # ORCID enrichment
+├── ror.py            # ROR affiliation/publisher enrichment
+├── funders.py        # Crossref Funder Registry matching
+├── language.py       # lingua language detection
+├── standards.py      # SPDX rights normalization
+├── normalize.py      # Field normalization helpers
+└── validate.py       # Schema validation
+</code></pre>
+
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<h3 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CUDA_VISIBLE_DEVICES</code></td>
+<td>GPU device(s) to use</td>
+</tr>
+<tr>
+<td><code>POSTER2JSON_ROR</code></td>
+<td>Set to <code>0</code> to disable ROR affiliation/publisher enrichment</td>
+</tr>
+</tbody>
+</table>
+<h3 id="model-configuration">Model Configuration<a class="headerlink" href="#model-configuration" title="Permanent link">&para;</a></h3>
+<pre class="codehilite"><code class="language-python">JSON_MODEL_ID = &quot;fairdataihub/Llama-3.1-8B-Poster-Extraction&quot;
+VISION_MODEL_ID = &quot;Qwen/Qwen2-VL-7B-Instruct&quot;
+MAX_JSON_TOKENS = 18000
+MAX_RETRY_TOKENS = 24000
+</code></pre>
+
+<h2 id="see-also">See Also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../evaluation/">Evaluation</a> - Validation metrics and results</li>
+<li><a href="../">Overview</a> - Quick start and feature summary</li>
+</ul>
+              
+            </div>
+          </div><footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/fairdataihub/poster2json" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+    
+  </span>
+</div>
+    <script src="../js/jquery-3.6.0.min.js"></script>
+    <script>var base_url = "..";</script>
+    <script src="../js/theme_extra.js"></script>
+    <script src="../js/theme.js"></script>
+      <script src="../search/main.js"></script>
+    <script>
+        jQuery(function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        });
+    </script>
+
+</body>
+</html>
