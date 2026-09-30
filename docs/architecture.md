@@ -62,22 +62,13 @@ into lines and blocks and orders them top-to-bottom, left-to-right within detect
 columns. PyMuPDF is retained as a secondary fallback when pdfplumber yields too little
 text.
 
-### Input Conversion
-
-Before extraction, `poster2json/convert.py` turns formats the pipeline cannot read
-into ones it can, chosen by file suffix: office documents become PDF through
-LibreOffice, SVG becomes PDF through PyMuPDF (both keep text selectable), and other
-raster images become an RGB PNG sized for the vision model. PDF, PNG and JPEG pass
-through unchanged. Converted files live in a temporary directory that is removed
-after extraction.
-
 ### Image Processing (Qwen2-VL)
 
-For image files (JPG, PNG, and converted raster images), the pipeline uses Qwen2-VL:
+For image files (JPG, PNG), the pipeline uses Qwen2-VL:
 
 1. Load image directly into vision-language model
 2. Generate text transcription via multimodal inference
-3. Preserve section headers and content structure: section headers are marked with `## `, the same convention pdfplumber uses
+3. Preserve section headers and content structure
 
 ```python
 # Simplified extraction flow

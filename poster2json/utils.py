@@ -53,12 +53,10 @@ def is_supported_format(file_path: str) -> bool:
         file_path: Path to poster file
 
     Returns:
-        True for PDF, PNG and JPEG (read directly) and for the office and
-        image formats poster2json converts first (see poster2json.convert).
+        True if PDF, JPG, JPEG, or PNG
     """
-    from .convert import SUPPORTED_SUFFIXES
-
-    return Path(file_path).suffix.lower() in SUPPORTED_SUFFIXES
+    ext = Path(file_path).suffix.lower()
+    return ext in [".pdf", ".jpg", ".jpeg", ".png"]
 
 
 def get_poster_format(file_path: str) -> Optional[str]:
@@ -69,17 +67,13 @@ def get_poster_format(file_path: str) -> Optional[str]:
         file_path: Path to poster file
 
     Returns:
-        "pdf", "image", "office" (converted to PDF first), or None if unsupported
+        "pdf", "image", or None if unsupported
     """
-    from .convert import OFFICE_SUFFIXES, RASTER_SUFFIXES, VECTOR_SUFFIXES
-
     ext = Path(file_path).suffix.lower()
     if ext == ".pdf":
         return "pdf"
-    if ext in {".jpg", ".jpeg", ".png"} or ext in RASTER_SUFFIXES or ext in VECTOR_SUFFIXES:
+    elif ext in [".jpg", ".jpeg", ".png"]:
         return "image"
-    if ext in OFFICE_SUFFIXES:
-        return "office"
     return None
 
 
