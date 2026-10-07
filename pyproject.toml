@@ -55,6 +55,9 @@ click = "^8.0"
 
 # ML/AI dependencies
 torch = ">=2.0.0"
+# Needed to load the Qwen2-VL processor for image posters (transformers 5
+# imports it); without it image extraction fails on a clean install.
+torchvision = ">=0.15.0"
 transformers = ">=4.40.0"
 accelerate = ">=0.20.0"
 bitsandbytes = ">=0.44.0"

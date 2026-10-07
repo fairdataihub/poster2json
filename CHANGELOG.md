@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Image posters work on a clean install.** `torchvision` is now a declared dependency. transformers 5 needs it to load the Qwen2-VL processor, so a fresh `pip install poster2json` failed on every PNG or JPEG poster with "Qwen2VLVideoProcessor requires the Torchvision library". PDF posters were not affected.
+
 ## [0.10.1] - 2026-09-30
 
 ### Reverted
