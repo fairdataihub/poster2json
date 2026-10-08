@@ -713,13 +713,23 @@ def _line_dominant_size(line: list) -> float:
     return max(set(sizes), key=sizes.count)
 
 
-def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
-    """Group vertically-sorted lines within a single column into blocks.
+def _lines_to_blocks(lines: list, line_height_mult: float = 1.5,
+                     leaf_ids: Optional[list] = None,
+                     hyphen_join: bool = False,
+                     orders: Optional[list] = None) -> list:
+    """Group word lines (in reading order) into blocks.
 
     A new block starts when:
       - The vertical gap exceeds line_height_mult * median line height, OR
       - The font style changes (bold to non-bold or vice versa), OR
-      - The font size jumps significantly (> 1.3x ratio)
+      - The font size jumps significantly (> 1.3x ratio), OR
+      - (when leaf_ids is given, one XY-cut column region id per line) the
+        line belongs to a different column region than the previous line, or
+        starts clearly above the previous line (an upward jump means a column
+        or flow change, never a continuation)
+
+    With hyphen_join, words hyphenated at line ends are repaired when the
+    lines of a block are joined.
     """
     if not lines:
         return []
@@ -731,7 +741,14 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
     median_lh = sorted(line_heights)[len(line_heights) // 2]
     gap_threshold = median_lh * line_height_mult
 
+    vocab = None
+    if hyphen_join:
+        from poster2json.layout_blocks import page_vocab
+        vocab = page_vocab([" ".join(w["text"] for w in ln) for ln in lines])
+
     block_groups = [[lines[0]]]
+    group_region = [leaf_ids[0] if leaf_ids is not None else 0]
+    group_order = [orders[0] if orders is not None else 0]
     for i in range(1, len(lines)):
         prev_bottom = max(w["bottom"] for w in lines[i - 1])
         curr_top = min(w["top"] for w in lines[i])
@@ -753,13 +770,35 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
             if short_line:
                 style_break = True
 
-        if gap > gap_threshold or style_break:
+        leaf_break = False
+        if leaf_ids is not None:
+            prev_top = min(w["top"] for w in lines[i - 1])
+            prev_h = max(prev_bottom - prev_top, 1.0)
+            # Different column region: break, unless the line continues the
+            # previous one on the same row (e.g. a bullet or number in its
+            # own cell next to its text).
+            same_row = (abs(curr_top - prev_top) < 0.5 * prev_h
+                        and min(w["x0"] for w in lines[i])
+                        >= max(w["x1"] for w in lines[i - 1]) - 1.0)
+            leaf_break = ((leaf_ids[i] != leaf_ids[i - 1] and not same_row)
+                          or curr_top < prev_top - 0.25 * prev_h)
+            if leaf_break and not same_row:
+                from poster2json.layout_blocks import continues_paragraph
+                # a paragraph can run from the bottom of one column into the
+                # top of the next; keep that as one block
+                if continues_paragraph(" ".join(w["text"] for w in lines[i - 1]),
+                                       " ".join(w["text"] for w in lines[i])):
+                    leaf_break = False
+
+        if gap > gap_threshold or style_break or leaf_break:
             block_groups.append([lines[i]])
+            group_region.append(leaf_ids[i] if leaf_ids is not None else 0)
+            group_order.append(orders[i] if orders is not None else i)
         else:
             block_groups[-1].append(lines[i])
 
     blocks = []
-    for group in block_groups:
+    for group, region, order in zip(block_groups, group_region, group_order):
         all_words = [w for line in group for w in line]
         x0 = min(w["x0"] for w in all_words)
         top = min(w["top"] for w in all_words)
@@ -791,7 +830,11 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
         if not deduped_lines:
             continue
 
-        block_text = " ".join(deduped_lines)
+        if hyphen_join:
+            from poster2json.layout_blocks import join_lines
+            block_text = join_lines(deduped_lines, vocab)
+        else:
+            block_text = " ".join(deduped_lines)
 
         fontsizes = [w["size"] for w in all_words if w.get("size", 0) > 0]
         fontnames = [w["fontname"] for w in all_words if w.get("fontname")]
@@ -810,16 +853,21 @@ def _lines_to_blocks(lines: list, line_height_mult: float = 1.5) -> list:
             "text": block_text,
             "fontsize": dominant_size,
             "bold": is_bold,
+            "region": region,
+            "order": order,
         })
 
     return blocks
 
 
-def _chars_to_word_lines(char_lines, words):
+def _chars_to_word_lines(char_lines, words, leaf_ids=None):
     """Map XY-cut char-level lines back to word-level lines.
 
     For each char-level line, find the words whose characters
-    predominantly fall on that line (by spatial overlap).
+    predominantly fall on that line (by spatial overlap).  Legacy path used
+    when layout_blocks.FLAGS["decomp"] is off.  With leaf_ids (one per char
+    line) the result is (word_lines, leaf id per word line); words that no
+    line claimed get leaf id -1.
     """
     from bisect import bisect_left, bisect_right
 
@@ -831,7 +879,8 @@ def _chars_to_word_lines(char_lines, words):
 
     assigned = set()
     result = []
-    for char_line in char_lines:
+    result_leaf = []
+    for li, char_line in enumerate(char_lines):
         if not char_line:
             continue
         line_y_min = min(c["top"] for c in char_line)
@@ -853,6 +902,7 @@ def _chars_to_word_lines(char_lines, words):
         if line_words:
             line_words.sort(key=lambda w: w["x0"])
             result.append(line_words)
+            result_leaf.append(leaf_ids[li] if leaf_ids is not None else 0)
 
     unassigned = [w for w in words if id(w) not in assigned]
     if unassigned:
@@ -863,10 +913,14 @@ def _chars_to_word_lines(char_lines, words):
                 cur.append(w)
             else:
                 result.append(sorted(cur, key=lambda w: w["x0"]))
+                result_leaf.append(-1)
                 cur = [w]
         if cur:
             result.append(sorted(cur, key=lambda w: w["x0"]))
+            result_leaf.append(-1)
 
+    if leaf_ids is not None:
+        return result, result_leaf
     return result
 
 
@@ -926,7 +980,12 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             page_h = page.height
 
             from pdfplumber.utils.text import extract_words as _pw_extract_words
+            from poster2json import layout_blocks as _lb
             chars = _filter_phantom_spaces(page.chars)
+            if _lb.FLAGS["dedupe"]:
+                chars = _lb.dedupe_overprinted(chars)
+            for _i, _c in enumerate(chars):
+                _c["_si"] = _i  # PDF stream order, used to order chars in a line
 
             text_chars = [c for c in chars if c.get("text", "").strip()]
             if text_chars:
@@ -939,21 +998,83 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             else:
                 x_tol = 3
             log(f"   x_tolerance={x_tol} (median_font={median_fs if text_chars else '?'}pt)")
-            words = _pw_extract_words(chars, x_tolerance=x_tol,
-                                     extra_attrs=["size"],
-                                     use_text_flow=True)
-            _annotate_words_with_fonts(words, chars)
-            if not words:
+            if not text_chars:
                 continue
 
-            from poster2json.xy_cut import chars_to_reading_order
+            from poster2json import xy_cut as _xy
 
-            reading_lines = chars_to_reading_order(chars, page_width=page_w, page_height=page_h)
-            if not reading_lines:
+            leaf_ids = None
+            if _lb.FLAGS["decomp"]:
+                # One decomposition: lines and words come from the same chars
+                # of each XY-cut leaf, so every word belongs to exactly one line.
+                rot_chars = []
+                main_chars = chars
+                if _lb.FLAGS["rotated"]:
+                    main_chars, rot_chars = _lb.split_rotated(chars)
+                # The XY-cut sees every char (the cut tree is the same with or
+                # without rotated labels); rotated chars are pulled out of the
+                # leaves afterwards.
+                leaves, regions = _xy.chars_to_leaves(
+                    chars, page_width=page_w, page_height=page_h)
+                if rot_chars:
+                    rot_ids = {id(c) for c in rot_chars}
+                    kept = [([c for c in lf if id(c) not in rot_ids], rg)
+                            for lf, rg in zip(leaves, regions)]
+                    kept = [(lf, rg) for lf, rg in kept if lf]
+                    leaves = [lf for lf, _ in kept]
+                    regions = [rg for _, rg in kept]
+                if not leaves and not rot_chars:
+                    continue
+                word_lines, leaf_ids = _lb.build_word_lines(
+                    leaves, x_tol, _lb.body_font_size(text_chars), regions=regions,
+                    spaces=[c for c in main_chars if c.get("text") == " "])
+                if rot_chars:
+                    rlines, rids = _lb.rotated_word_lines(rot_chars, x_tol)
+                    word_lines = word_lines + rlines
+                    leaf_ids = leaf_ids + rids
+            else:
+                words = _pw_extract_words(chars, x_tolerance=x_tol,
+                                         extra_attrs=["size"],
+                                         use_text_flow=True)
+                _annotate_words_with_fonts(words, chars)
+                if not words:
+                    continue
+                reading_lines, line_leaf = _xy.chars_to_leaf_lines(
+                    chars, page_width=page_w, page_height=page_h)
+                if not reading_lines:
+                    continue
+                word_lines, leaf_ids = _chars_to_word_lines(
+                    reading_lines, words, leaf_ids=line_leaf)
+            if not word_lines:
                 continue
 
-            word_lines = _chars_to_word_lines(reading_lines, words)
-            all_blocks = _lines_to_blocks(word_lines)
+            # Figure/table label text (plot ticks, table cells) is split off
+            # into its own blocks so it is not glued into body sentences.
+            fig_blocks = []
+            if _lb.FLAGS["fig"]:
+                masks = _lb.build_figure_masks(
+                    page.images,
+                    list(page.rects) + list(page.curves) + list(page.lines),
+                    page_w, page_h, _lb.body_font_size(text_chars))
+                (body_lines, body_ids, lab_lines, lab_ids,
+                 body_order, lab_order) = _lb.split_figure_words(
+                    word_lines, leaf_ids, masks, _lb.body_font_size(text_chars))
+                if body_lines and lab_lines:
+                    word_lines, leaf_ids, line_order = body_lines, body_ids, body_order
+                    fig_blocks = _lines_to_blocks(
+                        lab_lines, leaf_ids=lab_ids if _lb.FLAGS["leaf"] else None,
+                        orders=lab_order)
+                    for fb in fig_blocks:
+                        fb["fig"] = True
+                else:
+                    line_order = None
+            else:
+                line_order = None
+
+            all_blocks = _lines_to_blocks(
+                word_lines,
+                leaf_ids=leaf_ids if _lb.FLAGS["leaf"] else None,
+                hyphen_join=_lb.FLAGS["hyphen"], orders=line_order)
             for blk in all_blocks:
                 blk["col"] = 0
                 blk["flow_idx"] = 0
@@ -1011,11 +1132,29 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             footer_blocks.sort(key=lambda b: b["vpos"])
             all_blocks = header_blocks + meta_blocks + body_blocks + footer_blocks
 
+            # Emit figure labels as separate blocks, right after the body block
+            # that preceded them in the original line order (so labels are not
+            # glued into a paragraph, and nothing moves far from where it was
+            # printed).
+            for fb in fig_blocks:
+                at = 0
+                best = -1
+                for k, bk in enumerate(all_blocks):
+                    if not bk.get("fig") and best < bk["order"] < fb["order"]:
+                        best, at = bk["order"], k + 1
+                while (at < len(all_blocks) and all_blocks[at].get("fig")
+                       and all_blocks[at]["order"] < fb["order"]):
+                    at += 1
+                all_blocks.insert(at, fb)
+
             median_fontsize = page_median_fs
 
             for blk in all_blocks:
                 _t = blk["text"].strip()
                 if not _t:
+                    continue
+                if blk.get("fig"):
+                    all_output_lines.append(_add_bidi_markers(_t))
                     continue
 
                 # Figure/table caption: split the "Figure N"/"Table N" label

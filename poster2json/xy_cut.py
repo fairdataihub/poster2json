@@ -282,14 +282,78 @@ def traverse(block: Block) -> list:
     return out
 
 
-def chars_to_reading_order(raw_chars: list, page_width: float = 0,
-                           page_height: float = 0) -> list:
+def iter_leaves(block: Block):
+    """Yield the leaf blocks of an XY-cut tree in reading order."""
+    for leaf, _path in iter_leaves_with_path(block):
+        yield leaf
+
+
+def iter_leaves_with_path(block: Block, path: tuple = ()):
+    """Yield (leaf, column path) in reading order.
+
+    The path records, for every vsplit (column split) on the way down from the
+    root, which child the leaf lives under.  Two leaves with the same path are
+    stacked vertically inside one column region; different paths mean the
+    reading order jumps between columns.
+    """
+    if block.kind == "leaf":
+        yield block, path
+        return
+    for i, ch in enumerate(block.children):
+        sub = path + ((id(block), i),) if block.kind == "vsplit" else path
+        yield from iter_leaves_with_path(ch, sub)
+
+
+def _build_tree(raw_chars: list, page_width: float, page_height: float):
     chars = [c for c in raw_chars if c.get("text", "").strip()]
     if not chars:
-        return []
+        return None
     tree = split_block(chars)
     if page_width > 0:
         tree = _promote_spanning_leaves(tree, page_width)
     if page_height > 0:
         tree = _merge_bottom_region(tree, page_height)
+    return tree
+
+
+def chars_to_leaves(raw_chars: list, page_width: float = 0,
+                    page_height: float = 0):
+    """Return (leaf char lists, column region id per leaf), in reading order.
+
+    Unlike chars_to_reading_order this keeps the XY-cut structure, so callers
+    can refuse to merge text across column-region boundaries.  Region ids are
+    small ints, equal for leaves with the same column path.
+    """
+    tree = _build_tree(raw_chars, page_width, page_height)
+    if tree is None:
+        return [], []
+    leaves, regions, seen = [], [], {}
+    for leaf, path in iter_leaves_with_path(tree):
+        if not leaf.chars:
+            continue
+        leaves.append(leaf.chars)
+        regions.append(seen.setdefault(path, len(seen)))
+    return leaves, regions
+
+
+def chars_to_leaf_lines(raw_chars: list, page_width: float = 0,
+                        page_height: float = 0):
+    """Like chars_to_reading_order, but also return a column region id per line."""
+    tree = _build_tree(raw_chars, page_width, page_height)
+    if tree is None:
+        return [], []
+    lines, ids, seen = [], [], {}
+    for leaf, path in iter_leaves_with_path(tree):
+        rid = seen.setdefault(path, len(seen))
+        for ln in _cluster_lines(leaf.chars):
+            lines.append(ln)
+            ids.append(rid)
+    return lines, ids
+
+
+def chars_to_reading_order(raw_chars: list, page_width: float = 0,
+                           page_height: float = 0) -> list:
+    tree = _build_tree(raw_chars, page_width, page_height)
+    if tree is None:
+        return []
     return traverse(tree)
