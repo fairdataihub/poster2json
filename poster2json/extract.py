@@ -2573,6 +2573,52 @@ def _correct_affiliations_from_superscripts(result: dict, raw_text: str) -> None
         })
 
 
+# Recovery of raw text the model dropped. Long lines are judged by word n-gram
+# shingle coverage against the captured fields (a bag of words always passes
+# on long prose because of stopwords); short lines keep the unigram rule.
+_RECOVERY_SHINGLES = True
+_RECOVERY_NGRAM = 3
+_RECOVERY_THRESHOLD = 0.2
+_RECOVERY_MIN_TOKENS = 6
+_RECOVERY_META_COVERAGE = 0.8
+_EMAIL_RE = re.compile(r"\S+@\S+\.\S+")
+_ALNUM_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def _norm_tokens(text: str) -> list:
+    """Lowercase alphanumeric tokens (same normalization for both sides)."""
+    return _ALNUM_TOKEN_RE.findall(text.lower())
+
+
+def _build_shingles(fields, n: int) -> set:
+    """Word n-gram shingles, built per field (never across field boundaries)."""
+    out = set()
+    for f in fields:
+        toks = _norm_tokens(f)
+        for i in range(len(toks) - n + 1):
+            out.add(tuple(toks[i:i + n]))
+    return out
+
+
+def _line_is_uncaptured(line: str, words: list, captured: set, shingles: set,
+                        meta_tokens: Optional[set] = None) -> bool:
+    """True when a raw line is not covered by the captured text."""
+    toks = _norm_tokens(line)
+    if _RECOVERY_SHINGLES and len(toks) >= _RECOVERY_MIN_TOKENS:
+        if _EMAIL_RE.search(line):
+            return False  # author/contact banner, not body prose
+        if meta_tokens:
+            in_meta = sum(1 for t in toks if t in meta_tokens or t.isdigit())
+            if in_meta / len(toks) >= _RECOVERY_META_COVERAGE:
+                return False
+        n = _RECOVERY_NGRAM
+        grams = [tuple(toks[i:i + n]) for i in range(len(toks) - n + 1)]
+        hit = sum(1 for g in grams if g in shingles)
+        return hit / len(grams) < _RECOVERY_THRESHOLD
+    hit = sum(1 for w in words if w in captured)
+    return hit / len(words) < 0.5
+
+
 def _postprocess_json(
     data: dict, raw_text: str = "", extract_identifiers: bool = False
 ) -> dict:
@@ -2717,31 +2763,52 @@ def _postprocess_json(
                 # author banner and bare section-label headers as junk "ghost"
                 # sections.
                 captured = set()
+                captured_fields = []
+
+                def _capture(text):
+                    captured.update(text.lower().split())
+                    captured_fields.append(text)
+
                 for sec in cleaned_sections:
-                    captured.update(sec["sectionContent"].lower().split())
-                    captured.update(
-                        sec.get("sectionTitle", "").replace("#", " ").lower().split()
-                    )
+                    _capture(sec["sectionContent"])
+                    _capture(sec.get("sectionTitle", "").replace("#", " "))
                 for key in ("imageCaptions", "tableCaptions"):
                     for cap in result.get(key, []) or []:
                         if isinstance(cap, dict):
                             for v in cap.values():
                                 if isinstance(v, str):
-                                    captured.update(v.lower().split())
+                                    _capture(v)
                 for fld in ("titles", "creators", "descriptions", "subjects"):
+                    fld_strings = []
                     for obj in result.get(fld, []) or []:
                         if isinstance(obj, dict):
                             for v in obj.values():
                                 if isinstance(v, str):
-                                    captured.update(v.lower().split())
+                                    _capture(v)
+                                    fld_strings.append(v)
                                 elif isinstance(v, list):
                                     for it in v:
                                         if isinstance(it, str):
-                                            captured.update(it.lower().split())
+                                            _capture(it)
+                                            fld_strings.append(it)
                                         elif isinstance(it, dict):
                                             for vv in it.values():
                                                 if isinstance(vv, str):
-                                                    captured.update(vv.lower().split())
+                                                    _capture(vv)
+                                                    fld_strings.append(vv)
+                    # An author banner is printed as one run of names, while the
+                    # metadata holds one name per object; judge it against the
+                    # run of all values of the field as well.
+                    if len(fld_strings) > 1:
+                        captured_fields.append(" ".join(fld_strings))
+                shingles = _build_shingles(captured_fields, _RECOVERY_NGRAM)
+                # Words of the bibliographic metadata (title, author names,
+                # affiliations, subjects): an author/affiliation banner is made
+                # almost only of these and must not be reclaimed as content.
+                meta_tokens = set()
+                for fld in ("titles", "creators", "subjects"):
+                    for obj in result.get(fld, []) or []:
+                        meta_tokens.update(_norm_tokens(json.dumps(obj, ensure_ascii=False)))
 
                 # Strip ## prefixes AND markdown, then find ALL uncaptured
                 # blocks. Markdown matters: the vision OCR decorates labels
@@ -2780,8 +2847,7 @@ def _postprocess_json(
                     words = [w for w in words if w]
                     if not words:
                         continue
-                    hit = sum(1 for w in words if w in captured)
-                    if hit / len(words) < 0.5:
+                    if _line_is_uncaptured(ln, words, captured, shingles, meta_tokens):
                         current_block.append(ln)
                         current_has_body = current_has_body or not is_header
                     else:
