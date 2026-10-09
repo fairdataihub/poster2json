@@ -2619,14 +2619,42 @@ def _line_is_uncaptured(line: str, words: list, captured: set, shingles: set,
     return hit / len(words) < 0.5
 
 
+def _ground_main_title(titles: list, raw_text: str, title_candidate: Optional[str]) -> None:
+    """Ground the main (untyped) title in the printed page-1 title, in place.
+
+    Subtitle and other typed entries are left untouched.
+    """
+    from .title_ground import ground_title
+
+    if not title_candidate and not raw_text:
+        return
+    for title_obj in titles:
+        if (isinstance(title_obj, dict) and title_obj.get("title")
+                and not title_obj.get("titleType")):
+            new, action = ground_title(title_obj["title"], title_candidate, raw_text)
+            if action == "warn":
+                log(f"WARNING: title not found in poster text: {title_obj['title']!r}")
+            elif new != title_obj["title"]:
+                log(f"Title {action}: {title_obj['title']!r} -> {new!r}")
+                title_obj["title"] = _clean_unicode_artifacts(new)
+            break
+
+
 def _postprocess_json(
-    data: dict, raw_text: str = "", extract_identifiers: bool = False
+    data: dict,
+    raw_text: str = "",
+    extract_identifiers: bool = False,
+    title_candidate: Optional[str] = None,
 ) -> dict:
     """Comprehensive post-processing for extracted JSON.
 
     ORCID and ROR enrichment always run. Publication/funder identifier
     extraction (top-level identifiers[], funder identifiers, relatedIdentifiers)
     only runs when extract_identifiers is True; otherwise it is handled upstream.
+
+    title_candidate is the typographic title from page-1 geometry (see
+    title_ground.compute_title_candidate). When given, the model's title is
+    grounded against it; None leaves the title as the model wrote it.
     """
     result = data.copy()
 
@@ -2986,6 +3014,7 @@ def _postprocess_json(
         for title_obj in result["titles"]:
             if isinstance(title_obj, dict) and "title" in title_obj:
                 title_obj["title"] = _clean_unicode_artifacts(title_obj.get("title", ""))
+        _ground_main_title(result["titles"], raw_text, title_candidate)
 
     # Licenses are not extracted from the poster by the model; rights are
     # provided by the repository or platform upstream. Drop any the model emits.
@@ -3147,7 +3176,11 @@ def _as_result_dict(result):
 
 
 def extract_json_with_retry(
-    raw_text: str, model, tokenizer, extract_identifiers: bool = False
+    raw_text: str,
+    model,
+    tokenizer,
+    extract_identifiers: bool = False,
+    title_candidate: Optional[str] = None,
 ) -> dict:
     """
     Send raw poster text to the LLM and robustly parse the JSON response.
@@ -3197,7 +3230,10 @@ def extract_json_with_retry(
         result = _as_result_dict(_robust_json_parse(response))
 
     result = _postprocess_json(
-        result, raw_text=raw_text, extract_identifiers=extract_identifiers
+        result,
+        raw_text=raw_text,
+        extract_identifiers=extract_identifiers,
+        title_candidate=title_candidate,
     )
     return result
 
@@ -3251,6 +3287,14 @@ def extract_poster(
     if not raw_text or source == "unknown":
         return {"error": "Failed to extract text. Unsupported format or extraction failed."}
 
+    # Typographic title from page-1 geometry, independent of which text
+    # engine produced raw_text.
+    title_candidate = None
+    if ext == ".pdf":
+        from .title_ground import compute_title_candidate
+
+        title_candidate = compute_title_candidate(poster_path)
+
     log(f"Extracted {len(raw_text)} chars using {source} in {t_extract_elapsed:.2f}s")
 
     # Unload vision model before loading JSON model
@@ -3265,7 +3309,8 @@ def extract_poster(
     try:
         t_json_start = time.time()
         generated = extract_json_with_retry(
-            raw_text, model, tokenizer, extract_identifiers=extract_identifiers
+            raw_text, model, tokenizer, extract_identifiers=extract_identifiers,
+            title_candidate=title_candidate,
         )
         t_json_elapsed = time.time() - t_json_start
 
@@ -3275,7 +3320,8 @@ def extract_poster(
             if pymupdf_text and len(pymupdf_text) > 500:
                 t_retry_start = time.time()
                 generated = extract_json_with_retry(
-                    pymupdf_text, model, tokenizer, extract_identifiers=extract_identifiers
+                    pymupdf_text, model, tokenizer, extract_identifiers=extract_identifiers,
+                    title_candidate=title_candidate,
                 )
                 t_retry_elapsed = time.time() - t_retry_start
                 if "error" not in generated:
