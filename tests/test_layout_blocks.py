@@ -80,6 +80,49 @@ def test_superscript_attached_to_its_line():
     assert first == "Smith1"
 
 
+def _line_texts(lines):
+    return ["".join(c["text"] for c in ln) for ln in lines]
+
+
+def test_marker_on_mixed_size_leaf_stays_on_author_line():
+    # Authors at 54pt with 36pt markers, affiliations at 36pt in the same leaf:
+    # the leaf mode (36) must not turn the markers into a line of their own.
+    authors = text_chars("Polack", 0, 100, 54.0)
+    end = authors[-1]["x1"]
+    marker = ch("1", end + 0.1, 97.0, size=36.0, bottom=97.0 + 36.0)
+    authors2 = text_chars("Crenshaw", end + 60, 100, 54.0)
+    aff = text_chars("Georgia State University Atlanta", 0, 180, 36.0)
+    aff += text_chars("Space Telescope Science Institute", 0, 230, 36.0)
+    lines = lb.cluster_leaf_lines(authors + [marker] + authors2 + aff, body_size=36.0)
+    texts = _line_texts(lines)
+    assert any("Polack1" in t and "Crenshaw" in t for t in texts)
+    assert not any(t == "1" for t in texts)
+
+
+def test_marker_goes_to_its_own_line_not_the_big_title_below():
+    # Author line (39pt) sits ABOVE a 28pt title line; the raised 26pt marker
+    # follows the last name and overlaps the title's extended band.
+    authors = text_chars("Katira", 2000, 228, 39.2)
+    end = authors[-1]["x1"]
+    marker = ch("1", end, 226.3, size=26.2, bottom=252.4)
+    other = text_chars("Jamey", 1500, 228, 39.2)
+    title = text_chars("Human Carcinogens", 1500, 273, 28.0)
+    lines = lb.cluster_leaf_lines(other + authors + [marker] + title, body_size=13.0)
+    texts = _line_texts(lines)
+    assert any("Katira1" in t for t in texts)
+    assert not any("Carcinogens" in t and "1" in t.replace("Human", "") for t in texts)
+
+
+def test_marker_emitted_inline_after_its_word():
+    authors = text_chars("Polack", 0, 100, 54.0)
+    end = authors[-1]["x1"]
+    marker = ch("1", end + 0.1, 97.0, size=36.0, bottom=133.0)
+    comma = ch(",", end + 30, 100, size=54.0)
+    word_lines, _ = lb.build_word_lines([authors + [marker, comma]], 3.0, 36.0,
+                                        flags=dict(lb.FLAGS))
+    assert " ".join(w["text"] for w in word_lines[0]) == "Polack 1 ,"
+
+
 def test_unattached_small_text_becomes_its_own_line():
     body = text_chars("Body text here", 0, 0, 12.0)
     # small text far below, with no neighbouring main char: a footnote

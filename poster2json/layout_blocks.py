@@ -111,16 +111,25 @@ def _attach_small(lines: List[List[dict]], small: Sequence[dict]) -> List[dict]:
     """Attach small raised/lowered chars to the line they belong to.
 
     A small char joins a line when it sits mostly inside the line's vertical
-    band (extended a little) and touches a main char horizontally.  Returns
-    the chars that could not be attached.
+    band (extended a little) and touches a main char horizontally.  Among the
+    candidate lines the choice is, in order: the line whose own band (no
+    extension) contains the char's vertical centre, then the smallest
+    horizontal gap to one of its chars, then the largest vertical overlap.
+    It is never the nearest line centre, so a marker raised from a name does
+    not jump to a bigger-font line that happens to sit just above or below.
+    Host lines much bigger than the marker (more than 2.2x) are skipped.
+    Returns the chars that could not be attached.
     """
     bands = [_line_band(ln) for ln in lines]
     leftover = []
     for c in small:
         ch = max(c["bottom"] - c["top"], 0.1)
+        cy = (c["top"] + c["bottom"]) / 2
         best = None
-        best_ov = 0.0
+        best_key = None
         for idx, (ln, (top, bottom, lsize)) in enumerate(zip(lines, bands)):
+            if lsize > 2.2 * _size(c):
+                continue
             lo, hi = top - 0.3 * lsize, bottom + 0.3 * lsize
             ov = min(c["bottom"], hi) - max(c["top"], lo)
             if ov < ATTACH_OVERLAP * ch:
@@ -128,13 +137,53 @@ def _attach_small(lines: List[List[dict]], small: Sequence[dict]) -> List[dict]:
             gap = min(_hgap(c, m) for m in ln)
             if gap > ATTACH_GAP_EM * lsize:
                 continue
-            if ov > best_ov:
-                best, best_ov = idx, ov
+            inside = top <= cy <= bottom
+            key = (0 if inside else 1, gap, -ov)
+            if best_key is None or key < best_key:
+                best, best_key = idx, key
         if best is None:
             leftover.append(c)
         else:
             lines[best].append(c)
     return leftover
+
+
+def _local_small(chars: Sequence[dict]) -> set:
+    """Ids of chars that are clearly smaller than an adjacent same-row char.
+
+    A char is a marker candidate when a horizontally adjacent char (gap under
+    half its own size) is at least 1.25x bigger and the small char's vertical
+    centre lies within that neighbour's box.  This finds author affiliation
+    markers on a line whose leaf mixes other sizes, where the leaf's dominant
+    size is not the host line's size.
+    """
+    cell = 64.0
+    grid: Dict[Tuple[int, int], List[dict]] = {}
+    for c in chars:
+        grid.setdefault((int(c["x0"] // cell), int(c["top"] // cell)), []).append(c)
+    out = set()
+    for c in chars:
+        sz = _size(c)
+        cy = (c["top"] + c["bottom"]) / 2
+        gx, gy = int(c["x0"] // cell), int(c["top"] // cell)
+        found = False
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for n in grid.get((gx + dx, gy + dy), ()):
+                    if n is c or _size(n) < 1.25 * sz:
+                        continue
+                    if _hgap(c, n) > 0.5 * sz:
+                        continue
+                    if n["top"] <= cy <= n["bottom"]:
+                        found = True
+                        break
+                if found:
+                    break
+            if found:
+                break
+        if found:
+            out.add(id(c))
+    return out
 
 
 def cluster_leaf_lines(chars: Sequence[dict], body_size: float = 0.0,
@@ -163,8 +212,9 @@ def cluster_leaf_lines(chars: Sequence[dict], body_size: float = 0.0,
     main = chars
     if attach_small and leaf_mode > 0:
         cut = SMALL_RATIO * leaf_mode
-        small = [c for c in chars if _size(c) < cut]
-        main = [c for c in chars if _size(c) >= cut]
+        local = _local_small(chars)
+        small = [c for c in chars if _size(c) < cut or id(c) in local]
+        main = [c for c in chars if not (_size(c) < cut or id(c) in local)]
         if not main:
             main, small = chars, []
 
