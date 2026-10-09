@@ -10,6 +10,7 @@ from poster2json.extract import (
     _is_placeholder,
     _is_placeholder_person,
     _mark_ocr_headers,
+    _collapse_repeats,
     _postprocess_json,
 )
 
@@ -269,3 +270,26 @@ def test_postprocess_wraps_bare_string_descriptions():
                                 "descriptions": "One summary sentence."}, raw_text="")
     assert single["descriptions"] == [
         {"description": "One summary sentence.", "descriptionType": "Other"}]
+
+
+def test_collapse_repeats_cuts_degenerate_loops():
+    loop = "\n".join(["| Zitierte Stellen |"] + ["| w1 w2 w3 |"] * 500)
+    assert _collapse_repeats(loop) == "\n".join(["| Zitierte Stellen |"] + ["| w1 w2 w3 |"] * 3)
+    cycle = "\n".join(["a b", "c d"] * 50 + ["end"])
+    assert _collapse_repeats(cycle) == "\n".join(["a b", "c d"] * 3 + ["end"])
+
+
+def test_collapse_repeats_keeps_short_genuine_repeats():
+    text = "Row\n| 0 | 0 |\n| 0 | 0 |\n| 0 | 0 |\nDone\n\n\n\n\nTail"
+    assert _collapse_repeats(text) == text
+    assert _collapse_repeats("") == ""
+
+
+def test_postprocess_collapses_looping_section_content():
+    out = _postprocess_json({
+        "titles": [{"title": "Segmentierung"}],
+        "content": {"sections": [{"sectionTitle": "Segmentierung",
+                                  "sectionContent": "Header line\n" + "| w1 w2 w3 |\n" * 400}]},
+    }, raw_text="")
+    content = out["content"]["sections"][0]["sectionContent"]
+    assert content.count("w1 w2 w3") <= 3

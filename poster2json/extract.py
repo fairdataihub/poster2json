@@ -293,7 +293,7 @@ Rules:
         response = response.split("assistant")[-1].strip()
 
     log(f"   Completed vision OCR for: {image_path}")
-    return _mark_ocr_headers(response)
+    return _mark_ocr_headers(_collapse_repeats(response))
 
 
 # A bullet or list marker at the start of an OCR line ("- ", "* ", "1. ", "a) ").
@@ -304,6 +304,40 @@ _OCR_MD_HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*$")
 _OCR_BOLD_LINE_RE = re.compile(r"^\*\*(.+?)\*\*\s*:?$")
 # Captions are not section headers even when they sit on their own line.
 _OCR_CAPTION_RE = re.compile(r"^(?:fig(?:ure)?|table|tab)\.?\s*\d", re.I)
+
+
+def _collapse_repeats(text: str, max_run: int = 3, max_period: int = 4) -> str:
+    """Cut runs of a repeated line, or a repeated cycle of up to ``max_period``
+    lines, down to ``max_run`` copies.
+
+    Greedy decoding can fall into a loop ("| w1 w2 w3 |" thousands of times)
+    until it hits the token cap; the loop then floods the JSON prompt and the
+    output. Real posters rarely repeat a line more than a few times in a row,
+    so keeping ``max_run`` copies preserves genuine repeats like table rows.
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    out = []
+    i = 0
+    while i < len(lines):
+        cut = False
+        for p in range(1, max_period + 1):
+            unit = lines[i:i + p]
+            if len(unit) < p or not any(u.strip() for u in unit):
+                continue
+            reps = 1
+            while lines[i + reps * p:i + (reps + 1) * p] == unit:
+                reps += 1
+            if reps > max_run:
+                out.extend(unit * max_run)
+                i += reps * p
+                cut = True
+                break
+        if not cut:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
 
 
 def _looks_like_ocr_header(line: str) -> bool:
@@ -2663,7 +2697,7 @@ def _postprocess_json(
                 # emitting "**Title and Subtitle:**" / "**Author Names and
                 # Affiliations:**" as content): scaffolding, not real content.
                 title = _strip_markdown(title)
-                content = _strip_markdown(content)
+                content = _collapse_repeats(_strip_markdown(content))
                 if (content and len(content) > 10
                         and not _is_bare_structural_label(content)
                         and not _is_placeholder(content)):
