@@ -2587,7 +2587,13 @@ def _postprocess_json(
     # untouched so this cleanup pass does not downgrade a curated abstract when
     # it runs over an already-merged record.
     descs = result.get("descriptions")
+    # The model sometimes emits bare strings instead of {"description": ...}
+    # objects (a single string or a list of them); wrap them so the summary is
+    # kept rather than silently failing the schema.
+    if isinstance(descs, str):
+        descs = [descs]
     if isinstance(descs, list):
+        descs = [{"description": d} if isinstance(d, str) else d for d in descs]
         descs = [d for d in descs
                  if not (isinstance(d, dict) and _is_placeholder(d.get("description")))]
         result["descriptions"] = descs

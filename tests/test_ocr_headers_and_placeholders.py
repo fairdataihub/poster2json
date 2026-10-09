@@ -255,3 +255,17 @@ def test_reclaimed_block_under_a_title_the_model_used_stays_untitled():
     titles = [t for t, _ in secs]
     assert titles.count("Introduction") == 1
     assert (None, "Zebra quartz vexing jumbled wizard phrases appear nowhere else at all.") in secs
+
+
+def test_postprocess_wraps_bare_string_descriptions():
+    out = _postprocess_json({
+        "titles": [{"title": "Fine-tuning and safety"}],
+        "descriptions": ["We built a dataset of instruction pairs.",
+                         "A 3-4 sentence summary of the full poster..."],
+    }, raw_text="")
+    assert out["descriptions"] == [
+        {"description": "We built a dataset of instruction pairs.", "descriptionType": "Other"}]
+    single = _postprocess_json({"titles": [{"title": "T"}],
+                                "descriptions": "One summary sentence."}, raw_text="")
+    assert single["descriptions"] == [
+        {"description": "One summary sentence.", "descriptionType": "Other"}]
