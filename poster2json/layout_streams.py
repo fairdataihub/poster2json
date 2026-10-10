@@ -54,6 +54,7 @@ _HEADING_BOLD = 0.95         # a line is wholly bold from this share of its char
 _HEADING_NEXT_ALNUM = 3      # the regular line after a heading has at least this many letters or digits
 _ROW_SPLIT_GAP = 3.0         # wholly bold lines of one row this far apart (times size) are separate headings
 _BANNER_FRAC = 0.3           # a banner spans at least this share of the text width
+_DOT_RISE = 0.15             # two middle dots this high above a letter (times size) are a diaeresis
 _TRACK_RUN = 6               # a chain of at least this many short pieces can be letter spaced
 _TRACK_SPREAD = 1.5          # tracking gaps stay within this times the smallest typical gap
 _BULLET_LEADING = 2.6        # bullet items of one list may sit this far apart (times size)
@@ -672,6 +673,53 @@ def _accent_dist(a: _Glyph, h: _Glyph) -> Optional[float]:
         if width <= 0 or overlap <= width / 3.0:
             return None
     return abs((ua0 + ua1) / 2.0 - (uh0 + uh1) / 2.0)
+
+
+def _dot_pairs(items: list) -> list:
+    """Two raised middle dots over a letter are one diaeresis.
+
+    Some fonts draw the diaeresis as two separate "middle dot" glyphs that sit
+    above the letter and come before or after it in the stream.  The pair is
+    turned into one spacing diaeresis, which ``_merge_accents`` then folds into
+    the letter it sits over.
+    """
+    out: list = []
+    n = len(items)
+    i = 0
+    while i < n:
+        g = items[i]
+        h = items[i + 1] if i + 1 < n else None
+        if (isinstance(g, _Glyph) and isinstance(h, _Glyph) and g.ch == "·" and h.ch == "·"
+                and g.acc is None and h.acc is None and _ang_close(g.th, h.th)):
+            nxt = items[i + 2] if i + 2 < n else None
+            c, sn = g.c, g.s
+            u0 = min(g.ox * c + g.oy * sn, h.ox * c + h.oy * sn)
+            u1 = max(g.ex * c + g.ey * sn, h.ex * c + h.ey * sn)
+            mid = (u0 + u1) / 2.0
+            vd = -g.ox * sn + g.oy * c
+            for base in (nxt, out[-1] if out else None):
+                if not _is_base(base) or not _ang_close(base.th, g.th):
+                    continue
+                b0 = base.ox * c + base.oy * sn
+                b1 = base.ex * c + base.ey * sn
+                if b1 < b0:
+                    b0, b1 = b1, b0
+                vb = -base.ox * sn + base.oy * c
+                if b0 <= mid <= b1 and vb - vd > _DOT_RISE * base.fs:
+                    g.ch = "¨"
+                    g.acc = "̈"
+                    g.ascii_acc = False
+                    g.ex, g.ey = h.ex, h.ey
+                    out.append(g)
+                    i += 2
+                    break
+            else:
+                out.append(g)
+                i += 1
+            continue
+        out.append(g)
+        i += 1
+    return out
 
 
 def _merge_accents(items: list) -> list:
@@ -1513,7 +1561,7 @@ def ordered_blocks(page, chars: Optional[Sequence[dict]] = None, *,
     frame = _page_frame(page)
     items = _prepare(page, chars, frame, info)
     items = _drop_overprints(items)
-    items = _merge_accents(items)
+    items = _merge_accents(_dot_pairs(items))
     words = _build_words(items)
     lines = _build_lines(words)
     lines = [ln for ln in lines if ln.text]

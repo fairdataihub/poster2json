@@ -101,3 +101,17 @@ def test_even_spacing_without_a_word_boundary_is_left_alone():
 def test_a_few_short_words_are_not_joined():
     chars = tracked(["a", "b", "c"], 50, 100, letter_gap=2.4, word_gap=2.4)
     assert lines_of(run(chars)) == ["a b c"]
+
+
+def test_two_raised_middle_dots_over_a_letter_are_a_diaeresis():
+    chars = [mk("M", 50, 100, 10, 6.0)]
+    chars += [mk("·", 57.5, 96.0, 10, 2.5), mk("·", 60.0, 96.0, 10, 2.5)]
+    chars += [mk("u", 56.0, 100, 10, 5.0), mk("n", 61.0, 100, 10, 5.0), mk("z", 66.0, 100, 10, 5.0)]
+    assert lines_of(run(chars)) == ["Münz"]
+
+
+def test_middle_dots_on_the_baseline_are_left_alone():
+    chars = string("a", 50, 100, 10) + [mk("·", 56, 100, 10, 2.5), mk("·", 58.5, 100, 10, 2.5)]
+    chars += string("b", 61.5, 100, 10)
+    assert "¨" not in "".join(lines_of(run(chars)))
+    assert "ü" not in "".join(lines_of(run(chars)))
