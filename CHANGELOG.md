@@ -7,13 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-09
+
+Measured on the 21 hand-labeled posters against 0.10.1 (4-bit, same settings): title ROUGE-L 0.953 to 0.977, section text 0.802 to 0.847, all content 0.801 to 0.837, author-affiliation assignment 0.770 to 0.813. Author names, affiliations, research field and language are unchanged.
+
 ### Added
 
 - **Copy-only constrained decoding.** While the model writes a title, a section's content or a caption, a logits processor (`poster2json/copy_decoding.py`) only lets it continue with text that exists in the poster text it was given. The highest-scoring tokens are tested in order and the first one that copies the source wins; if none of the top 20 does, the step is left alone and counted. A loop guard stops it from re-copying source text it already copied. On the hand-labeled posters it raised section text, headings and captions and removed none of the metadata scores. On by default; set `POSTER2JSON_COPY_DECODING=0` (or `extract.COPY_ONLY_DECODING = False`) to turn it off.
 - **Optional system prompt** (`POSTER2JSON_SYSTEM_PROMPT=move|keep`, default off). It put the standing rules in a system turn. In evaluation both modes lowered author, keyword and research field scores and sometimes produced runaway generations, so it stays off.
 
+- **Title grounding.** The page-1 title is found from type size and position (the topmost large-type line group in the top of the page, mixed sizes kept together, URL, author and venue banner lines skipped). A title the model trimmed is expanded to the printed one, and a title the model took from body text such as a pull quote is replaced by it. A title that is not in the poster text at all is kept and logged as a warning.
+
+### Changed
+
+- **Block building in the pdfplumber text path.** Blocks now break where the reading order changes column or jumps upward, words and lines are built from the same characters, line grouping allows for the poster's body font size, rotated text is handled on its own, and figure and table labels become their own small blocks instead of being glued into sentences.
+- **Affiliation markers stay with their author.** Raised digits such as "Polack 1 ," attach to the line they are raised from and are written inline.
+- **Raw-text recovery catches dropped paragraphs.** Text the model left out is now judged by runs of three words rather than single words, so a dropped paragraph is no longer counted as present just because its common words appear elsewhere.
+
 ### Fixed
 
+- **Repeat loops are cut.** A line, or a cycle of up to four lines, repeated more than three times in a row in vision OCR output or in section content is cut back to three copies. One image poster had 22,000 characters of a single repeated table row.
+- **Summaries written as plain strings are kept.** The model sometimes returns `descriptions` as strings instead of objects; they are now wrapped instead of failing the schema.
 - **Image posters work on a clean install.** `torchvision` is now a declared dependency. transformers 5 needs it to load the Qwen2-VL processor, so a fresh `pip install poster2json` failed on every PNG or JPEG poster with "Qwen2VLVideoProcessor requires the Torchvision library". PDF posters were not affected.
 
 ## [0.10.1] - 2026-09-30
