@@ -52,6 +52,11 @@ _SUPERSCRIPT_SIZE = 0.97     # a script word is smaller than this times L
 _HEADING_MAX_LINES = 3       # a heading is at most this many wholly bold lines
 _HEADING_BOLD = 0.95         # a line is wholly bold from this share of its characters
 _HEADING_NEXT_ALNUM = 3      # the regular line after a heading has at least this many letters or digits
+_ROW_SPLIT_GAP = 3.0         # wholly bold lines of one row this far apart (times size) are separate headings
+_BANNER_FRAC = 0.3           # a banner spans at least this share of the text width
+_BULLET_LEADING = 2.6        # bullet items of one list may sit this far apart (times size)
+_SIDE_GAP = 6.0              # a side label sits within this times its size left of the text it names
+_SIDE_BELOW = 3.0            # ... and has no text of its own within this times its height below
 _SCRIPT_REACH = 0.5          # a superscript top may pass the line top by this times L
 
 # Interleaved stream repair
@@ -65,6 +70,8 @@ _STEP_OK_FRAC = 0.7
 _CIDRE = "(cid:"
 _CONTACT = re.compile(r"@\w|orcid|https?://|www\.", re.I)
 _CLOSERS = frozenset(",;.:)]}")
+_BULLET = re.compile(
+    r"^(?:[\u2022\u25cf\u25aa\u25a0\u25e6\u25cb\u25c6\u25c7\u2713\u2714\u27a2\u27a4\u25ba\u25b6\u2605\u00b7\u2026]|[-\u2013*]\s)\s*\S")
 
 _UNIT = {0.0: (1.0, 0.0), 90.0: (0.0, 1.0), 180.0: (-1.0, 0.0), 270.0: (0.0, -1.0)}
 
@@ -1161,7 +1168,7 @@ def _lane_assignment(lines: List[Line], page_w: float, info: Optional[dict]) -> 
 # ---------------------------------------------------------------------------
 # Lines to blocks
 # ---------------------------------------------------------------------------
-def _joins(prev: Line, ln: Line) -> bool:
+def _joins(prev: Line, ln: Line, open_lines: Optional[List[Line]] = None) -> bool:
     if ln.th != prev.th and not _ang_close(ln.th, prev.th):
         return False
     cc, ss = prev.c, prev.s
@@ -1171,8 +1178,19 @@ def _joins(prev: Line, ln: Line) -> bool:
     if abs(ln.maxsize - prev.maxsize) >= _SIZE_DIFF * max(ln.maxsize, prev.maxsize):
         return False
     if v - prev.v >= _LEADING * prev.size:
-        return False
+        # items of one bullet list are one block even when the list is spaced out
+        if not (open_lines and v - prev.v < _BULLET_LEADING * prev.size
+                and _BULLET.match(ln.text) and _BULLET.match(open_lines[0].text)):
+            return False
+    if (abs(v - prev.v) < _ROW_FRAC * prev.size and _wholly_bold(prev) and _wholly_bold(ln)
+            and (ln.us - prev.ue > _ROW_SPLIT_GAP * prev.size
+                 or prev.us - ln.ue > _ROW_SPLIT_GAP * prev.size)):
+        return False                    # two headings of different columns on one row
     return True
+
+
+def _wholly_bold(ln: Line) -> bool:
+    return ln.nchar > 0 and ln.nbold >= _HEADING_BOLD * ln.nchar
 
 
 def _heading_ends(open_lines: List[Line], ln: Line) -> bool:
@@ -1198,7 +1216,9 @@ def _make_block(lines: List[Line]) -> Block:
     b.y0 = min(ln.y0 for ln in lines)
     b.x1 = max(ln.x1 for ln in lines)
     b.y1 = max(ln.y1 for ln in lines)
-    b.size = _heavy([(ln.size, float(ln.nchar)) for ln in lines])
+    # sizes of one font differ by float noise (30.000000959 vs 30.00000096):
+    # round so that equality tests on the block size are stable
+    b.size = round(_heavy([(ln.size, float(ln.nchar)) for ln in lines]), 2)
     nch = sum(ln.nchar for ln in lines)
     nb = sum(ln.nbold for ln in lines)
     b.bold = nb * 2 >= nch and nb > 0
@@ -1235,7 +1255,7 @@ def _build_blocks(lines: List[Line], lane_of: Dict[int, Tuple[int, int]],
                 done.append(_make_block(seq_open))
                 seq_open = []
             cur = lane_open.get(lane)
-            if (cur is not None and _joins(cur[-1], ln)
+            if (cur is not None and _joins(cur[-1], ln, cur)
                     and not (split_headings and _heading_ends(cur, ln))):
                 cur.append(ln)
             else:
@@ -1245,7 +1265,7 @@ def _build_blocks(lines: List[Line], lane_of: Dict[int, Tuple[int, int]],
             continue
         if lane_open:
             flush_lanes()
-        if (seq_open and not (first_alone and i == 1) and _joins(seq_open[-1], ln)
+        if (seq_open and not (first_alone and i == 1) and _joins(seq_open[-1], ln, seq_open)
                 and not (split_headings and _heading_ends(seq_open, ln))):
             seq_open.append(ln)
             continue
@@ -1309,16 +1329,112 @@ def _order_blocks(blocks: List[Block]) -> List[Block]:
             j += 1
         placed: List[Block] = []
         floor_pos = 1 if k == 0 else 0
+        band = srt[k:j]
+        page_span = max(q.x1 for q in srt) - min(q.x0 for q in srt)
+        span_memo: Dict[int, bool] = {}
         for t in range(k, j):
             b = srt[t]
             pos = len(placed)
             steps = 0
             while pos > floor_pos and steps < _HOP_CAP and placed[pos - 1].x0 > b.x1:
+                p = placed[pos - 1]
+                if p.y1 <= b.y0:
+                    # a banner wholly above b is read first, whatever its left edge
+                    sp = span_memo.get(id(p))
+                    if sp is None:
+                        sp = span_memo[id(p)] = _spans_columns(p, band, page_span)
+                    if sp:
+                        break
                 pos -= 1
                 steps += 1
             placed.insert(pos, b)
         out.extend(placed)
         k = j
+    return _bind_side_labels(out)
+
+
+def _spans_columns(p: Block, band: List[Block], page_span: float) -> bool:
+    """True when ``p`` is a wide block above and across two or more separate columns,
+    with no column of the band starting above it to either side."""
+    if p.x1 - p.x0 < _BANNER_FRAC * page_span:
+        return False
+    below = []
+    for q in band:
+        if q is p:
+            continue
+        if q.y0 < p.y0 - 1e-6 and (q.x1 <= p.x0 or q.x0 >= p.x1):
+            return False                # a column already started beside it: not a banner
+        if q.y0 < p.y1 - 1e-6:
+            continue
+        ov = min(p.x1, q.x1) - max(p.x0, q.x0)
+        if ov > 0 and ov >= 0.5 * (q.x1 - q.x0):
+            below.append(q)
+    count = 0
+    last = float("-inf")
+    for q in sorted(below, key=lambda q: q.x0):
+        if q.x0 >= last:
+            count += 1
+            last = q.x1
+            if count >= 2:
+                return True
+    return False
+
+
+def _bind_side_labels(blocks: List[Block]) -> List[Block]:
+    """Put a heading that stands left of the text it names right before that text.
+
+    A margin label ("Cells", "Methods" printed beside its row) has no text of its
+    own below it; the block to its right that spans its height is what it
+    heads.  A heading with its paragraph underneath is never touched.
+    """
+    n = len(blocks)
+    if n < 2:
+        return blocks
+    moves: List[Tuple[Block, Block]] = []
+    for b in blocks:
+        if b.direction != 0.0 or len(b.lines) > 2:
+            continue
+        bh = b.y1 - b.y0
+        tol = 0.5 * b.first_line_height
+        best = None
+        for r in blocks:
+            if r is b or r.direction != 0.0 or r.x0 < b.x1:
+                continue
+            gap = r.x0 - b.x1
+            if gap > _SIDE_GAP * b.size:
+                continue
+            if not (r.y0 - tol <= b.y0 and b.y1 <= r.y1 + tol) or r.y1 - r.y0 < bh:
+                continue
+            if not (b.bold or b.size > r.size * 1.1) or (r.x1 - r.x0) <= (b.x1 - b.x0):
+                continue
+            if best is None or gap < best.x0 - b.x1:
+                best = r
+        if best is None:
+            continue
+        own = False
+        for q in blocks:
+            if q is b or q.y0 < b.y1 - 1e-6 or q.y0 - b.y1 > _SIDE_BELOW * bh:
+                continue
+            ov = min(b.x1, q.x1) - max(b.x0, q.x0)
+            if ov > 0 and ov >= 0.3 * min(b.x1 - b.x0, q.x1 - q.x0):
+                own = True
+                break
+        if not own:
+            moves.append((b, best))
+    if not moves:
+        return blocks
+    movers = {id(b) for b, _ in moves}
+    moves = [(b, r) for b, r in moves if id(r) not in movers]
+    movers = {id(b) for b, _ in moves}
+    target: Dict[int, List[Block]] = {}
+    for b, r in moves:
+        target.setdefault(id(r), []).append(b)
+    out: List[Block] = []
+    for blk in blocks:
+        if id(blk) in movers:
+            continue
+        out.extend(target.get(id(blk), ()))
+        out.append(blk)
     return out
 
 
