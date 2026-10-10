@@ -1647,9 +1647,43 @@ class _JsonBraceProcessor(LogitsProcessor):
         return scores
 
 
-def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
-    """Generate response using the Llama model."""
+# Anti-hallucination decoding switches. Each is module-level so an evaluation can
+# flip it with setattr; the environment variable sets the deployment default.
+# Copy-only decoding is on by default (evaluation: no regression, better section
+# text and headings); set POSTER2JSON_COPY_DECODING=0 to turn it off.
+COPY_ONLY_DECODING = os.environ.get("POSTER2JSON_COPY_DECODING", "1").strip().lower() not in {
+    "0", "false", "no", "off"
+}
+# "move": standing rules go to a system turn and leave the user turn;
+# "keep": the system turn is added and the user prompt stays as it was;
+# "" / off: single user turn (default; both modes lowered metadata scores and
+# sometimes caused runaway generations in evaluation).
+USE_SYSTEM_PROMPT = os.environ.get("POSTER2JSON_SYSTEM_PROMPT", "").strip().lower()
+if USE_SYSTEM_PROMPT in _TRUTHY_ENV:
+    USE_SYSTEM_PROMPT = "move"
+elif USE_SYSTEM_PROMPT not in ("move", "keep"):
+    USE_SYSTEM_PROMPT = ""
+COPY_DECODING_TOP_K = 20
+
+def _build_messages(prompt, system=None):
+    """Chat messages for one generation call.
+
+    With USE_SYSTEM_PROMPT off this is the single user message.
+    """
     messages = [{"role": "user", "content": prompt}]
+    if system and USE_SYSTEM_PROMPT:
+        messages.insert(0, {"role": "system", "content": system})
+    return messages
+
+
+def _generate(model, tokenizer, prompt: str, max_tokens: int, system=None, copy_source=None) -> str:
+    """Generate response using the Llama model.
+
+    ``system`` is used as the system turn when USE_SYSTEM_PROMPT is on, and
+    ``copy_source`` (the poster text) feeds copy-only decoding when
+    COPY_ONLY_DECODING is on.
+    """
+    messages = _build_messages(prompt, system)
     input_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
     input_length = inputs["input_ids"].shape[1]
@@ -1657,7 +1691,13 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
     log(f"Generating with max_tokens={max_tokens}, input_length={input_length}")
 
     eos_ids = _get_eos_token_ids(tokenizer)
-    processor = _JsonBraceProcessor(eos_ids, tokenizer, input_length)
+    processors = [_JsonBraceProcessor(eos_ids, tokenizer, input_length)]
+    copy_proc = None
+    if COPY_ONLY_DECODING and copy_source:
+        from .copy_decoding import CopyOnlyProcessor
+
+        copy_proc = CopyOnlyProcessor(tokenizer, input_length, copy_source, COPY_DECODING_TOP_K)
+        processors.append(copy_proc)
 
     streamer = ProgressStreamer(tokenizer, log_every=200)
     t0 = time.time()
@@ -1668,13 +1708,15 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
             streamer=streamer,
-            logits_processor=LogitsProcessorList([processor]),
+            logits_processor=LogitsProcessorList(processors),
         )
     elapsed = time.time() - t0
     tokens_generated = outputs.shape[1] - input_length
     log(
         f"   Generated {tokens_generated} tokens in {elapsed:.2f}s ({tokens_generated/elapsed:.1f} tok/s)"
     )
+    if copy_proc is not None:
+        log("   " + copy_proc.summary())
 
     return tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
 
@@ -1683,9 +1725,8 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int) -> str:
 # EXTRACTION PROMPTS
 # ============================
 
-EXTRACTION_PROMPT = """Convert this scientific poster text to JSON format.
-
-CRITICAL RULES:
+_PROMPT_HEAD = "Convert this scientific poster text to JSON format.\n\n"
+_PROMPT_RULES = """CRITICAL RULES:
 1. Extract ALL required fields: creators, titles, subjects, descriptions
 2. Create SEPARATE sections for EACH distinct topic/header found in the poster
 3. Use the poster's OWN section headers exactly as they appear. Lines prefixed with "## " indicate detected headers from the poster layout. Standard headers (Abstract, Introduction, Methods, Results, Discussion, Conclusions, References, Acknowledgements) are common examples, but always prefer the poster's actual headers over generic ones.
@@ -1695,7 +1736,8 @@ CRITICAL RULES:
 7. Figure/table captions belong in imageCaptions/tableCaptions, NOT inside sectionContent.
 8. Text without a clear header (e.g. contact info, URLs, footer text) is still a section — use "sectionTitle": "" with the verbatim text as "sectionContent". Do NOT skip any poster text.
 
-JSON SCHEMA (all top-level fields are REQUIRED):
+"""
+_PROMPT_SCHEMA = """JSON SCHEMA (all top-level fields are REQUIRED):
 {{
   "creators": [
     {{"name": "LastName, FirstName", "givenName": "FirstName", "familyName": "LastName", "affiliation": ["Institution Name"]}}
@@ -1715,17 +1757,38 @@ JSON SCHEMA (all top-level fields are REQUIRED):
   "tableCaptions": []
 }}
 
-EXTRACTION NOTES:
+"""
+_PROMPT_NOTES = """EXTRACTION NOTES:
 - subjects: Extract 3-5 keywords from poster content
 - descriptions: Write a 3-4 sentence summary of the full poster.
 - titles: If the poster title is ALL CAPS, convert to proper Title Case preserving acronyms (e.g. "RESEARCH ON SARS-CoV-2" not "RESEARCH ON SARS-COV-2")- imageCaptions/tableCaptions: Include captions for figures/tables on the poster. If none exist, use [].
 - researchField: MUST be exactly one of: "Health Sciences" | "Life Sciences" | "Physical Sciences" | "Social Sciences" — or null if unclear.
 - GROUNDING: Only extract values that appear as text on the poster — do not invent metadata. For section content, copy ALL text verbatim — do not skip or shorten.
 
-POSTER TEXT TO CONVERT:
+"""
+_PROMPT_TAIL = """POSTER TEXT TO CONVERT:
 {raw_text}
 
 OUTPUT VALID JSON ONLY:"""
+
+EXTRACTION_PROMPT = _PROMPT_HEAD + _PROMPT_RULES + _PROMPT_SCHEMA + _PROMPT_NOTES + _PROMPT_TAIL
+
+# Standing rules for the system turn (USE_SYSTEM_PROMPT). The same rules as
+# EXTRACTION_PROMPT plus the guarantees that matter most for copy fidelity; the
+# user turn then carries only the schema and the poster text.
+EXTRACTION_SYSTEM_PROMPT = (
+    "You convert scientific poster text into JSON. Output valid JSON only, with "
+    "no commentary before or after it.\n\n"
+    + _PROMPT_RULES
+    + _PROMPT_NOTES
+    + "\nNEVER invent text. Every title, section, and caption must be copied "
+    "from the poster text exactly as written. NEVER paraphrase or reword a title "
+    "(only case may change for an ALL CAPS title). If a value is not on the "
+    "poster, leave it empty or null.\n"
+)
+EXTRACTION_USER_PROMPT = (
+    _PROMPT_HEAD + _PROMPT_SCHEMA + "Follow the rules in the system message.\n\n" + _PROMPT_TAIL
+)
 
 FALLBACK_PROMPT = """Convert poster text to JSON. REQUIRED FIELDS:
 1. creators, titles, subjects, descriptions, content
@@ -3206,10 +3269,18 @@ def extract_json_with_retry(
             "_max_input_tokens": MAX_INPUT_TOKENS,
         }
 
-    prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
+    if USE_SYSTEM_PROMPT == "move":
+        prompt = EXTRACTION_USER_PROMPT.format(raw_text=raw_text)
+        system = EXTRACTION_SYSTEM_PROMPT
+    elif USE_SYSTEM_PROMPT == "keep":
+        prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
+        system = EXTRACTION_SYSTEM_PROMPT
+    else:
+        prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
+        system = None
 
     log("Starting primary JSON extraction with full prompt")
-    response = _generate(model, tokenizer, prompt, MAX_JSON_TOKENS)
+    response = _generate(model, tokenizer, prompt, MAX_JSON_TOKENS, system, raw_text)
     result = _as_result_dict(_robust_json_parse(response))
     if "error" in result:
         log(f"Primary JSON parse error: {result['error']}")
@@ -3219,14 +3290,14 @@ def extract_json_with_retry(
     # Retry with more tokens if truncation detected
     if "error" in result or _is_truncated(result.get("raw", "")):
         log(f"Retrying with max_tokens={MAX_RETRY_TOKENS}")
-        response = _generate(model, tokenizer, prompt, MAX_RETRY_TOKENS)
+        response = _generate(model, tokenizer, prompt, MAX_RETRY_TOKENS, system, raw_text)
         result = _as_result_dict(_robust_json_parse(response))
 
     # Fallback to shorter prompt
     if "error" in result or _is_truncated(result.get("raw", "")):
         log("Using fallback shorter prompt")
         fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
-        response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS)
+        response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS, None, raw_text)
         result = _as_result_dict(_robust_json_parse(response))
 
     result = _postprocess_json(

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Copy-only constrained decoding.** While the model writes a title, a section's content or a caption, a logits processor (`poster2json/copy_decoding.py`) only lets it continue with text that exists in the poster text it was given. The highest-scoring tokens are tested in order and the first one that copies the source wins; if none of the top 20 does, the step is left alone and counted. A loop guard stops it from re-copying source text it already copied. On the hand-labeled posters it raised section text, headings and captions and removed none of the metadata scores. On by default; set `POSTER2JSON_COPY_DECODING=0` (or `extract.COPY_ONLY_DECODING = False`) to turn it off.
+- **Optional system prompt** (`POSTER2JSON_SYSTEM_PROMPT=move|keep`, default off). It put the standing rules in a system turn. In evaluation both modes lowered author, keyword and research field scores and sometimes produced runaway generations, so it stays off.
+
 ### Fixed
 
 - **Image posters work on a clean install.** `torchvision` is now a declared dependency. transformers 5 needs it to load the Qwen2-VL processor, so a fresh `pip install poster2json` failed on every PNG or JPEG poster with "Qwen2VLVideoProcessor requires the Torchvision library". PDF posters were not affected.
