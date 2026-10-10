@@ -16,6 +16,13 @@ The result is a list of :class:`Block` in reading order.  Each block holds
 :class:`Line` objects with ``text``, ``bbox``, dominant ``size`` and a
 ``bold`` flag.
 
+Hardening rules on top of the stream rules: a banner above several columns is
+never hopped by a left block that starts below it; a margin label printed
+beside the text it names is read right before that text; wholly bold headings
+of different columns on one row stay separate blocks; the items of a spaced
+bullet list form one block; letter-spaced words are joined; two raised middle
+dots over a letter are a diaeresis.
+
 Everything is iterative; bad glyphs (NaN, infinite or missing numbers) are
 skipped and act as word boundaries, they never raise.
 """
