@@ -15,6 +15,7 @@ Requirements:
 
 import gc
 import json
+import math
 import os
 import re
 import tempfile
@@ -990,6 +991,372 @@ def _split_inline_sections(text: str):
     return segments
 
 
+def _xy_cut_blocks(page, chars, text_chars, x_tol, page_w, page_h,
+                   geo: Optional[dict] = None) -> Tuple[list, list]:
+    """Blocks and figure-label blocks for one page from the XY-cut tree and
+    leaf-aware line builder."""
+    from pdfplumber.utils.text import extract_words as _pw_extract_words
+    from poster2json import layout_blocks as _lb
+    from poster2json import xy_cut as _xy
+
+    leaf_ids = None
+    if _lb.FLAGS["decomp"]:
+        # One decomposition: lines and words come from the same chars
+        # of each XY-cut leaf, so every word belongs to exactly one line.
+        rot_chars = []
+        main_chars = chars
+        if _lb.FLAGS["rotated"]:
+            main_chars, rot_chars = _lb.split_rotated(chars)
+        # The XY-cut sees every char (the cut tree is the same with or
+        # without rotated labels); rotated chars are pulled out of the
+        # leaves afterwards.
+        leaves, regions = _xy.chars_to_leaves(
+            chars, page_width=page_w, page_height=page_h)
+        if rot_chars:
+            rot_ids = {id(c) for c in rot_chars}
+            kept = [([c for c in lf if id(c) not in rot_ids], rg)
+                    for lf, rg in zip(leaves, regions)]
+            kept = [(lf, rg) for lf, rg in kept if lf]
+            leaves = [lf for lf, _ in kept]
+            regions = [rg for _, rg in kept]
+        if not leaves and not rot_chars:
+            return [], []
+        word_lines, leaf_ids = _lb.build_word_lines(
+            leaves, x_tol, _lb.body_font_size(text_chars), regions=regions,
+            spaces=[c for c in main_chars if c.get("text") == " "])
+        if rot_chars:
+            rlines, rids = _lb.rotated_word_lines(rot_chars, x_tol)
+            word_lines = word_lines + rlines
+            leaf_ids = leaf_ids + rids
+    else:
+        words = _pw_extract_words(chars, x_tolerance=x_tol,
+                                 extra_attrs=["size"],
+                                 use_text_flow=True)
+        _annotate_words_with_fonts(words, chars)
+        if not words:
+            return [], []
+        reading_lines, line_leaf = _xy.chars_to_leaf_lines(
+            chars, page_width=page_w, page_height=page_h)
+        if not reading_lines:
+            return [], []
+        word_lines, leaf_ids = _chars_to_word_lines(
+            reading_lines, words, leaf_ids=line_leaf)
+    if not word_lines:
+        return [], []
+
+    # Figure/table label text (plot ticks, table cells) is split off
+    # into its own blocks so it is not glued into body sentences.
+    fig_blocks = []
+    want_geo = geo is not None
+    masks = None
+    if want_geo:
+        geo["words"] = [w for ln in word_lines for w in ln]
+    if _lb.FLAGS["fig"] or want_geo:
+        masks = _lb.build_figure_masks(
+            page.images,
+            list(page.rects) + list(page.curves) + list(page.lines),
+            page_w, page_h, _lb.body_font_size(text_chars))
+        if want_geo:
+            geo["masks"] = masks
+    if _lb.FLAGS["fig"]:
+        (body_lines, body_ids, lab_lines, lab_ids,
+         body_order, lab_order) = _lb.split_figure_words(
+            word_lines, leaf_ids, masks, _lb.body_font_size(text_chars))
+        if body_lines and lab_lines:
+            word_lines, leaf_ids, line_order = body_lines, body_ids, body_order
+            fig_blocks = _lines_to_blocks(
+                lab_lines, leaf_ids=lab_ids if _lb.FLAGS["leaf"] else None,
+                orders=lab_order)
+            for fb in fig_blocks:
+                fb["fig"] = True
+        else:
+            line_order = None
+    else:
+        line_order = None
+
+    all_blocks = _lines_to_blocks(
+        word_lines,
+        leaf_ids=leaf_ids if _lb.FLAGS["leaf"] else None,
+        hyphen_join=_lb.FLAGS["hyphen"], orders=line_order)
+    return all_blocks, fig_blocks
+
+
+# Layout engine for the pdfplumber text path.  "blocks" is the leaf-aware
+# XY-cut block builder (layout_blocks / xy_cut).  "alto" is the stream-order
+# word, line and block builder in layout_streams (band reading order).  The
+# POSTER2JSON_LAYOUT environment variable overrides this setting.
+LAYOUT_ENGINE = "blocks"
+
+
+def _layout_engine() -> str:
+    eng = (os.environ.get("POSTER2JSON_LAYOUT") or LAYOUT_ENGINE or "blocks").strip().lower()
+    return eng if eng in ("blocks", "alto") else "blocks"
+
+
+def _alto_blocks(page, chars, page_w, page_h, geo: Optional[dict] = None) -> list:
+    """Blocks for one page from layout_streams, in the dict form _lines_to_blocks makes."""
+    from poster2json import layout_blocks as _lb
+    from poster2json import layout_streams as _ls
+
+    info = {}
+    ablocks = _ls.ordered_blocks(page, chars=chars, info=info)
+    log(f"   stream layout glyphs={info.get('glyphs')} lines={info.get('lines')} "
+        f"interleaved={info.get('interleaved_regions', 0)} blocks={len(ablocks)}")
+    if not ablocks:
+        return []
+    if geo is not None:
+        geo["words"] = [
+            {"x0": w.x0, "x1": w.x1, "top": w.y0, "bottom": w.y1,
+             "text": w.text, "size": w.size}
+            for b in ablocks for ln in b.lines for w in (ln.words or ())]
+    vocab = _lb.page_vocab([ln.text for b in ablocks for ln in b.lines])
+    blocks = []
+    for order, ab in enumerate(ablocks):
+        texts = [ln.text for ln in ab.lines if ln.text]
+        if not texts:
+            continue
+        text = _lb.join_lines(texts, vocab)
+        blocks.append({
+            "hpos": ab.x0,
+            "vpos": ab.y0,
+            "width": ab.x1 - ab.x0,
+            "height": ab.y1 - ab.y0,
+            "cx": ab.x0 + (ab.x1 - ab.x0) / 2,
+            "text": text,
+            "fontsize": ab.size,
+            "bold": ab.bold,
+            "region": 0,
+            "order": order,
+            "rotated": bool(ab.direction),
+        })
+    return blocks
+
+
+def _alto_masks(page, chars, page_w, page_h, geo: dict) -> None:
+    """Figure and table regions of the page for the caption module (alto engine)."""
+    from poster2json import layout_blocks as _lb
+
+    _tc, _xt, _ = _char_stats(chars, tolerant=True)
+    try:
+        geo["masks"] = _lb.build_figure_masks(
+            page.images,
+            list(page.rects) + list(page.curves) + list(page.lines),
+            page_w, page_h, _lb.body_font_size(_tc))
+    except Exception as e:  # noqa: BLE001 - regions are optional for captions
+        log(f"   figure regions unavailable ({type(e).__name__}: {e})")
+        geo["masks"] = []
+
+
+def _char_stats(chars: list, tolerant: bool = False) -> Tuple[list, float, float]:
+    """Text chars, x tolerance and median font size of a page's chars.
+
+    ``tolerant`` (alto engine) ignores chars whose size or box is not a
+    finite number instead of raising.
+    """
+    def _ok(c) -> bool:
+        if not c.get("text", "").strip():
+            return False
+        if not tolerant:
+            return True
+        try:
+            return all(math.isfinite(float(c[k])) for k in ("size",))
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    text_chars = [c for c in chars if _ok(c)]
+    median_fs = 0.0
+    if text_chars:
+        median_fs = float(np.median([c["size"] for c in text_chars]))
+        x_tol = round(max(1.5, min(median_fs * 0.25, 3.0)), 2)
+        space_chars = []
+        for c in chars:
+            if c.get("text") != " ":
+                continue
+            try:
+                if c["x1"] - c["x0"] > 0:
+                    space_chars.append(c)
+            except (KeyError, TypeError):
+                if not tolerant:
+                    raise
+        if space_chars:
+            space_w = float(np.median([c["x1"] - c["x0"] for c in space_chars]))
+            x_tol = round(min(x_tol, space_w * 0.7), 2)
+    else:
+        x_tol = 3
+    return text_chars, x_tol, median_fs
+
+
+def _page_blocks(page, chars, text_chars, x_tol, page_w, page_h,
+                 geo: Optional[dict] = None) -> Tuple[list, list, bool]:
+    """Blocks, figure-label blocks and whether the alto engine made them.
+
+    Any failure of the alto engine (including RecursionError) is logged and
+    that page falls back to the default blocks engine.
+
+    ``geo``, when given, receives ``words`` (page words as dicts with x0, x1,
+    top, bottom, text, size) and ``masks`` (figure and table regions) for the
+    caption module, whichever engine made the blocks.
+    """
+    if _layout_engine() == "alto":
+        try:
+            if geo is not None:
+                geo.clear()
+            blocks = _alto_blocks(page, chars, page_w, page_h, geo)
+            if geo is not None:
+                _alto_masks(page, chars, page_w, page_h, geo)
+            return blocks, [], True
+        except Exception as e:  # noqa: BLE001 - includes RecursionError
+            log(f"   alto layout failed ({type(e).__name__}: {e}); using the blocks engine")
+            from poster2json import layout_blocks as _lb
+            if _lb.FLAGS["dedupe"]:
+                chars = _lb.dedupe_overprinted(chars)
+                for _i, _c in enumerate(chars):
+                    _c["_si"] = _i
+            text_chars, x_tol, _ = _char_stats(chars, tolerant=True)
+            if not text_chars:
+                return [], [], False
+    all_blocks, fig_blocks = _xy_cut_blocks(page, chars, text_chars, x_tol, page_w, page_h, geo)
+    return all_blocks, fig_blocks, False
+
+
+_CAPTION_RE = re.compile(
+    r"^[^A-Za-z]*((?:fig(?:ure)?|tab(?:le)?)\.?\s*\d+)\s*[.:]\s*(\S.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+_CAPTION_RE_NORMALIZED = re.compile(
+    r"^[^A-Za-z]*(fig(?:ure)?|tab(?:le)?)\.?\s*(\d+)\s*[.:]\s*(\S.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _split_caption_label(text: str, keep_label: bool = False) -> Optional[Tuple[str, str]]:
+    """Split "Fig. 1. Spectrum of ..." into a label and the caption text.
+
+    By default the label is normalized to "Figure 1" or "Table 1".  With
+    ``keep_label`` (the alto engine) it stays as printed ("Fig. 1" stays
+    "Fig. 1"), so the abbreviation token that the source has is not lost.
+    Returns None when the text does not open with a figure or table label.
+    """
+    if keep_label:
+        m = _CAPTION_RE.match(text)
+        if not m:
+            return None
+        return re.sub(r"\s+", " ", m.group(1)).strip(), m.group(2).strip()
+    m = _CAPTION_RE_NORMALIZED.match(text)
+    if not m:
+        return None
+    kind = "Figure" if m.group(1)[:3].lower() == "fig" else "Table"
+    return f"{kind} {m.group(2)}", m.group(3).strip()
+
+
+_META_RE = re.compile(r'@\S+\.\S+|orcid\.org|ORCID:\s*\d|^Authors?\b')
+
+
+def _meta_rows(blocks: list, tol: float) -> list:
+    """Order contact blocks by row, then left to right inside a row.
+
+    Block tops are floats that differ by fractions of a point even when two
+    blocks share a printed row, so sorting on the raw top scrambles a row of
+    side by side blocks.  Blocks whose tops lie within ``tol`` of the first
+    block of a row belong to that row.
+    """
+    out: list = []
+    row: list = []
+    row_top = 0.0
+    for b in sorted(blocks, key=lambda b: (b["vpos"], b["hpos"])):
+        if row and b["vpos"] - row_top > tol:
+            out.extend(sorted(row, key=lambda r: r["hpos"]))
+            row = []
+        if not row:
+            row_top = b["vpos"]
+        row.append(b)
+    out.extend(sorted(row, key=lambda r: r["hpos"]))
+    return out
+
+
+def _partition_blocks_default(blocks: list, page_h: float, page_median_fs: float,
+                              col_start: float, col_end: float, span_threshold: float) -> list:
+    """Order a page's blocks as headline, contact info, body, footer (default engine)."""
+    _meta_re = re.compile(
+        r'@\S+\.\S+|orcid\.org|ORCID:\s*\d|^Authors?\b',
+    )
+    top_zone = page_h * 0.12
+    header_blocks = []
+    meta_blocks = []
+    body_blocks = []
+    footer_blocks = []
+    for blk in blocks:
+        is_wide = blk["width"] > span_threshold
+        is_title_font = page_median_fs > 0 and blk["fontsize"] >= page_median_fs * 1.4
+        if is_title_font and blk["vpos"] + blk["height"] <= col_start + page_h * 0.02:
+            header_blocks.append(blk)
+        elif is_wide and blk["vpos"] > col_end:
+            footer_blocks.append(blk)
+        elif (not is_wide
+              and blk["vpos"] + blk["height"] <= top_zone
+              and _meta_re.search(blk["text"])):
+            meta_blocks.append(blk)
+        else:
+            body_blocks.append(blk)
+
+    header_blocks.sort(key=lambda b: b["vpos"])
+    meta_blocks.sort(key=lambda b: (b["vpos"], b["hpos"]))
+    footer_blocks.sort(key=lambda b: b["vpos"])
+    return header_blocks + meta_blocks + body_blocks + footer_blocks
+
+
+def _partition_blocks(blocks: list, page_h: float, page_median_fs: float,
+                      col_start: float, col_end: float, span_threshold: float,
+                      alto: bool = False) -> list:
+    """Order a page's blocks as headline, contact info, body, footer.
+
+    The default engine keeps the original partition.  For the alto engine a
+    contact block (e-mail, ORCID, "Authors") is lifted ahead of the body only
+    when it stands apart.  When the block just before it in reading order is an
+    ordinary body block of the top zone (an author name, an affiliation), the
+    contact block belongs to that block, so it stays where the reading order
+    put it and name and e-mail keep their pairing.
+    """
+    if not alto:
+        return _partition_blocks_default(
+            blocks, page_h, page_median_fs, col_start, col_end, span_threshold)
+    top_zone = page_h * 0.12
+    header_blocks, meta_blocks, body_blocks, footer_blocks = [], [], [], []
+    prev_kind = None
+    # Only the leading run of title-font blocks is the headline.  A title-font
+    # block that follows other text in reading order (a section heading under
+    # the author line, a badge further down) keeps its place.
+    headline_open = True
+    for blk in blocks:
+        is_wide = blk["width"] > span_threshold
+        is_title_font = page_median_fs > 0 and blk["fontsize"] >= page_median_fs * 1.4
+        in_top = blk["vpos"] + blk["height"] <= top_zone
+        if (is_title_font and headline_open
+                and blk["vpos"] + blk["height"] <= col_start + page_h * 0.02):
+            header_blocks.append(blk)
+            kind = "header"
+        elif is_wide and blk["vpos"] > col_end:
+            footer_blocks.append(blk)
+            kind = "footer"
+        elif not is_wide and in_top and _META_RE.search(blk["text"]):
+            if prev_kind == "top_body":
+                body_blocks.append(blk)
+                kind = "top_body"
+            else:
+                meta_blocks.append(blk)
+                kind = "meta"
+        else:
+            body_blocks.append(blk)
+            kind = "top_body" if in_top else "body"
+        if kind != "header":
+            headline_open = False
+        prev_kind = kind
+    header_blocks.sort(key=lambda b: b["vpos"])
+    footer_blocks.sort(key=lambda b: b["vpos"])
+    meta_blocks = _meta_rows(meta_blocks, max(2.0, 0.5 * page_median_fs))
+    return header_blocks + meta_blocks + body_blocks + footer_blocks
+
+
 def extract_text_with_pdfplumber(pdf_path: str,
                                  captions_out: Optional[list] = None) -> Optional[str]:
     """Extract text from PDF using pdfplumber (layout-aware).
@@ -1032,105 +1399,27 @@ def extract_text_with_pdfplumber(pdf_path: str,
             page_w = page.width
             page_h = page.height
 
-            from pdfplumber.utils.text import extract_words as _pw_extract_words
             from poster2json import layout_blocks as _lb
-            chars = _filter_phantom_spaces(page.chars)
-            if _lb.FLAGS["dedupe"]:
+            tolerant = _layout_engine() == "alto"
+            try:
+                chars = _filter_phantom_spaces(page.chars)
+            except Exception:
+                if not tolerant:
+                    raise
+                chars = list(page.chars)
+            if _lb.FLAGS["dedupe"] and not tolerant:
                 chars = _lb.dedupe_overprinted(chars)
             for _i, _c in enumerate(chars):
                 _c["_si"] = _i  # PDF stream order, used to order chars in a line
 
-            text_chars = [c for c in chars if c.get("text", "").strip()]
-            if text_chars:
-                median_fs = float(np.median([c["size"] for c in text_chars]))
-                x_tol = round(max(1.5, min(median_fs * 0.25, 3.0)), 2)
-                space_chars = [c for c in chars if c.get("text") == " " and c["x1"] - c["x0"] > 0]
-                if space_chars:
-                    space_w = float(np.median([c["x1"] - c["x0"] for c in space_chars]))
-                    x_tol = round(min(x_tol, space_w * 0.7), 2)
-            else:
-                x_tol = 3
+            text_chars, x_tol, median_fs = _char_stats(chars, tolerant=tolerant)
             log(f"   x_tolerance={x_tol} (median_font={median_fs if text_chars else '?'}pt)")
             if not text_chars:
                 continue
 
-            from poster2json import xy_cut as _xy
-
-            leaf_ids = None
-            if _lb.FLAGS["decomp"]:
-                # One decomposition: lines and words come from the same chars
-                # of each XY-cut leaf, so every word belongs to exactly one line.
-                rot_chars = []
-                main_chars = chars
-                if _lb.FLAGS["rotated"]:
-                    main_chars, rot_chars = _lb.split_rotated(chars)
-                # The XY-cut sees every char (the cut tree is the same with or
-                # without rotated labels); rotated chars are pulled out of the
-                # leaves afterwards.
-                leaves, regions = _xy.chars_to_leaves(
-                    chars, page_width=page_w, page_height=page_h)
-                if rot_chars:
-                    rot_ids = {id(c) for c in rot_chars}
-                    kept = [([c for c in lf if id(c) not in rot_ids], rg)
-                            for lf, rg in zip(leaves, regions)]
-                    kept = [(lf, rg) for lf, rg in kept if lf]
-                    leaves = [lf for lf, _ in kept]
-                    regions = [rg for _, rg in kept]
-                if not leaves and not rot_chars:
-                    continue
-                word_lines, leaf_ids = _lb.build_word_lines(
-                    leaves, x_tol, _lb.body_font_size(text_chars), regions=regions,
-                    spaces=[c for c in main_chars if c.get("text") == " "])
-                if rot_chars:
-                    rlines, rids = _lb.rotated_word_lines(rot_chars, x_tol)
-                    word_lines = word_lines + rlines
-                    leaf_ids = leaf_ids + rids
-            else:
-                words = _pw_extract_words(chars, x_tolerance=x_tol,
-                                         extra_attrs=["size"],
-                                         use_text_flow=True)
-                _annotate_words_with_fonts(words, chars)
-                if not words:
-                    continue
-                reading_lines, line_leaf = _xy.chars_to_leaf_lines(
-                    chars, page_width=page_w, page_height=page_h)
-                if not reading_lines:
-                    continue
-                word_lines, leaf_ids = _chars_to_word_lines(
-                    reading_lines, words, leaf_ids=line_leaf)
-            if not word_lines:
-                continue
-
-            # Figure/table label text (plot ticks, table cells) is split off
-            # into its own blocks so it is not glued into body sentences.
-            fig_blocks = []
-            page_words = [w for ln in word_lines for w in ln] if use_captions else None
-            masks = None
-            if _lb.FLAGS["fig"] or use_captions:
-                masks = _lb.build_figure_masks(
-                    page.images,
-                    list(page.rects) + list(page.curves) + list(page.lines),
-                    page_w, page_h, _lb.body_font_size(text_chars))
-            if _lb.FLAGS["fig"]:
-                (body_lines, body_ids, lab_lines, lab_ids,
-                 body_order, lab_order) = _lb.split_figure_words(
-                    word_lines, leaf_ids, masks, _lb.body_font_size(text_chars))
-                if body_lines and lab_lines:
-                    word_lines, leaf_ids, line_order = body_lines, body_ids, body_order
-                    fig_blocks = _lines_to_blocks(
-                        lab_lines, leaf_ids=lab_ids if _lb.FLAGS["leaf"] else None,
-                        orders=lab_order)
-                    for fb in fig_blocks:
-                        fb["fig"] = True
-                else:
-                    line_order = None
-            else:
-                line_order = None
-
-            all_blocks = _lines_to_blocks(
-                word_lines,
-                leaf_ids=leaf_ids if _lb.FLAGS["leaf"] else None,
-                hyphen_join=_lb.FLAGS["hyphen"], orders=line_order)
+            geo = {} if use_captions else None
+            all_blocks, fig_blocks, used_alto = _page_blocks(
+                page, chars, text_chars, x_tol, page_w, page_h, geo)
             for blk in all_blocks:
                 blk["col"] = 0
                 blk["flow_idx"] = 0
@@ -1161,32 +1450,9 @@ def extract_text_with_pdfplumber(pdf_path: str,
             col_end = max(blk["vpos"] + blk["height"] for blk in all_blocks
                          if blk["width"] <= span_threshold) if col_tops else page_h
 
-            _meta_re = re.compile(
-                r'@\S+\.\S+|orcid\.org|ORCID:\s*\d|^Authors?\b',
-            )
-            top_zone = page_h * 0.12
-            header_blocks = []
-            meta_blocks = []
-            body_blocks = []
-            footer_blocks = []
-            for blk in all_blocks:
-                is_wide = blk["width"] > span_threshold
-                is_title_font = page_median_fs > 0 and blk["fontsize"] >= page_median_fs * 1.4
-                if is_title_font and blk["vpos"] + blk["height"] <= col_start + page_h * 0.02:
-                    header_blocks.append(blk)
-                elif is_wide and blk["vpos"] > col_end:
-                    footer_blocks.append(blk)
-                elif (not is_wide
-                      and blk["vpos"] + blk["height"] <= top_zone
-                      and _meta_re.search(blk["text"])):
-                    meta_blocks.append(blk)
-                else:
-                    body_blocks.append(blk)
-
-            header_blocks.sort(key=lambda b: b["vpos"])
-            meta_blocks.sort(key=lambda b: (b["vpos"], b["hpos"]))
-            footer_blocks.sort(key=lambda b: b["vpos"])
-            all_blocks = header_blocks + meta_blocks + body_blocks + footer_blocks
+            all_blocks = _partition_blocks(
+                all_blocks, page_h, page_median_fs, col_start, col_end, span_threshold,
+                alto=used_alto)
 
             # Emit figure labels as separate blocks, right after the body block
             # that preceded them in the original line order (so labels are not
@@ -1210,8 +1476,8 @@ def extract_text_with_pdfplumber(pdf_path: str,
                 _body = _lb.body_font_size(text_chars)
                 _found = _cap_mod.find_captions(
                     all_blocks,
-                    _cap_mod.regions_from_masks(masks or [], _body),
-                    page_words, _body, page_h)
+                    _cap_mod.regions_from_masks(geo.get("masks") or [], _body),
+                    geo.get("words") or [], _body, page_h)
                 for _c in _found:
                     cap_counts[_c["kind"]] += 1
                     _k = cap_counts[_c["kind"]]
@@ -1251,14 +1517,10 @@ def extract_text_with_pdfplumber(pdf_path: str,
                 # Captions are small-font, so the font-size header heuristic
                 # below never catches them; a buried short caption tanks
                 # section-level ROUGE (matches at ~0.2 instead of ~1.0).
-                _cap = re.match(
-                    r"^[^A-Za-z]*(fig(?:ure)?|tab(?:le)?)\.?\s*(\d+)\s*[.:]\s*(\S.*)$",
-                    _t, re.IGNORECASE | re.DOTALL,
-                )
+                _cap = _split_caption_label(_t, keep_label=used_alto)
                 if _cap:
-                    _kind = "Figure" if _cap.group(1)[:3].lower() == "fig" else "Table"
-                    all_output_lines.append(f"## {_kind} {_cap.group(2)}")
-                    all_output_lines.append(_add_bidi_markers(_cap.group(3).strip()))
+                    all_output_lines.append(f"## {_cap[0]}")
+                    all_output_lines.append(_add_bidi_markers(_cap[1]))
                     continue
 
                 # Standalone section heading printed as a bare keyword line
@@ -1297,11 +1559,14 @@ def extract_text_with_pdfplumber(pdf_path: str,
                 )
 
                 is_header = False
+                # Rotated text (axis labels, side captions) is not promoted by
+                # weight or size; keyword headings were handled above.
+                _rotated = bool(blk.get("rotated"))
                 _is_continuation = bool(re.match(
                     r'(?:to|and|or|the|a|an|in|of|for|with|by|from|that|which|when)\s', _t
                 ))
                 min_words = 1 if blk["bold"] else 2
-                if (median_fontsize > 0 and len(_t) <= 120
+                if (median_fontsize > 0 and len(_t) <= 120 and not _rotated
                         and _starts_with_letter and len(_alpha_words) >= min_words
                         and not _is_contact and not _is_continuation):
                     fs = blk["fontsize"]
