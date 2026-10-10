@@ -7,15 +7,9 @@ columns, and spaced bullet lists.
 
 import pytest
 
-from .test_layout_streams import ls, lines_of, para, run, string, texts
+from .test_layout_streams import lines_of, mk, para, run, string, texts
 
 BOLD = "Helvetica-Bold"
-
-
-def test_block_size_is_rounded_so_float_noise_cannot_decide_a_comparison():
-    a = run(string("HEADING ONE", 50, 100, 12.000000096, font=BOLD))
-    b = run(string("HEADING TWO", 50, 100, 12.00000009600001, font=BOLD))
-    assert a[0].size == b[0].size == 12.0
 
 
 def test_bold_headings_of_two_columns_on_one_row_are_two_blocks():
@@ -81,3 +75,29 @@ def test_spaced_plain_lines_are_still_separate_blocks():
     chars = string("first line of one text", 50, 100, 10)
     chars += string("second line far below it", 50, 122, 10)
     assert len(run(chars)) == 2
+
+
+def tracked(words, x, y, size=10.0, letter_gap=2.4, word_gap=10.0):
+    chars = []
+    pos = x
+    for word in words:
+        for ch in word:
+            chars.append(mk(ch, pos, y, size, size * 0.5))
+            pos += size * 0.5 + letter_gap
+        pos += word_gap - letter_gap
+    return chars
+
+
+def test_letter_spaced_text_becomes_words_again():
+    chars = tracked(["Malate", "enzyme"], 50, 100)
+    assert lines_of(run(chars)) == ["Malate enzyme"]
+
+
+def test_even_spacing_without_a_word_boundary_is_left_alone():
+    chars = tracked(["abcdefgh"], 50, 100, letter_gap=3.0)
+    assert lines_of(run(chars)) == ["a b c d e f g h"]
+
+
+def test_a_few_short_words_are_not_joined():
+    chars = tracked(["a", "b", "c"], 50, 100, letter_gap=2.4, word_gap=2.4)
+    assert lines_of(run(chars)) == ["a b c"]

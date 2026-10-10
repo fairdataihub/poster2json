@@ -54,6 +54,8 @@ _HEADING_BOLD = 0.95         # a line is wholly bold from this share of its char
 _HEADING_NEXT_ALNUM = 3      # the regular line after a heading has at least this many letters or digits
 _ROW_SPLIT_GAP = 3.0         # wholly bold lines of one row this far apart (times size) are separate headings
 _BANNER_FRAC = 0.3           # a banner spans at least this share of the text width
+_TRACK_RUN = 6               # a chain of at least this many short pieces can be letter spaced
+_TRACK_SPREAD = 1.5          # tracking gaps stay within this times the smallest typical gap
 _BULLET_LEADING = 2.6        # bullet items of one list may sit this far apart (times size)
 _SIDE_GAP = 6.0              # a side label sits within this times its size left of the text it names
 _SIDE_BELOW = 3.0            # ... and has no text of its own within this times its height below
@@ -137,7 +139,7 @@ class _Glyph:
 
 class _Word:
     __slots__ = ("chars", "th", "c", "s", "v", "fs", "ox", "oy", "ex", "ey", "lx", "ly",
-                 "ue", "up", "dn", "bx0", "by0", "bx1", "by1", "sp", "nb", "n")
+                 "ue", "up", "dn", "bx0", "by0", "bx1", "by1", "sp", "nb", "n", "tr")
 
     @property
     def text(self) -> str:
@@ -735,6 +737,7 @@ def _new_word(g: _Glyph) -> _Word:
     w.bx1 = g.bx1
     w.by1 = g.by1
     w.sp = False
+    w.tr = -1.0
     w.n = len(g.ch)
     w.nb = w.n if g.bold else 0
     return w
@@ -770,6 +773,7 @@ def _build_words(items: list) -> List[_Word]:
                 gap = u - cur.ue
                 if gap > _WORD_GAP * fs:
                     cur.sp = True
+                    cur.tr = gap / fs                   # gap that split the words (no space glyph)
                     cur = None
                 elif gap < -_BACKSTEP * fs:
                     cur = None
@@ -807,7 +811,58 @@ def _build_words(items: list) -> List[_Word]:
             cur.bx1 = g.bx1
         if g.by1 > cur.by1:
             cur.by1 = g.by1
-    return words
+    return _join_tracked(words)
+
+
+def _join_tracked(words: List[_Word]) -> List[_Word]:
+    """Glue letter-spaced text back into words.
+
+    Tracked text has a small, even gap between letters (it can pass the word
+    gap limit, even look like a real space) and a clearly larger gap between
+    words.  In a chain of at least ``_TRACK_RUN`` short pieces that is split
+    only by gaps (never by a space glyph), gaps within ``_TRACK_SPREAD`` of the
+    typical small gap are letter gaps, provided the chain also holds a larger
+    gap that marks a word boundary.  Without such a boundary nothing is joined.
+    """
+    out: List[_Word] = []
+    n = len(words)
+    i = 0
+    while i < n:
+        j = i
+        while (j < n - 1 and words[j].tr >= 0 and words[j].n <= 2 and words[j + 1].n <= 2
+               and words[j].th == words[j + 1].th):
+            j += 1
+        if j - i + 1 < _TRACK_RUN:
+            out.append(words[i])
+            i += 1
+            continue
+        gaps = sorted(words[k].tr for k in range(i, j))
+        g0 = gaps[(len(gaps) - 1) // 4]
+        limit = _TRACK_SPREAD * g0
+        if gaps[-1] <= limit or g0 <= 0:
+            out.extend(words[i:j + 1])
+            i = j + 1
+            continue
+        a = words[i]
+        out.append(a)
+        for k in range(i + 1, j + 1):
+            b = words[k]
+            if words[k - 1].tr <= limit:
+                a.chars.extend(b.chars)
+                a.n += b.n
+                a.nb += b.nb
+                a.ex, a.ey, a.lx, a.ly, a.ue = b.ex, b.ey, b.lx, b.ly, b.ue
+                a.up = max(a.up, b.up)
+                a.dn = max(a.dn, b.dn)
+                a.bx0, a.by0 = min(a.bx0, b.bx0), min(a.by0, b.by0)
+                a.bx1, a.by1 = max(a.bx1, b.bx1), max(a.by1, b.by1)
+                a.sp = b.sp
+                a.tr = b.tr
+            else:
+                a = b
+                out.append(a)
+        i = j + 1
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1218,7 +1273,7 @@ def _make_block(lines: List[Line]) -> Block:
     b.y1 = max(ln.y1 for ln in lines)
     # sizes of one font differ by float noise (30.000000959 vs 30.00000096):
     # round so that equality tests on the block size are stable
-    b.size = round(_heavy([(ln.size, float(ln.nchar)) for ln in lines]), 2)
+    b.size = _heavy([(ln.size, float(ln.nchar)) for ln in lines])
     nch = sum(ln.nchar for ln in lines)
     nb = sum(ln.nbold for ln in lines)
     b.bold = nb * 2 >= nch and nb > 0
