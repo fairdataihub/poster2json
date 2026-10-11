@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-10
+
+Measured on the 21 hand-labeled posters against 0.10.2: figure captions 0.812 to 0.895, table captions 0.805 to 0.970, section headings 0.654 to 0.726, boundary-free content F1 0.891 to 0.899. Captions now leave section text, so section-text ROUGE-L against annotations that also kept captions inside sections reads lower (0.851 to 0.823) while all-content stays at 0.841.
+
+### Added
+
+- **Deterministic figure and table captions** (`poster2json/captions.py`). In the pdfplumber text path a caption is found from page geometry: a block that starts with a printed label ("Figure 2.", "Fig. 3:", "Table 1"), or an unlabeled sentence-like block directly below, above or beside an image, a cluster of vector shapes or a table grid, set no larger than the body text and not text inside the figure. Captions grow across continuation blocks, so wrapped and "A) ... B) ..." captions are whole, and the printed label is kept. They are written straight to `imageCaptions` and `tableCaptions` in reading order; in the text given to the model each one is replaced by a line such as `[Figure caption 1 extracted]`, the prompt says so, and caption text left inside section content is removed. A caption the model still writes is kept only if it is printed in the poster text and not already covered. Vision OCR and PyMuPDF text keep the model-written captions. On by default; set `POSTER2JSON_CAPTIONS=0` (or `extract.CAPTION_ENGINE = False`) to turn it off, and `POSTER2JSON_CAPTION_RAW=keep` to keep the caption text after its marker line.
+
 ## [0.10.2] - 2026-10-09
 
 Measured on the 21 hand-labeled posters against 0.10.1 (4-bit, same settings): title ROUGE-L 0.953 to 0.977, section text 0.802 to 0.847, all content 0.801 to 0.837, author-affiliation assignment 0.770 to 0.813. Author names, affiliations, research field and language are unchanged.

@@ -65,6 +65,16 @@ EXT_TO_FORMAT = {
 # deployment with the POSTER2JSON_EXTRACT_IDENTIFIERS environment variable.
 _TRUTHY_ENV = {"1", "true", "yes", "on"}
 
+# Deterministic figure/table caption extraction from page geometry
+# (poster2json.captions).  Captions are written straight into
+# imageCaptions/tableCaptions and replaced in the model's input by a marker
+# line.  POSTER2JSON_CAPTIONS=0 restores the model-written captions.
+CAPTION_ENGINE = os.environ.get("POSTER2JSON_CAPTIONS", "1").strip().lower() in _TRUTHY_ENV
+# "marker": the caption text is replaced by "[Figure caption N extracted]";
+# "keep": the marker line is followed by the caption text.
+CAPTION_PROMPT_NOTE = os.environ.get("POSTER2JSON_CAPTION_NOTE", "1").strip().lower() in _TRUTHY_ENV
+CAPTION_RAW_MODE = os.environ.get("POSTER2JSON_CAPTION_RAW", "marker").strip().lower()
+
 
 def _identifiers_flag_default() -> bool:
     """Default for extract_identifiers, read from the environment."""
@@ -980,7 +990,8 @@ def _split_inline_sections(text: str):
     return segments
 
 
-def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
+def extract_text_with_pdfplumber(pdf_path: str,
+                                 captions_out: Optional[list] = None) -> Optional[str]:
     """Extract text from PDF using pdfplumber (layout-aware).
 
     Uses recursive XY-cut tree (ported from xpdf's splitChars algorithm)
@@ -994,6 +1005,12 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
       4. Group word lines into blocks by vertical gaps
       5. Classify blocks as header/meta/body/footer
       6. Detect headers via font size/bold heuristics
+
+    When ``captions_out`` is a list and the caption engine is on, figure and
+    table captions found from page geometry (see poster2json.captions) are
+    appended to it as ``{"kind", "label", "text", "source", "page"}`` dicts in
+    reading order, and each caption is replaced in the returned text by a
+    one-line marker (see CAPTION_RAW_MODE).
     """
     import pdfplumber
 
@@ -1007,9 +1024,11 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
         return None
 
     all_output_lines = []
+    use_captions = captions_out is not None and CAPTION_ENGINE
+    cap_counts = {"figure": 0, "table": 0}
 
     try:
-        for page in pdf.pages:
+        for page_no, page in enumerate(pdf.pages):
             page_w = page.width
             page_h = page.height
 
@@ -1085,11 +1104,14 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
             # Figure/table label text (plot ticks, table cells) is split off
             # into its own blocks so it is not glued into body sentences.
             fig_blocks = []
-            if _lb.FLAGS["fig"]:
+            page_words = [w for ln in word_lines for w in ln] if use_captions else None
+            masks = None
+            if _lb.FLAGS["fig"] or use_captions:
                 masks = _lb.build_figure_masks(
                     page.images,
                     list(page.rects) + list(page.curves) + list(page.lines),
                     page_w, page_h, _lb.body_font_size(text_chars))
+            if _lb.FLAGS["fig"]:
                 (body_lines, body_ids, lab_lines, lab_ids,
                  body_order, lab_order) = _lb.split_figure_words(
                     word_lines, leaf_ids, masks, _lb.body_font_size(text_chars))
@@ -1183,9 +1205,41 @@ def extract_text_with_pdfplumber(pdf_path: str) -> Optional[str]:
 
             median_fontsize = page_median_fs
 
+            if use_captions:
+                from poster2json import captions as _cap_mod
+                _body = _lb.body_font_size(text_chars)
+                _found = _cap_mod.find_captions(
+                    all_blocks,
+                    _cap_mod.regions_from_masks(masks or [], _body),
+                    page_words, _body, page_h)
+                for _c in _found:
+                    cap_counts[_c["kind"]] += 1
+                    _k = cap_counts[_c["kind"]]
+                    _name = "Figure" if _c["kind"] == "figure" else "Table"
+                    captions_out.append({
+                        "kind": _c["kind"], "label": _c["label"],
+                        "text": _c["text"], "source": _c["source"],
+                        "page": page_no,
+                    })
+                    first = all_blocks[min(_c["blocks"])]
+                    first["cap_marker"] = (
+                        first.get("cap_marker", "") + ("\n" if first.get("cap_marker") else "")
+                        + f"[{_name} caption {_k} extracted]")
+                    first["cap_text"] = (
+                        first.get("cap_text", "") + (" " if first.get("cap_text") else "")
+                        + _c["text"])
+                    for _bi in _c["blocks"]:
+                        all_blocks[_bi]["cap"] = True
+
             for blk in all_blocks:
                 _t = blk["text"].strip()
                 if not _t:
+                    continue
+                if blk.get("cap"):
+                    if blk.get("cap_marker"):
+                        all_output_lines.append(blk["cap_marker"])
+                        if CAPTION_RAW_MODE == "keep":
+                            all_output_lines.append(_add_bidi_markers(blk["cap_text"]))
                     continue
                 if blk.get("fig"):
                     all_output_lines.append(_add_bidi_markers(_t))
@@ -1368,7 +1422,8 @@ def _render_pdf_to_image(pdf_path: str) -> Optional[str]:
 
 
 def get_raw_text(
-    poster_path: str, poster_id: str = None, output_dir: str = None
+    poster_path: str, poster_id: str = None, output_dir: str = None,
+    captions_out: Optional[list] = None,
 ) -> Tuple[str, str]:
     """
     Get raw text from a poster file.
@@ -1377,6 +1432,8 @@ def get_raw_text(
         poster_path: Path to poster file (PDF, JPG, PNG)
         poster_id: Optional ID for caching
         output_dir: Optional directory for cached results
+        captions_out: Optional list that receives the deterministic captions
+            of a pdfplumber extraction (see extract_text_with_pdfplumber)
 
     Returns:
         Tuple of (text, source) where source indicates extraction method
@@ -1406,13 +1463,15 @@ def get_raw_text(
         # memory on pathological PDFs with very high character counts. Probe the
         # char count cheaply with PyMuPDF and skip pdfplumber for oversized pages.
         if _pdf_char_count(poster_path) <= MAX_PDFPLUMBER_CHARS:
-            text = extract_text_with_pdfplumber(poster_path)
+            text = extract_text_with_pdfplumber(poster_path, captions_out=captions_out)
             if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
                 log(f"Using pdfplumber output ({len(text)} characters)")
                 return text, "pdfplumber"
         else:
             log(f"PDF exceeds {MAX_PDFPLUMBER_CHARS} chars; skipping pdfplumber "
                 f"(XY-cut) to avoid hang/OOM, falling back to PyMuPDF")
+        if captions_out is not None:
+            captions_out.clear()  # the PyMuPDF text carries no caption markers
         text = extract_text_with_pymupdf(poster_path)
         if text and len(text.strip()) >= MIN_PDF_TEXT_CHARS:
             log(f"Using PyMuPDF fallback ({len(text)} characters)")
@@ -1816,6 +1875,39 @@ TEXT:
 {raw_text}
 
 JSON:"""
+
+
+# Lines that stand in for captions the text extractor already found.
+_CAPTION_MARKER_RE = re.compile(r"^\[(?:Figure|Table) caption \d+ extracted\][ \t]*$", re.M)
+_CAPTION_PROMPT_NOTE = (
+    "CAPTIONS: Figure and table captions were already extracted from the poster. "
+    "Each one appears below only as a line such as \"[Figure caption 1 extracted]\" "
+    "or \"[Table caption 1 extracted]\". Do not copy those lines into any section "
+    "and do not write them yourself. Leave imageCaptions and tableCaptions as [] "
+    "unless a caption is printed in full in the text.\n\n"
+)
+
+
+_CAPTION_MARKER_INLINE_RE = re.compile(r"\[(?:Figure|Table) caption \d+ extracted\]")
+
+
+_CAPTION_PROMPT_NOTE_KEEP = (
+    "CAPTIONS: Figure and table captions were already extracted from the poster. "
+    "Each one is marked by a line such as \"[Figure caption 1 extracted]\" followed by "
+    "the caption text. Do not put marked captions or marker lines into any section "
+    "and leave imageCaptions and tableCaptions as [] unless a caption is printed "
+    "in the text without a marker.\n\n"
+)
+
+
+def _with_caption_note(template: str, note: str) -> str:
+    """Insert the caption note before the poster text of a prompt template."""
+    if not note:
+        return template
+    for anchor in ("POSTER TEXT TO CONVERT:", "TEXT:\n{raw_text}"):
+        if anchor in template:
+            return template.replace(anchor, note + anchor, 1)
+    return template
 
 
 # ============================
@@ -2708,6 +2800,7 @@ def _postprocess_json(
     raw_text: str = "",
     extract_identifiers: bool = False,
     title_candidate: Optional[str] = None,
+    det_captions: Optional[list] = None,
 ) -> dict:
     """Comprehensive post-processing for extracted JSON.
 
@@ -2718,8 +2811,19 @@ def _postprocess_json(
     title_candidate is the typographic title from page-1 geometry (see
     title_ground.compute_title_candidate). When given, the model's title is
     grounded against it; None leaves the title as the model wrote it.
+
+    det_captions are the captions the text extractor found from page geometry
+    (poster2json.captions). They become imageCaptions/tableCaptions, win over
+    captions the model wrote, and their text is removed from section content.
     """
     result = data.copy()
+    raw_text = _CAPTION_MARKER_RE.sub("", raw_text) if raw_text else raw_text
+    det = []
+    for c in det_captions or []:
+        text = _clean_unicode_artifacts(_normalize_raw_text_for_model(c.get("text", "")))
+        if text:
+            det.append({"kind": c["kind"], "text": text})
+    det_texts = [c["text"] for c in det]
 
     # Add schema
     if "$schema" not in result:
@@ -2798,6 +2902,17 @@ def _postprocess_json(
                 and not _is_placeholder(cap.get("caption", ""))
             ]
 
+    if det:
+        from poster2json import captions as _cap_mod
+
+        def _texts(key):
+            return [c["caption"] for c in result.get(key, []) if isinstance(c, dict)]
+
+        merged = _cap_mod.merge_captions(
+            det, _texts("imageCaptions"), _texts("tableCaptions"), raw_text)
+        result["imageCaptions"] = _normalize_captions(merged["figure"], caption_type="fig")
+        result["tableCaptions"] = _normalize_captions(merged["table"], caption_type="table")
+
     # Clean Unicode from string fields
     for key in ["researchField"]:
         if key in result and isinstance(result[key], str):
@@ -2829,6 +2944,11 @@ def _postprocess_json(
                 content = _clean_unicode_artifacts(
                     content.strip() if isinstance(content, str) else ""
                 )
+                if det:
+                    from poster2json import captions as _cap_mod
+                    content = _cap_mod.remove_caption_spans(content, det_texts)
+                    content = _CAPTION_MARKER_INLINE_RE.sub(" ", content)
+                    content = _clean_unicode_artifacts(content)
                 # Strip markdown the model sometimes emits, then drop sections
                 # whose content is just a bare structural label (e.g. the model
                 # emitting "**Title and Subtitle:**" / "**Author Names and
@@ -3244,9 +3364,15 @@ def extract_json_with_retry(
     tokenizer,
     extract_identifiers: bool = False,
     title_candidate: Optional[str] = None,
+    captions: Optional[list] = None,
 ) -> dict:
     """
     Send raw poster text to the LLM and robustly parse the JSON response.
+
+    ``captions`` are the deterministic captions found by the text extractor
+    (see poster2json.captions).  They are written to imageCaptions and
+    tableCaptions after generation; when the text carries their marker lines
+    the prompt tells the model not to write them.
 
     This function:
       1. Checks input length against MAX_INPUT_TOKENS
@@ -3269,14 +3395,18 @@ def extract_json_with_retry(
             "_max_input_tokens": MAX_INPUT_TOKENS,
         }
 
+    has_markers = bool(captions) and bool(_CAPTION_MARKER_RE.search(raw_text))
+    note = ""
+    if has_markers and CAPTION_PROMPT_NOTE:
+        note = _CAPTION_PROMPT_NOTE_KEEP if CAPTION_RAW_MODE == "keep" else _CAPTION_PROMPT_NOTE
     if USE_SYSTEM_PROMPT == "move":
-        prompt = EXTRACTION_USER_PROMPT.format(raw_text=raw_text)
+        prompt = _with_caption_note(EXTRACTION_USER_PROMPT, note).format(raw_text=raw_text)
         system = EXTRACTION_SYSTEM_PROMPT
     elif USE_SYSTEM_PROMPT == "keep":
-        prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
+        prompt = _with_caption_note(EXTRACTION_PROMPT, note).format(raw_text=raw_text)
         system = EXTRACTION_SYSTEM_PROMPT
     else:
-        prompt = EXTRACTION_PROMPT.format(raw_text=raw_text)
+        prompt = _with_caption_note(EXTRACTION_PROMPT, note).format(raw_text=raw_text)
         system = None
 
     log("Starting primary JSON extraction with full prompt")
@@ -3296,7 +3426,7 @@ def extract_json_with_retry(
     # Fallback to shorter prompt
     if "error" in result or _is_truncated(result.get("raw", "")):
         log("Using fallback shorter prompt")
-        fallback_prompt = FALLBACK_PROMPT.format(raw_text=raw_text)
+        fallback_prompt = _with_caption_note(FALLBACK_PROMPT, note).format(raw_text=raw_text)
         response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS, None, raw_text)
         result = _as_result_dict(_robust_json_parse(response))
 
@@ -3305,6 +3435,7 @@ def extract_json_with_retry(
         raw_text=raw_text,
         extract_identifiers=extract_identifiers,
         title_candidate=title_candidate,
+        det_captions=captions,
     )
     return result
 
@@ -3347,7 +3478,10 @@ def extract_poster(
 
     # Extract raw text (may trigger vision OCR for image-only PDFs)
     t_extract_start = time.time()
-    raw_text, source = get_raw_text(poster_path)
+    det_captions: list = []
+    raw_text, source = get_raw_text(poster_path, captions_out=det_captions)
+    if source != "pdfplumber":
+        det_captions = []
     t_extract_elapsed = time.time() - t_extract_start
 
     # Extract PDF link annotations (clickable URIs in the annotation layer)
@@ -3381,7 +3515,7 @@ def extract_poster(
         t_json_start = time.time()
         generated = extract_json_with_retry(
             raw_text, model, tokenizer, extract_identifiers=extract_identifiers,
-            title_candidate=title_candidate,
+            title_candidate=title_candidate, captions=det_captions,
         )
         t_json_elapsed = time.time() - t_json_start
 
@@ -3392,7 +3526,7 @@ def extract_poster(
                 t_retry_start = time.time()
                 generated = extract_json_with_retry(
                     pymupdf_text, model, tokenizer, extract_identifiers=extract_identifiers,
-                    title_candidate=title_candidate,
+                    title_candidate=title_candidate, captions=det_captions,
                 )
                 t_retry_elapsed = time.time() - t_retry_start
                 if "error" not in generated:
