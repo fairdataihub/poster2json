@@ -502,6 +502,16 @@ def find_captions(blocks: Sequence[dict], regions: Sequence[dict],
             chain = grow(i)
             if ratio >= SMALL_RATIO and flows_into_text(chain, side, fs):
                 continue
+            if ratio >= SMALL_RATIO and len(chain) > 1:
+                # the same limits hold for the whole grown caption: a short
+                # first line must not pull a wider or taller paragraph in
+                cb = [boxes[c] for c in chain]
+                if max(x[3] for x in cb) - min(x[1] for x in cb) > BODY_MAX_LINES * 1.3 * fs:
+                    continue
+                if side in ("below", "above"):
+                    x0, x1 = figure_span(r, fs)
+                    if (max(x[2] for x in cb) - min(x[0] for x in cb)) > BODY_WIDTH_RATIO * (x1 - x0):
+                        continue
             emit(chain, " ".join(work[c]["text"].strip() for c in chain),
                  "table" if r["table"] else "figure", None, "geometry")
 

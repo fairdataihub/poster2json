@@ -271,3 +271,12 @@ def test_column_wide_paragraph_under_narrow_image_is_not_a_caption():
     chars = body_text() + para(5, 50, 306, BODY, 56)
     blocks, found = run(chars, images=[image(50, 100, 300, 300)])
     assert found == []
+
+
+def test_short_first_line_does_not_pull_a_wide_paragraph_into_the_caption():
+    # a one line block tight under the image followed by a column wide paragraph:
+    # the grown chain is wider than the figure, so none of it is a caption
+    chars = (body_text() + lines(["Short note about the figure above"], 50, 304, BODY)
+             + para(5, 30, 322, BODY, 70))
+    blocks, found = run(chars, images=[image(50, 100, 300, 300)])
+    assert found == []
