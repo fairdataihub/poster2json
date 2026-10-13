@@ -225,6 +225,7 @@ poster2json/
 | `CUDA_VISIBLE_DEVICES` | GPU device(s) to use |
 | `POSTER2JSON_ROR` | Set to `0` to disable ROR affiliation/publisher enrichment |
 | `POSTER2JSON_LAYOUT` | `alto` (default) or `blocks`: layout engine for the pdfplumber text path. A page `alto` cannot handle falls back to `blocks`; a generation that runs away is rerun once on the other engine (`POSTER2JSON_RUNAWAY_FALLBACK=0` turns that off) |
+| `POSTER2JSON_HEADER_GROUNDING` | `1` (default) or `0`: read authors and affiliations from the printed header (`poster2json/header_parse.py`) and use them to fix the model's creators; `0` keeps the model output as is |
 
 ### Model Configuration
 

@@ -3066,6 +3066,42 @@ def _ground_main_title(titles: list, raw_text: str, title_candidate: Optional[st
             break
 
 
+def _ground_creators_from_header(result: dict, raw_text: str,
+                                 title_candidate: Optional[str] = None) -> bool:
+    """Ground creators and their affiliations in the printed author block.
+
+    Returns True when a confident header parse was applied (so the older
+    superscript corrector, which works from the same banner, is skipped).
+    Never raises: on any failure the model's creators are kept.
+    """
+    from . import header_parse
+
+    if not header_parse.HEADER_GROUNDING or not raw_text:
+        return False
+    creators = result.get("creators")
+    if not isinstance(creators, list):
+        return False
+    try:
+        titles = [t.get("title") for t in result.get("titles") or []
+                  if isinstance(t, dict) and t.get("title")]
+        if title_candidate:
+            titles.append(title_candidate)
+        hp = header_parse.parse_header(raw_text, exclude=titles)
+        new, notes = header_parse.ground_creators(creators, hp)
+    except Exception as e:  # noqa: BLE001 - grounding must never lose the model output
+        log(f"Header grounding skipped: {type(e).__name__}: {e}")
+        return False
+    if hp.confident:
+        log(f"Header parse confident ({hp.reason}): {len(hp.authors)} authors, "
+            f"{len(hp.affiliation_strings())} affiliations")
+    else:
+        log(f"Header parse not confident: {hp.reason}")
+    for n in notes:
+        log(f"Header grounding: {n}")
+    result["creators"] = new
+    return bool(hp.confident)
+
+
 def _postprocess_json(
     data: dict,
     raw_text: str = "",
@@ -3500,7 +3536,8 @@ def _postprocess_json(
     # e.g. the lead author absorbing every institution). Strictly gated, so it
     # is a no-op on posters without a numbered list. Runs before resolution so
     # the reassigned name strings get ROR-resolved normally.
-    _correct_affiliations_from_superscripts(result, raw_text)
+    if not _ground_creators_from_header(result, raw_text, title_candidate):
+        _correct_affiliations_from_superscripts(result, raw_text)
 
     # Affiliation normalization: coerce to the schema's array form (the model
     # sometimes emits a bare string or single object), drop any model-supplied
