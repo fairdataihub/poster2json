@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-10-12
+
 Measured on the 21 hand-labeled posters against 0.10.3 (same model, 4-bit, copy-only): author names 0.862 to 0.886, affiliations 0.907 to 0.909, author-affiliation assignment 0.790 to 0.801, section headings 0.726 to 0.692, section text 0.820 to 0.839, figure captions 0.944 to 0.975, table captions 1.000 to 1.000, all content 0.838 to 0.862, boundary-free recall/precision/F1 0.894/0.910/0.899 to 0.928/0.912/0.917. Caption detection on the 20 PDFs: recall at ROUGE-L 0.8 from 45 to 51 of 58. Differences under about 0.02 per field are within model noise at this poster count.
 
 ### Changed
