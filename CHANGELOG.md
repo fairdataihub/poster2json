@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-10-13
+
+Measured on the 21 hand-labeled posters against 0.10.4: author names 0.886 to 0.898, given/family split 0.917 to 1.000, affiliations 0.909 to 0.953, author-affiliation assignment 0.801 to 0.884. Title, content, captions and headings are unchanged.
+
 ### Added
 
 - **Authors and affiliations are read from the printed header where it allows** (`poster2json/header_parse.py`). The top of the extracted text is parsed for the author line(s) (names separated by commas, `&`, `and` or `;`, each optionally followed by marker numbers, letters or symbols, degrees and e-mails/ORCIDs ignored) and the affiliation list (entries introduced by `1`, `1.`, `a` or a symbol, on one line or one per line). Authors are paired with the full printed affiliation strings by marker. Symbols that are not in the list (`*`, a dagger) are roles, not affiliations; a single unmarked affiliation is shared by all authors; several unmarked affiliations, unresolved markers, entries that run into body text, or an unparseable header leave the model output alone.
