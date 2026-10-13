@@ -115,3 +115,21 @@ def test_middle_dots_on_the_baseline_are_left_alone():
     chars += string("b", 61.5, 100, 10)
     assert "¨" not in "".join(lines_of(run(chars)))
     assert "ü" not in "".join(lines_of(run(chars)))
+
+
+def test_raised_mark_touching_the_next_word_stays_in_its_line():
+    # an affiliation number set smaller and higher than the text it leads; its
+    # advance is a hair longer than the gap to the next word, which must not be
+    # taken for stacked material (the mark would become a block of its own)
+    chars = string("Author One, Author Two, on behalf of the Task Force", 100, 100, 36)
+    chars += string("1", 100, 160, 24, adv=8.3)
+    chars += string("FAIR Data Innovations Hub, San Diego", 108.0, 173.5, 36)
+    got = lines_of(run(chars, w=1200, h=800))
+    assert any(t.startswith("1 FAIR Data") or t.startswith("1FAIR Data") for t in got), got
+    assert "1" not in got
+
+
+def test_stacked_words_still_split_rows():
+    chars = string("first row of text", 100, 100, 20)
+    chars += string("second row of text", 100, 124, 20)
+    assert lines_of(run(chars)) == ["first row of text", "second row of text"]

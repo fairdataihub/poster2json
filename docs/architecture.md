@@ -203,7 +203,7 @@ poster2json/
 │   ├── extract_json_with_retry()       # Stage 2: JSON structuring
 │   └── _postprocess_json()             # Post-processing + normalization hooks
 ├── xy_cut.py         # Reading-order reconstruction for multi-column layouts
-├── layout_streams.py # Optional stream-order word/line/block layout (POSTER2JSON_LAYOUT=alto)
+├── layout_streams.py # Stream-order word/line/block layout, the default text layout engine
 ├── cli.py            # Command-line interface
 ├── gui.py            # Optional graphical interface
 ├── identifiers.py    # DOI / arXiv / URL extraction
@@ -224,7 +224,7 @@ poster2json/
 |----------|-------------|
 | `CUDA_VISIBLE_DEVICES` | GPU device(s) to use |
 | `POSTER2JSON_ROR` | Set to `0` to disable ROR affiliation/publisher enrichment |
-| `POSTER2JSON_LAYOUT` | `blocks` (default) or `alto`: layout engine for the pdfplumber text path |
+| `POSTER2JSON_LAYOUT` | `alto` (default) or `blocks`: layout engine for the pdfplumber text path. A page `alto` cannot handle falls back to `blocks`; a generation that runs away is rerun once on the other engine (`POSTER2JSON_RUNAWAY_FALLBACK=0` turns that off) |
 
 ### Model Configuration
 

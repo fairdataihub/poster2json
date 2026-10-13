@@ -60,7 +60,7 @@ Convert scientific posters (PDF/images) to structured JSON metadata using Large 
 The pipeline uses:
 
 - [**Llama-3.1-8B-Instruct**](https://huggingface.co/fairdataihub/Llama-3.1-8B-Poster-Extraction) (a verbatim mirror of Meta's release; swap with any HuggingFace instruct model via `--model`) for JSON structuring
-- **pdfplumber** for layout-aware PDF text extraction
+- **pdfplumber** for layout-aware PDF text extraction (stream-order `alto` layout engine by default; `POSTER2JSON_LAYOUT=blocks` selects the XY-cut engine)
 - **lingua-language-detector** for ISO 639-1 language detection on body text (overrides any value the model emits — body text beats metadata-fragment guessing)
 - **ROR** (`https://api.ror.org`) for affiliation canonicalisation; matched names get a ROR identifier attached
 - **ORCID** (`https://pub.orcid.org`) for author disambiguation; matched creators get an ORCID identifier attached (uses the authenticated Member API when `ORCID_CLIENT_ID` and `ORCID_CLIENT_SECRET` are set, otherwise the public API)

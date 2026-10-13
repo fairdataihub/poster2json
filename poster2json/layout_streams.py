@@ -49,6 +49,7 @@ _COINC_ACROSS = 0.20
 _ANGLE_TOL = 3.0             # degrees: words/lines of one direction
 _SNAP_DEG = 1.0              # snap text direction to a right angle within this
 _ROW_FRAC = 0.5              # same visual row: baseline within this times size
+_STACK_OVERLAP = 0.1         # words stacked on one another overlap by more than this times L
 _FAR_FRAC = 1.5              # next word may start this far (times L) past the end
 _SIZE_DIFF = 0.05            # blocks: relative size difference limit
 _LEADING = 1.5               # blocks: baseline step limit, times previous size
@@ -1155,7 +1156,7 @@ def _build_lines(words: List[_Word]) -> List[Line]:
                     ok = False                              # entirely on a later line
                 elif us < last_us:
                     ok = False                              # reading went backward
-                elif us < last_ue and abs(dv) > _ROW_FRAC * run_max:
+                elif us < last_ue - _STACK_OVERLAP * run_max and abs(dv) > _ROW_FRAC * run_max:
                     ok = False                              # stacked material
                 elif us - last_ue > _FAR_FRAC * run_max:
                     ok = False

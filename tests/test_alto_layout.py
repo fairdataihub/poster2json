@@ -28,11 +28,11 @@ def test_layout_engine_switch_and_block_dicts(monkeypatch):
     extract = pytest.importorskip("poster2json.extract")
 
     monkeypatch.delenv("POSTER2JSON_LAYOUT", raising=False)
-    assert extract._layout_engine() == extract.LAYOUT_ENGINE == "blocks"
-    monkeypatch.setenv("POSTER2JSON_LAYOUT", "ALTO")
-    assert extract._layout_engine() == "alto"
-    monkeypatch.setenv("POSTER2JSON_LAYOUT", "bogus")
+    assert extract._layout_engine() == extract.LAYOUT_ENGINE == "alto"
+    monkeypatch.setenv("POSTER2JSON_LAYOUT", "BLOCKS")
     assert extract._layout_engine() == "blocks"
+    monkeypatch.setenv("POSTER2JSON_LAYOUT", "bogus")
+    assert extract._layout_engine() == "alto"
 
     page = _page()
     blocks = extract._alto_blocks(page, page.chars, PAGE_W, PAGE_H)
@@ -80,11 +80,11 @@ def test_alto_success_reports_alto(monkeypatch):
     assert used_alto is True and fig_blocks == [] and blocks
 
 
-def test_default_engine_never_calls_the_alto_engine(monkeypatch):
+def test_blocks_engine_never_calls_the_alto_engine(monkeypatch):
     extract = pytest.importorskip("poster2json.extract")
     page = _page()
     sentinel = ([_blk("default", 0, 0)], [])
-    monkeypatch.delenv("POSTER2JSON_LAYOUT", raising=False)
+    monkeypatch.setenv("POSTER2JSON_LAYOUT", "blocks")
     monkeypatch.setattr(extract, "_alto_blocks",
                         lambda *a, **k: pytest.fail("alto engine called"))
     monkeypatch.setattr(extract, "_xy_cut_blocks", lambda *a, **k: sentinel)

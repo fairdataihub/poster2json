@@ -1081,16 +1081,17 @@ def _xy_cut_blocks(page, chars, text_chars, x_tol, page_w, page_h,
     return all_blocks, fig_blocks
 
 
-# Layout engine for the pdfplumber text path.  "blocks" is the leaf-aware
-# XY-cut block builder (layout_blocks / xy_cut).  "alto" is the stream-order
-# word, line and block builder in layout_streams (band reading order).  The
+# Layout engine for the pdfplumber text path.  "alto" (the default) is the
+# stream-order word, line and block builder in layout_streams (band reading
+# order); a page it cannot handle falls back to "blocks".  "blocks" is the
+# leaf-aware XY-cut block builder (layout_blocks / xy_cut).  The
 # POSTER2JSON_LAYOUT environment variable overrides this setting.
-LAYOUT_ENGINE = "blocks"
+LAYOUT_ENGINE = "alto"
 
 
 def _layout_engine() -> str:
-    eng = (os.environ.get("POSTER2JSON_LAYOUT") or LAYOUT_ENGINE or "blocks").strip().lower()
-    return eng if eng in ("blocks", "alto") else "blocks"
+    eng = (os.environ.get("POSTER2JSON_LAYOUT") or LAYOUT_ENGINE or "alto").strip().lower()
+    return eng if eng in ("blocks", "alto") else "alto"
 
 
 def _alto_blocks(page, chars, page_w, page_h, geo: Optional[dict] = None) -> list:
@@ -2000,6 +2001,10 @@ def _build_messages(prompt, system=None):
     return messages
 
 
+# Whether the last _generate call used up its token budget.
+_LAST_GEN = {"capped": False}
+
+
 def _generate(model, tokenizer, prompt: str, max_tokens: int, system=None, copy_source=None) -> str:
     """Generate response using the Llama model.
 
@@ -2041,6 +2046,7 @@ def _generate(model, tokenizer, prompt: str, max_tokens: int, system=None, copy_
     )
     if copy_proc is not None:
         log("   " + copy_proc.summary())
+    _LAST_GEN["capped"] = bool(tokens_generated >= max_tokens)
 
     return tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
 
@@ -3630,9 +3636,13 @@ def extract_json_with_retry(
     extract_identifiers: bool = False,
     title_candidate: Optional[str] = None,
     captions: Optional[list] = None,
+    diag: Optional[dict] = None,
 ) -> dict:
     """
     Send raw poster text to the LLM and robustly parse the JSON response.
+
+    ``diag``, when given, receives ``capped``: whether the generation that
+    produced the result used up its token budget (see _runaway_reasons).
 
     ``captions`` are the deterministic captions found by the text extractor
     (see poster2json.captions).  They are written to imageCaptions and
@@ -3676,6 +3686,8 @@ def extract_json_with_retry(
 
     log("Starting primary JSON extraction with full prompt")
     response = _generate(model, tokenizer, prompt, MAX_JSON_TOKENS, system, raw_text)
+    if diag is not None:
+        diag["capped"] = _LAST_GEN["capped"]
     result = _as_result_dict(_robust_json_parse(response))
     if "error" in result:
         log(f"Primary JSON parse error: {result['error']}")
@@ -3686,6 +3698,8 @@ def extract_json_with_retry(
     if "error" in result or _is_truncated(result.get("raw", "")):
         log(f"Retrying with max_tokens={MAX_RETRY_TOKENS}")
         response = _generate(model, tokenizer, prompt, MAX_RETRY_TOKENS, system, raw_text)
+        if diag is not None:
+            diag["capped"] = _LAST_GEN["capped"]
         result = _as_result_dict(_robust_json_parse(response))
 
     # Fallback to shorter prompt
@@ -3693,6 +3707,8 @@ def extract_json_with_retry(
         log("Using fallback shorter prompt")
         fallback_prompt = _with_caption_note(FALLBACK_PROMPT, note).format(raw_text=raw_text)
         response = _generate(model, tokenizer, fallback_prompt, MAX_RETRY_TOKENS, None, raw_text)
+        if diag is not None:
+            diag["capped"] = _LAST_GEN["capped"]
         result = _as_result_dict(_robust_json_parse(response))
 
     result = _postprocess_json(
@@ -3703,6 +3719,98 @@ def extract_json_with_retry(
         det_captions=captions,
     )
     return result
+
+
+# A generation that runs away (loops until the token budget is gone, or
+# returns the poster as one giant section) is rerun once on the text of the
+# other layout engine.  See _runaway_reasons.
+RUNAWAY_MAX_SHARE = 0.7        # one section holding more of the section text than this
+RUNAWAY_MIN_RAW_HEADINGS = 5   # ... on a raw text with at least this many "## " headings
+RUNAWAY_MAX_OUTPUT_RATIO = 1.6  # section text longer than this times the raw text
+RUNAWAY_FALLBACK = os.environ.get("POSTER2JSON_RUNAWAY_FALLBACK", "1").strip().lower() in _TRUTHY_ENV
+
+
+def _runaway_reasons(result: dict, raw_text: str, capped: bool = False) -> Tuple[list, float]:
+    """Why a generation looks like a runaway, and a degeneracy score (0 = fine).
+
+    Reasons: the generation used up its token budget; the JSON could not be
+    parsed; one section holds most of the section text although the poster
+    text has several headings; the section text is far longer than the poster
+    text.
+    """
+    reasons: list = []
+    score = 0.0
+    if "error" in result and result.get("errorCode") != "INPUT_TOO_LONG":
+        return ["json error"], 10.0
+    if capped:
+        reasons.append("token budget used up")
+        score += 2.0
+    sections = ((result.get("content") or {}).get("sections")) or []
+    sizes = [len(str(sec.get("sectionContent") or "")) for sec in sections if isinstance(sec, dict)]
+    total = sum(sizes)
+    raw_len = len(raw_text or "")
+    if total > 0:
+        share = max(sizes) / total
+        n_head = sum(1 for ln in (raw_text or "").split("\n") if ln.startswith("## "))
+        if share > RUNAWAY_MAX_SHARE and n_head >= RUNAWAY_MIN_RAW_HEADINGS:
+            reasons.append(f"one section holds {share:.0%} of the section text")
+            score += share
+        if raw_len and total > RUNAWAY_MAX_OUTPUT_RATIO * raw_len:
+            reasons.append(f"section text is {total / raw_len:.1f}x the poster text")
+            score += total / raw_len
+    return reasons, score
+
+
+def _other_layout_engine() -> str:
+    return "blocks" if _layout_engine() == "alto" else "alto"
+
+
+def _generate_with_layout_fallback(poster_path, raw_text, det_captions, generate):
+    """Run ``generate(raw_text, captions, diag)``; on a runaway rerun once on the
+    text of the other layout engine and keep the result that is not a runaway
+    (both runaways: the less degenerate one).
+
+    ``generate`` returns the result dict and fills ``diag``.  Returns
+    ``(result, raw_text, captions)`` of the kept run.
+    """
+    diag: dict = {}
+    first = generate(raw_text, det_captions, diag)
+    reasons, score = _runaway_reasons(first, raw_text, diag.get("capped", False))
+    if not reasons or not RUNAWAY_FALLBACK:
+        return first, raw_text, det_captions
+    here = _layout_engine()
+    other = _other_layout_engine()
+    log(f"RUNAWAY with the {here} layout ({'; '.join(reasons)}); rerunning on the {other} layout")
+    prev = os.environ.get("POSTER2JSON_LAYOUT")
+    os.environ["POSTER2JSON_LAYOUT"] = other
+    try:
+        caps2: list = []
+        raw2, source2 = get_raw_text(poster_path, captions_out=caps2)
+    except Exception as e:  # noqa: BLE001
+        log(f"RUNAWAY fallback could not extract the {other} text "
+            f"({type(e).__name__}: {e}); keeping the first result")
+        return first, raw_text, det_captions
+    finally:
+        if prev is None:
+            os.environ.pop("POSTER2JSON_LAYOUT", None)
+        else:
+            os.environ["POSTER2JSON_LAYOUT"] = prev
+    if source2 != "pdfplumber" or not raw2 or raw2 == raw_text:
+        log("RUNAWAY fallback has no different text; keeping the first result")
+        return first, raw_text, det_captions
+    diag2: dict = {}
+    second = generate(raw2, caps2, diag2)
+    reasons2, score2 = _runaway_reasons(second, raw2, diag2.get("capped", False))
+    if not reasons2:
+        log(f"RUNAWAY fallback: keeping the {other} layout result")
+        return second, raw2, caps2
+    if score2 < score:
+        log(f"RUNAWAY on both layouts; keeping the {other} result as the less degenerate "
+            f"({score2:.2f} vs {score:.2f}: {'; '.join(reasons2)})")
+        return second, raw2, caps2
+    log(f"RUNAWAY on both layouts; keeping the {here} result as the less degenerate "
+        f"({score:.2f} vs {score2:.2f})")
+    return first, raw_text, det_captions
 
 
 def extract_poster(
@@ -3778,10 +3886,18 @@ def extract_poster(
 
     try:
         t_json_start = time.time()
-        generated = extract_json_with_retry(
-            raw_text, model, tokenizer, extract_identifiers=extract_identifiers,
-            title_candidate=title_candidate, captions=det_captions,
-        )
+
+        def _gen(text, caps, diag):
+            return extract_json_with_retry(
+                text, model, tokenizer, extract_identifiers=extract_identifiers,
+                title_candidate=title_candidate, captions=caps, diag=diag,
+            )
+
+        if source == "pdfplumber":
+            generated, raw_text, det_captions = _generate_with_layout_fallback(
+                poster_path, raw_text, det_captions, _gen)
+        else:
+            generated = _gen(raw_text, det_captions, {})
         t_json_elapsed = time.time() - t_json_start
 
         if "error" in generated and source == "pdfplumber":
