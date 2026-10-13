@@ -64,6 +64,18 @@ def test_numbers_on_their_own_lines_with_superscript_characters():
     assert [len(x) for x in hp.assigned] == [1, 2]
 
 
+def test_text_after_nfkd_normalization():
+    # the text reaching post-processing has superscripts folded to "1+2" and no space before entries
+    text = (
+        "Andrew Couperus*1+2, Todd Henry2, Rachel Osten3, and the RECONS Team 1Georgia State University, "
+        "Atlanta, GA 2RECONS Institute, Chambersburg, PA 3STScI, Baltimore, MD * andcoup@example.edu | www.example.edu\n"
+    )
+    hp = parse_header(text)
+    assert hp.confident
+    assert [len(x) for x in hp.assigned] == [2, 1, 1]
+    assert hp.entries["3"] == "STScI, Baltimore, MD"
+
+
 def test_ampersand_join_in_author_line_without_markers():
     text = (
         f"{TITLE}\n"

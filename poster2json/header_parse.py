@@ -98,7 +98,7 @@ _LABEL = re.compile(r"^(?:authors?|presenting author|presented by|by)\s*:?\s+", 
 # --------------------------------------------------------------- tokenizing
 _ITEM = r"(?:\d{1,2}(?!\d)|[" + re.escape(_SYMBOL_CHARS) + r"]+)"
 _SEP_BETWEEN = (
-    r"(?:\s*,\s*|\s*[\u2013\u2014\-]\s*(?=\d)|(?<=[" + re.escape(_SYMBOL_CHARS) + r"])(?=\d)"
+    r"(?:\s*,\s*|\s*\+\s*(?=\d)|\s*[\u2013\u2014\-]\s*(?=\d)|(?<=[" + re.escape(_SYMBOL_CHARS) + r"])(?=\d)"
     r"|(?<=\d)(?=[" + re.escape(_SYMBOL_CHARS) + r"]))"
 )
 _MARK_RUN = _ITEM + r"(?:" + _SEP_BETWEEN + _ITEM + r")*"
