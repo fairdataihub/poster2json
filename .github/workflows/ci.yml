@@ -9,10 +9,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+      # Pin to the version the publish workflows use. ubuntu-latest now ships
+      # Python 3.14, which some locked dependencies have no wheels for yet.
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
       - uses: Gr1N/setup-poetry@v8
 
