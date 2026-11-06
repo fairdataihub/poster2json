@@ -60,9 +60,22 @@ See [Architecture](architecture.md) for technical details, and [Extraction Promp
 
 ## Performance
 
-Validated on 20 manually annotated scientific posters with a 95% pass rate (19/20).
+Field accuracy of poster2json 0.10.5 at default settings on 21 hand-labeled posters (20 PDF, 1 image). Each field is compared with the text printed on the poster using ROUGE-L, where 1.00 means identical. Posters is the number of labeled posters that have the field.
 
-See [Evaluation](evaluation.md) for detailed metrics.
+| Field | Posters | Mean ROUGE-L |
+|-------|---------|--------------|
+| Title | 21 | 0.978 |
+| Author names | 21 | 0.898 |
+| Given/family split | 12 | 1.000 |
+| Affiliations | 21 | 0.953 |
+| Author-affiliation assignment | 21 | 0.884 |
+| Section text | 21 | 0.839 |
+| Figure captions | 13 | 0.975 |
+| Table captions | 5 | 1.000 |
+| All content (forgiving) | 21 | 0.862 |
+| Content, boundary-free F1 | 21 | 0.917 |
+
+See [Evaluation](evaluation.md) for how each field is compared.
 
 ## Requirements
 

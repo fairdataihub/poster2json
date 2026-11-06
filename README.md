@@ -173,16 +173,22 @@ Notes on the auto-populated fields:
 
 ## Performance
 
-Validated on 20 manually annotated scientific posters (19 PDF via pdfplumber, 1 image via vision OCR):
+Field accuracy of poster2json 0.10.5 at default settings on 21 hand-labeled posters (20 PDF, 1 image). Each field is compared with the text printed on the poster using ROUGE-L, where 1.00 means identical. Posters is the number of labeled posters that have the field.
 
-| Metric           | Score | Threshold |
-| ---------------- | ----- | --------- |
-| Word Capture     | 0.92  | ≥0.75     |
-| ROUGE-L          | 0.85  | ≥0.75     |
-| Number Capture   | 0.97  | ≥0.75     |
-| Field Proportion | 0.88  | 0.50–1.50 |
+| Field | Posters | Mean ROUGE-L |
+|-------|---------|--------------|
+| Title | 21 | 0.978 |
+| Author names | 21 | 0.898 |
+| Given/family split | 12 | 1.000 |
+| Affiliations | 21 | 0.953 |
+| Author-affiliation assignment | 21 | 0.884 |
+| Section text | 21 | 0.839 |
+| Figure captions | 13 | 0.975 |
+| Table captions | 5 | 1.000 |
+| All content (forgiving) | 21 | 0.862 |
+| Content, boundary-free F1 | 21 | 0.917 |
 
-**Pass Rate**: 19/20 (95%). The single failure is a dense table/flowchart poster whose reference annotation splits one visual region into many fine-grained sections.
+Only fields copied from the poster are scored. Summaries, keywords and the research field are written or chosen by the model, so they have no score. See [Evaluation](docs/evaluation.md) for how each field is compared.
 
 ## Documentation
 

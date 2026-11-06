@@ -87,56 +87,40 @@ Before comparison, text is normalized:
 4. **Dash normalization** (em/en dash → hyphen)
 5. **Case normalization** (lowercase)
 
-## Validation Results
+## Field Accuracy (v0.10.5)
 
-### Current Performance (v0.8.0, pdfplumber)
+Field accuracy of poster2json 0.10.5 at default settings on 21 hand-labeled posters (20 PDF, 1 image). Each field is compared with the text printed on the poster using ROUGE-L, where 1.00 means identical. Posters is the number of labeled posters that have the field.
 
-**Overall**: 19/20 (95%) passing
+| Field | Posters | Mean ROUGE-L |
+|-------|---------|--------------|
+| Title | 21 | 0.978 |
+| Author names | 21 | 0.898 |
+| Given/family split | 12 | 1.000 |
+| Affiliations | 21 | 0.953 |
+| Author-affiliation assignment | 21 | 0.884 |
+| Section text | 21 | 0.839 |
+| Figure captions | 13 | 0.975 |
+| Table captions | 5 | 1.000 |
+| All content (forgiving) | 21 | 0.862 |
+| Content, boundary-free F1 | 21 | 0.917 |
 
-| Poster ID | Word | ROUGE-L | Numbers | Fields | Source | Status |
-|-----------|------|---------|---------|--------|--------|--------|
-| 10890106 | 0.84 | 0.77 | 0.91 | 0.84 | pdfplumber | ✅ |
-| 15963941 | 0.89 | 0.78 | 0.96 | 0.86 | pdfplumber | ✅ |
-| 16083265 | 0.91 | 0.90 | 1.00 | 0.76 | pdfplumber | ✅ |
-| 17268692 | 0.92 | 0.94 | 0.88 | 1.02 | pdfplumber | ✅ |
-| 42 | 0.96 | 0.97 | 1.00 | 0.88 | pdfplumber | ✅ |
-| 4446908 | 0.92 | 0.79 | 0.97 | 0.80 | pdfplumber | ✅ |
-| 4448680 | 0.92 | 0.85 | 1.00 | 0.83 | pdfplumber | ✅ |
-| 4519718 | 0.92 | 0.82 | 0.94 | 0.78 | pdfplumber | ✅ |
-| 4552067 | 0.92 | 0.99 | 1.00 | 0.77 | pdfplumber | ✅ |
-| 4560930 | 0.87 | 0.86 | 0.96 | 0.90 | pdfplumber | ✅ |
-| 4564017 | 0.93 | 0.87 | 0.99 | 0.75 | pdfplumber | ✅ |
-| 4607450 | 0.94 | 0.86 | 0.85 | 1.00 | pdfplumber | ✅ |
-| 4737132 | 0.91 | 0.89 | 1.00 | 0.93 | qwen_vision | ✅ |
-| 5128504 | 0.97 | 0.91 | 1.00 | 0.83 | pdfplumber | ✅ |
-| 6724771 | 0.89 | 0.85 | 0.96 | 0.82 | pdfplumber | ✅ |
-| 8228476 | 0.94 | 0.84 | 1.00 | 0.91 | pdfplumber | ✅ |
-| 8228568 | 0.98 | 0.89 | 1.00 | 0.82 | pdfplumber | ✅ |
-| AISec2025-poster | 0.90 | 0.81 | 0.99 | 1.35 | pdfplumber | ✅ |
-| aysaekanger | 0.83 | 0.71 | 1.00 | 1.00 | pdfplumber | ❌ |
-| isporeu2023ee359130949 | 0.94 | 0.80 | 1.00 | 0.80 | pdfplumber | ✅ |
+How each field is compared:
 
-### Aggregate Metrics
+- Text is normalized (NFKD, accents removed, letters and digits only, lower case) and scored with ROUGE-L with stemming.
+- Title, author names, the given/family split, affiliations and author-affiliation assignment are strict: the extracted field against the same labeled field.
+- Section text: each labeled section against its best matching extracted passage, so a different heading or placement is not penalized.
+- Captions: ROUGE-L recall against all extracted content, so a caption counts when its text is there, wherever it was filed.
+- All content (forgiving): every labeled section and caption against its best matching extracted passage.
+- Content, boundary-free F1: all labeled section and caption text against all extracted text, ignoring section order and boundaries.
 
-| Metric | Average Score |
-|--------|---------------|
-| Word Capture | 0.92 |
-| ROUGE-L | 0.85 |
-| Number Capture | 0.97 |
-| Field Proportion | 0.88 |
-
-### Failure Analysis
-
-| Poster ID | Failing Metric | Score | Root Cause |
-|-----------|----------------|-------|------------|
-| aysaekanger | ROUGE-L | 0.71 | Dense table/flowchart poster. The reference annotation splits one visual region into many fine-grained, row-aligned sections; the section-averaged ROUGE-L then penalizes the longer merged generated sections on precision. Word capture (0.83) and number capture (1.00) both pass — the text is fully extracted, only the section segmentation differs from the annotator's. |
+Summaries, keywords and the research field are written or chosen by the model, not copied from the poster, so they are not scored. With 21 posters, differences under about 0.02 on a field are within run-to-run variation.
 
 ## Test Set
 
-The validation set includes 20 manually annotated scientific posters:
+The validation set includes 21 hand-labeled scientific posters:
 
-- **19 PDF posters**: Processed via pdfplumber
-- **1 image poster**: Processed via Qwen2-VL
+- **20 PDF posters**: text read with pdfplumber and the alto layout engine
+- **1 image poster**: read with Qwen2-VL OCR
 
 Posters cover diverse domains and formats:
 - Biomedical informatics, astronomy, astrophysics, bioinformatics, genetics
