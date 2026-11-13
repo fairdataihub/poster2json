@@ -60,6 +60,14 @@ def _ror_display_name(org: dict) -> Optional[str]:
     return None
 
 
+def _chosen_display_name(data: dict) -> Optional[str]:
+    """Display name of the item ROR's affiliation matcher marked ``chosen``."""
+    for item in data.get("items", []):
+        if item.get("chosen"):
+            return _ror_display_name(item.get("organization", {}))
+    return None
+
+
 # Institution/sub-unit keywords used to tell a trailing *address* ("La Jolla,
 # CA, US") apart from a trailing *sub-unit* ("School of Medicine") after an org
 # name. Kept local to ror.py (extract.py's richer copy pulls heavy deps).
@@ -190,6 +198,10 @@ class RorClient:
                 self._warned = True
             return None
 
+        # Keep ROR's chosen name from this response too, so chosen_name() (an
+        # extra ORCID search term) reuses it instead of sending the same request.
+        self._cache["chosen|" + key] = _chosen_display_name(data)
+
         for item in data.get("items", []):
             if not item.get("chosen"):
                 continue
@@ -211,7 +223,8 @@ class RorClient:
     def chosen_name(self, name: str) -> Optional[str]:
         """Display name of ROR's chosen match for *name*, or None.
 
-        Used only as an extra ORCID search term, so no exactness check.
+        Used only as an extra ORCID search term, so no exactness check. Usually
+        a cache hit: lookup() saves the chosen name from its own ROR response.
         """
         if not self.enabled or not isinstance(name, str):
             return None
@@ -222,15 +235,11 @@ class RorClient:
         if ckey in self._cache:
             return self._cache[ckey]
         self._throttle()
-        result = None
         try:
             url = f"{ROR_API}?affiliation={urllib.parse.quote(key)}"
             with urllib.request.urlopen(url, timeout=ROR_TIMEOUT) as r:
                 data = json.loads(r.read())
-            for item in data.get("items", []):
-                if item.get("chosen"):
-                    result = _ror_display_name(item.get("organization", {}))
-                    break
+            result = _chosen_display_name(data)
         except Exception:  # noqa: BLE001
             return None
         self._cache[ckey] = result
