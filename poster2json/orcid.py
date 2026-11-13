@@ -128,12 +128,13 @@ class OrcidClient:
         self._last_call = time.time()
 
     def lookup(
-        self, given: str, family: str, affiliation: Optional[str] = None
+        self, given: str, family: str, affiliation: "str | list | None" = None
     ) -> Optional[str]:
         """Return an ORCID iD (``0000-0002-...``) or ``None``.
 
-        Requires *affiliation* as a disambiguator — name-only searches
-        are too ambiguous and return ``None`` immediately.
+        Requires *affiliation* (one affiliation, or a list of affiliations any
+        of which may match) as a disambiguator — name-only searches are too
+        ambiguous and return ``None`` immediately.
         """
         if not self.enabled:
             return None
@@ -141,18 +142,21 @@ class OrcidClient:
         family = _normalize(family) if family else ""
         if not given or not family:
             return None
-        if not affiliation:
+        if isinstance(affiliation, str):
+            affiliation = [affiliation]
+        affiliations = [_normalize(a) for a in affiliation or [] if a and a.strip()]
+        if not affiliations:
             return None
-        affiliation = _normalize(affiliation)
 
-        key = f"{given.lower()}|{family.lower()}|{affiliation.lower()}"
+        key = f"{given.lower()}|{family.lower()}|{'|'.join(affiliations).lower()}"
         if key in self._cache:
             return self._cache[key]
 
+        org_names = " OR ".join(f'"{a}"' for a in affiliations)
         parts = [
             f'given-names:"{given}"',
             f'family-name:"{family}"',
-            f'affiliation-org-name:"{affiliation}"',
+            f"affiliation-org-name:({org_names})",
         ]
         q = " AND ".join(parts)
 
@@ -210,15 +214,21 @@ def _creator_has_orcid(creator: dict) -> bool:
     return False
 
 
-def _creator_affiliation_name(creator: dict) -> Optional[str]:
+def _creator_affiliation_names(creator: dict) -> list:
+    names = []
     for aff in creator.get("affiliation") or []:
         if isinstance(aff, str) and aff.strip():
-            return aff.strip()
+            names.append(aff.strip())
         if isinstance(aff, dict):
             name = aff.get("name")
             if isinstance(name, str) and name.strip():
-                return name.strip()
-    return None
+                names.append(name.strip())
+    return names
+
+
+def _creator_affiliation_name(creator: dict) -> Optional[str]:
+    names = _creator_affiliation_names(creator)
+    return names[0] if names else None
 
 
 def enrich_creators_orcid(creators: list, client: OrcidClient,
@@ -243,13 +253,14 @@ def enrich_creators_orcid(creators: list, client: OrcidClient,
         family = creator.get("familyName")
         if not given or not family:
             continue
-        affiliation = _creator_affiliation_name(creator)
-        if affiliation and affiliation_resolver is not None:
+        # Search every affiliation, not just the first.
+        affiliations = _creator_affiliation_names(creator)
+        if affiliations and affiliation_resolver is not None:
             try:
-                affiliation = affiliation_resolver(affiliation) or affiliation
+                affiliations = [affiliation_resolver(a) or a for a in affiliations]
             except Exception:
                 pass
-        orcid = client.lookup(given, family, affiliation)
+        orcid = client.lookup(given, family, affiliations)
         if not orcid:
             continue
         creator.setdefault("nameIdentifiers", [])
