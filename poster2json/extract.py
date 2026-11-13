@@ -3547,6 +3547,9 @@ def _postprocess_json(
     # names that share one ROR id. Coerce/strip run unconditionally; resolution
     # is gated on something actually being unresolved.
     from .ror import coerce_person_affiliations, strip_extracted_affiliation_ids
+    # ROR, funder and ORCID lookups below share one retry budget per poster.
+    from .http_retry import start_poster
+    start_poster()
     for _persons_key in ("creators", "contributors"):
         if _persons_key in result:
             result[_persons_key] = coerce_person_affiliations(result[_persons_key])
@@ -3582,17 +3585,19 @@ def _postprocess_json(
 
         result = enrich_json_with_identifiers(result, raw_text, extract_identifiers)
 
-    # ORCID lookup -- skip if all creators already have ORCID. Queried with the
-    # creator's specific extracted affiliation (no ROR-canonical broadening): a
-    # match is attached only when name + that affiliation resolve to a single
-    # unambiguous ORCID, so sub-unit-affiliation authors that don't resolve get
-    # no identifier rather than a broadened guess.
+    # ORCID lookup -- skip if all creators already have ORCID. Queried with all
+    # of the creator's extracted affiliations plus ROR's name for each one, as
+    # search terms only (stored affiliations are unchanged). A match is attached
+    # only when the name and any of those affiliations resolve to a single
+    # unambiguous ORCID; otherwise the creator gets no identifier.
     if _needs_orcid_enrichment(result.get("creators")):
         from .orcid import enrich_creators_orcid
         from .orcid import get_default_client as get_orcid_client
+        from .ror import get_default_client as get_ror_client
 
         result["creators"] = enrich_creators_orcid(
             result["creators"], get_orcid_client(),
+            affiliation_resolver=get_ror_client().chosen_name,
         )
 
     # Drop lone UTF-16 surrogates the model can emit (half of an emoji); they

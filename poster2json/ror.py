@@ -19,12 +19,13 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+from .http_retry import RequestFailed, get_json
+
 
 ROR_API = "https://api.ror.org/organizations"
-ROR_TIMEOUT = 5.0
+ROR_TIMEOUT = 10.0
 ROR_RATE_LIMIT = 0.16
-ROR_MAX_CONSECUTIVE_FAILURES = 25
-ROR_RETRY_ATTEMPTS = 3
+ROR_PAUSE_SECONDS = 30.0
 CACHE_PATH = Path.home() / ".cache" / "poster2json" / "ror.json"
 
 
@@ -57,6 +58,14 @@ def _ror_display_name(org: dict) -> Optional[str]:
     for n in org.get("names", []):
         if "ror_display" in n.get("types", []):
             return n.get("value")
+    return None
+
+
+def _chosen_display_name(data: dict) -> Optional[str]:
+    """Display name of the item ROR's affiliation matcher marked ``chosen``."""
+    for item in data.get("items", []):
+        if item.get("chosen"):
+            return _ror_display_name(item.get("organization", {}))
     return None
 
 
@@ -134,8 +143,7 @@ class RorClient:
         self.cache_path = cache_path
         self._cache = {}
         self._last_call = 0.0
-        self._warned = False
-        self._consecutive_failures = 0
+        self._paused_until = 0.0
         if self.enabled:
             self._load_cache()
 
@@ -161,34 +169,28 @@ class RorClient:
             time.sleep(ROR_RATE_LIMIT - delta)
         self._last_call = time.time()
 
+    def _pause(self, err: RequestFailed) -> None:
+        """After a failure, skip ROR lookups briefly instead of for the whole run.
+
+        A bad request (4xx) says nothing about whether ROR is up: no pause.
+        """
+        if err.bad_request:
+            return
+        self._paused_until = time.monotonic() + ROR_PAUSE_SECONDS
+        print(f"[ror] lookup failed; pausing for {ROR_PAUSE_SECONDS:.0f}s: {err}",
+              file=sys.stderr)
+
     def _query_ror(self, key: str) -> Optional[dict]:
-        """Single ROR API call with retries. Returns match dict or None."""
-        url = f"{ROR_API}?affiliation={urllib.parse.quote(key)}"
-        last_err = None
-        for attempt in range(ROR_RETRY_ATTEMPTS):
-            self._throttle()
-            try:
-                with urllib.request.urlopen(url, timeout=ROR_TIMEOUT) as r:
-                    data = json.loads(r.read())
-                self._consecutive_failures = 0
-                break
-            except Exception as e:  # noqa: BLE001
-                last_err = e
-                if attempt < ROR_RETRY_ATTEMPTS - 1:
-                    time.sleep(1.0 * (attempt + 1))
-        else:
-            self._consecutive_failures += 1
-            if self._consecutive_failures >= ROR_MAX_CONSECUTIVE_FAILURES:
-                print(
-                    f"[ror] {ROR_MAX_CONSECUTIVE_FAILURES} consecutive failures; "
-                    f"disabling for this run: {last_err}",
-                    file=sys.stderr,
-                )
-                self.enabled = False
-            elif not self._warned:
-                print(f"[ror] lookup failed: {last_err}", file=sys.stderr)
-                self._warned = True
-            return None
+        """Single ROR API call with retries. Returns match dict or None.
+
+        Raises RequestFailed when the request fails (see http_retry).
+        """
+        self._throttle()
+        data = get_json(f"{ROR_API}?affiliation={urllib.parse.quote(key)}", ROR_TIMEOUT)
+
+        # Keep ROR's chosen name from this response too, so chosen_name() (an
+        # extra ORCID search term) reuses it instead of sending the same request.
+        self._cache["chosen|" + key] = _chosen_display_name(data)
 
         for item in data.get("items", []):
             if not item.get("chosen"):
@@ -208,12 +210,38 @@ class RorClient:
             break
         return None
 
+    def chosen_name(self, name: str) -> Optional[str]:
+        """Display name of ROR's chosen match for *name*, or None.
+
+        Used only as an extra ORCID search term, so no exactness check. Usually
+        a cache hit: lookup() saves the chosen name from its own ROR response.
+        """
+        if not self.enabled or not isinstance(name, str):
+            return None
+        key = _normalize_query(name)
+        if not key:
+            return None
+        ckey = "chosen|" + key
+        if ckey in self._cache:
+            return self._cache[ckey]
+        if time.monotonic() < self._paused_until:
+            return None
+        self._throttle()
+        try:
+            url = f"{ROR_API}?affiliation={urllib.parse.quote(key)}"
+            result = _chosen_display_name(get_json(url, ROR_TIMEOUT))
+        except RequestFailed as e:
+            self._pause(e)
+            return None
+        self._cache[ckey] = result
+        self._save_cache()
+        return result
+
     def lookup(self, name: str) -> Optional[dict]:
         """Return {'id': ror_url, 'name': canonical_name} or None.
 
-        None means "no confident match" — cached so we don't re-query.
-        After the first network failure of a run, ROR is disabled for the
-        rest of the run to avoid blocking on a flaky network.
+        None means "no confident match" (cached) or a failed request (not
+        cached; ROR lookups then pause for ROR_PAUSE_SECONDS).
         """
         if not self.enabled or not isinstance(name, str):
             return None
@@ -222,14 +250,20 @@ class RorClient:
             return None
         if key in self._cache:
             return self._cache[key]
+        if time.monotonic() < self._paused_until:
+            return None
 
-        match = self._query_ror(key)
+        try:
+            match = self._query_ror(key)
 
-        # Retry without trailing country suffix (e.g. "..., Spain")
-        if match is None and self.enabled:
-            stripped = _strip_trailing_country(key)
-            if stripped and stripped not in self._cache:
-                match = self._query_ror(stripped)
+            # Retry without trailing country suffix (e.g. "..., Spain")
+            if match is None:
+                stripped = _strip_trailing_country(key)
+                if stripped and stripped not in self._cache:
+                    match = self._query_ror(stripped)
+        except RequestFailed as e:
+            self._pause(e)
+            return None  # unknown, not "no match": don't cache it
 
         self._cache[key] = match
         self._save_cache()

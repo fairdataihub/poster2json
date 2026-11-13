@@ -1,6 +1,8 @@
 """Unit tests for poster2json.orcid. Network calls are stubbed."""
 
+import io
 import json
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -28,6 +30,7 @@ class StubClient:
         self.enabled = enabled
 
     def lookup(self, given, family, affiliation=None):
+        affiliation = "; ".join(affiliation or []) or None  # enrich passes a list
         self.calls.append((given, family, affiliation))
         return self.table.get((given, family, affiliation))
 
@@ -224,3 +227,92 @@ def test_lookup_requires_affiliation(tmp_path, monkeypatch):
     c = OrcidClient(cache_path=tmp_path / "orcid.json")
     assert c.lookup("James", "O'Neill") is None
     assert c.lookup("James", "O'Neill", None) is None
+
+
+def test_enrich_searches_all_affiliations(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTER2JSON_ORCID", "1")
+    monkeypatch.delenv("ORCID_CLIENT_ID", raising=False)
+    monkeypatch.delenv("ORCID_CLIENT_SECRET", raising=False)
+    queries = []
+
+    def fake_urlopen(req, timeout=None):
+        queries.append(urllib.parse.parse_qs(urllib.parse.urlparse(req.full_url).query)["q"][0])
+        hit = {"orcid-id": "0000-0001-2345-6789", "given-names": "Sofia", "family-names": "Garcia"}
+        return io.BytesIO(json.dumps({"num-found": 1, "expanded-result": [hit]}).encode())
+
+    monkeypatch.setattr("poster2json.orcid.urllib.request.urlopen", fake_urlopen)
+    client = OrcidClient(cache_path=tmp_path / "orcid.json")
+    client._rate_limit = 0
+    creators = [{"givenName": "Sofia", "familyName": "Garcia",
+                 "affiliation": ["Hospital Clinic", {"name": "University of Barcelona"}]}]
+
+    out = enrich_creators_orcid(creators, client)
+
+    assert queries == ['given-names:"Sofia" AND family-name:"Garcia" AND '
+                       'affiliation-org-name:("Hospital Clinic" OR "University of Barcelona")']
+    assert out[0]["nameIdentifiers"][0]["nameIdentifier"].endswith("0000-0001-2345-6789")
+
+
+def _capture_queries(monkeypatch, hits=1):
+    queries = []
+
+    def fake_urlopen(req, timeout=None):
+        queries.append(urllib.parse.parse_qs(urllib.parse.urlparse(req.full_url).query)["q"][0])
+        hit = {"orcid-id": "0000-0001-2345-6789", "given-names": "Sofia", "family-names": "Garcia"}
+        return io.BytesIO(json.dumps({"num-found": hits, "expanded-result": [hit] * hits}).encode())
+
+    monkeypatch.setattr("poster2json.orcid.urllib.request.urlopen", fake_urlopen)
+    return queries
+
+
+def _client(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTER2JSON_ORCID", "1")
+    monkeypatch.delenv("ORCID_CLIENT_ID", raising=False)
+    monkeypatch.delenv("ORCID_CLIENT_SECRET", raising=False)
+    client = OrcidClient(cache_path=tmp_path / "orcid.json")
+    client._rate_limit = 0
+    return client
+
+
+def test_lookup_strips_quotes_and_backslashes(tmp_path, monkeypatch):
+    queries = _capture_queries(monkeypatch)
+    client = _client(tmp_path, monkeypatch)
+    client.lookup("Sofia", "Garcia", ['The "Best" Institute \\ Lab'])
+    assert queries == ['given-names:"Sofia" AND family-name:"Garcia" AND '
+                       'affiliation-org-name:("The Best Institute  Lab")']
+
+
+def test_cache_keys_keep_affiliation_boundaries(tmp_path, monkeypatch):
+    queries = _capture_queries(monkeypatch, hits=0)
+    client = _client(tmp_path, monkeypatch)
+    client.lookup("Sofia", "Garcia", ["A|B", "C"])
+    client.lookup("Sofia", "Garcia", ["A", "B|C"])
+    assert len(queries) == 2
+
+
+def test_single_affiliation_cache_key_unchanged(tmp_path, monkeypatch):
+    _capture_queries(monkeypatch)
+    client = _client(tmp_path, monkeypatch)
+    client.lookup("Sofia", "Garcia", "Hospital Clinic")
+    assert "sofia|garcia|hospital clinic" in client._cache
+
+
+def test_enrich_keeps_resolved_names_when_one_resolver_call_fails():
+    class FakeClient:
+        enabled = True
+        seen = []
+
+        def lookup(self, given, family, affiliation):
+            self.seen.append(affiliation)
+            return None
+
+    def resolver(name):
+        if name == "Bad":
+            raise RuntimeError("boom")
+        return "University of Example"
+
+    fc = FakeClient()
+    creators = [{"givenName": "Jane", "familyName": "Smith",
+                 "affiliation": ["Dept of X, University of Example", "Bad"]}]
+    enrich_creators_orcid(creators, fc, affiliation_resolver=resolver)
+    assert fc.seen == [["University of Example", "Dept of X, University of Example", "Bad"]]
