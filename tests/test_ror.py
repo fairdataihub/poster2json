@@ -266,3 +266,29 @@ def test_strip_trailing_country():
     assert _strip_trailing_country("dept, school of engineering and applied sciences") is None
 
 
+
+
+def test_chosen_name_returns_chosen_match_and_caches(tmp_path, monkeypatch):
+    # Sub-unit strings get ROR's chosen parent org name (search term only).
+    import io
+
+    monkeypatch.setenv("POSTER2JSON_ROR", "1")
+    calls = []
+
+    def fake_urlopen(url, timeout=None):
+        calls.append(url)
+        org = {"id": "https://ror.org/00s6t1f81",
+               "names": [{"value": "University of Pavia", "types": ["ror_display"]}]}
+        items = [{"chosen": False, "organization": {"names": []}},
+                 {"chosen": True, "organization": org}]
+        return io.BytesIO(json.dumps({"items": items}).encode())
+
+    monkeypatch.setattr("poster2json.ror.urllib.request.urlopen", fake_urlopen)
+    c = RorClient(cache_path=tmp_path / "ror.json")
+    c._rate_limit = 0
+    name = "Department of Drug Sciences, University of Pavia"
+    assert c.chosen_name(name) == "University of Pavia"
+    assert c.chosen_name(name) == "University of Pavia"
+    assert len(calls) == 1
+    # Exact-only lookup() is untouched by the chosen-name cache entry.
+    assert all(k.startswith("chosen|") for k in c._cache)

@@ -208,6 +208,35 @@ class RorClient:
             break
         return None
 
+    def chosen_name(self, name: str) -> Optional[str]:
+        """Display name of ROR's chosen match for *name*, or None.
+
+        Used only as an extra ORCID search term, so no exactness check.
+        """
+        if not self.enabled or not isinstance(name, str):
+            return None
+        key = _normalize_query(name)
+        if not key:
+            return None
+        ckey = "chosen|" + key
+        if ckey in self._cache:
+            return self._cache[ckey]
+        self._throttle()
+        result = None
+        try:
+            url = f"{ROR_API}?affiliation={urllib.parse.quote(key)}"
+            with urllib.request.urlopen(url, timeout=ROR_TIMEOUT) as r:
+                data = json.loads(r.read())
+            for item in data.get("items", []):
+                if item.get("chosen"):
+                    result = _ror_display_name(item.get("organization", {}))
+                    break
+        except Exception:  # noqa: BLE001
+            return None
+        self._cache[ckey] = result
+        self._save_cache()
+        return result
+
     def lookup(self, name: str) -> Optional[dict]:
         """Return {'id': ror_url, 'name': canonical_name} or None.
 

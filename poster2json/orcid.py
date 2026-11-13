@@ -41,6 +41,11 @@ def _normalize(s: str) -> str:
     return s
 
 
+def _query_term(s: str) -> str:
+    """Drop characters that would end a quoted ORCID search term early."""
+    return s.replace('"', "").replace("\\", "")
+
+
 def _names_match(query: str, result: str) -> bool:
     """Case- and accent-insensitive name comparison."""
     if not query or not result:
@@ -148,14 +153,19 @@ class OrcidClient:
         if not affiliations:
             return None
 
-        key = f"{given.lower()}|{family.lower()}|{'|'.join(affiliations).lower()}"
+        if len(affiliations) == 1:
+            # Same key as single-affiliation lookups before lists were supported.
+            key = f"{given.lower()}|{family.lower()}|{affiliations[0].lower()}"
+        else:
+            key = json.dumps([given.lower(), family.lower()]
+                             + [a.lower() for a in affiliations], ensure_ascii=False)
         if key in self._cache:
             return self._cache[key]
 
-        org_names = " OR ".join(f'"{a}"' for a in affiliations)
+        org_names = " OR ".join(f'"{_query_term(a)}"' for a in affiliations)
         parts = [
-            f'given-names:"{given}"',
-            f'family-name:"{family}"',
+            f'given-names:"{_query_term(given)}"',
+            f'family-name:"{_query_term(family)}"',
             f"affiliation-org-name:({org_names})",
         ]
         q = " AND ".join(parts)
@@ -256,10 +266,16 @@ def enrich_creators_orcid(creators: list, client: OrcidClient,
         # Search every affiliation, not just the first.
         affiliations = _creator_affiliation_names(creator)
         if affiliations and affiliation_resolver is not None:
-            try:
-                affiliations = [affiliation_resolver(a) or a for a in affiliations]
-            except Exception:
-                pass
+            resolved = []
+            for aff in affiliations:
+                try:
+                    name = affiliation_resolver(aff)
+                except Exception:
+                    name = None
+                if name:
+                    resolved.append(name)
+            # Search the ROR names and the original strings together.
+            affiliations = list(dict.fromkeys(resolved + affiliations))
         orcid = client.lookup(given, family, affiliations)
         if not orcid:
             continue
