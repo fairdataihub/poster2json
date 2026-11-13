@@ -41,18 +41,9 @@ def _normalize(s: str) -> str:
     return s
 
 
-_SOLR_SPECIAL_CHARS_RE = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/])')
-
-
-def _quote_term(s: str) -> str:
-    """Render *s* as a quoted ORCID (Solr/Lucene) phrase.
-
-    Poster-derived text is untrusted: an embedded quote would otherwise close
-    the phrase and let the rest be parsed as query syntax (``OR``, parens,
-    field prefixes). Backslash-escaping every query metacharacter keeps the
-    whole string a single literal phrase.
-    """
-    return '"' + _SOLR_SPECIAL_CHARS_RE.sub(r"\\\1", s) + '"'
+def _query_term(s: str) -> str:
+    """Drop characters that would end a quoted ORCID search term early."""
+    return s.replace('"', "").replace("\\", "")
 
 
 def _names_match(query: str, result: str) -> bool:
@@ -162,19 +153,19 @@ class OrcidClient:
         if not affiliations:
             return None
 
-        # JSON-encode the parts so affiliation boundaries survive: ["a|b"] and
-        # ["a", "b"] must not share a cache entry.
-        key = json.dumps(
-            [given.lower(), family.lower(), [a.lower() for a in affiliations]],
-            ensure_ascii=False,
-        )
+        if len(affiliations) == 1:
+            # Same key as single-affiliation lookups before lists were supported.
+            key = f"{given.lower()}|{family.lower()}|{affiliations[0].lower()}"
+        else:
+            key = json.dumps([given.lower(), family.lower()]
+                             + [a.lower() for a in affiliations], ensure_ascii=False)
         if key in self._cache:
             return self._cache[key]
 
-        org_names = " OR ".join(_quote_term(a) for a in affiliations)
+        org_names = " OR ".join(f'"{_query_term(a)}"' for a in affiliations)
         parts = [
-            f"given-names:{_quote_term(given)}",
-            f"family-name:{_quote_term(family)}",
+            f'given-names:"{_query_term(given)}"',
+            f'family-name:"{_query_term(family)}"',
             f"affiliation-org-name:({org_names})",
         ]
         q = " AND ".join(parts)
@@ -274,16 +265,17 @@ def enrich_creators_orcid(creators: list, client: OrcidClient,
             continue
         # Search every affiliation, not just the first.
         affiliations = _creator_affiliation_names(creator)
-        if affiliation_resolver is not None:
-            # Resolve each independently so one failing resolver call does not
-            # discard the canonical names the others produced.
+        if affiliations and affiliation_resolver is not None:
             resolved = []
-            for a in affiliations:
+            for aff in affiliations:
                 try:
-                    resolved.append(affiliation_resolver(a) or a)
+                    name = affiliation_resolver(aff)
                 except Exception:
-                    resolved.append(a)
-            affiliations = resolved
+                    name = None
+                if name:
+                    resolved.append(name)
+            # Search the ROR names and the original strings together.
+            affiliations = list(dict.fromkeys(resolved + affiliations))
         orcid = client.lookup(given, family, affiliations)
         if not orcid:
             continue

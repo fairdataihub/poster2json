@@ -3583,17 +3583,18 @@ def _postprocess_json(
         result = enrich_json_with_identifiers(result, raw_text, extract_identifiers)
 
     # ORCID lookup -- skip if all creators already have ORCID. Queried with all
-    # of the creator's extracted affiliations (no ROR-canonical broadening),
-    # any one of which may match: an ORCID is attached only when name + one of
-    # those affiliations resolves to a single unambiguous record. A creator
-    # none of whose affiliations resolve gets no identifier rather than a
-    # broadened guess.
+    # of the creator's extracted affiliations plus ROR's name for each one, as
+    # search terms only (stored affiliations are unchanged). A match is attached
+    # only when the name and any of those affiliations resolve to a single
+    # unambiguous ORCID; otherwise the creator gets no identifier.
     if _needs_orcid_enrichment(result.get("creators")):
         from .orcid import enrich_creators_orcid
         from .orcid import get_default_client as get_orcid_client
+        from .ror import get_default_client as get_ror_client
 
         result["creators"] = enrich_creators_orcid(
             result["creators"], get_orcid_client(),
+            affiliation_resolver=get_ror_client().chosen_name,
         )
 
     # Drop lone UTF-16 surrogates the model can emit (half of an emoji); they

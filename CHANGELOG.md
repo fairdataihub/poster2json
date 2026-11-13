@@ -9,12 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **ORCID lookup searches all of a creator's affiliations,** not just the first; a match on any of them counts (`affiliation-org-name:("A" OR "B")`). `OrcidClient.lookup` accepts a list of affiliations as well as a single string. The ORCID cache key format changed, so entries cached by earlier versions are looked up again once.
-
-### Fixed
-
-- **ORCID queries escape names and affiliations.** Quotes, parentheses and other query characters in text extracted from a poster can no longer change the ORCID search and attach an unrelated ORCID.
-- **ORCID affiliation resolution keeps each canonical name** when resolving another of the creator's affiliations fails.
+- **ORCID lookup searches all of a creator's affiliations,** not just the first; a match on any of them counts (`affiliation-org-name:("A" OR "B")`). `OrcidClient.lookup` accepts a list of affiliations as well as a single string. Single-affiliation lookups, and their cache entries, are unchanged.
+- **ORCID lookup also searches ROR's name for each affiliation,** next to the original strings (`RorClient.chosen_name`). The ROR names are search terms only; stored affiliations are not changed. On 12 hand-labeled posters (47 authors, 27 with an ORCID), ORCIDs found went from 1 to 16 with no wrong matches and the same number of ORCID calls. The ROR name is read from the response of the affiliation's own ROR lookup, so it does not add a second, identical ROR call.
+- Quotes and backslashes are dropped from ORCID search terms, so an odd affiliation string no longer breaks the query and turns ORCID off for the rest of the run. Multi-affiliation cache keys keep affiliation boundaries, and one failing resolver call no longer discards the others.
 
 ## [0.10.5] - 2026-10-13
 
