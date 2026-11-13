@@ -3547,6 +3547,9 @@ def _postprocess_json(
     # names that share one ROR id. Coerce/strip run unconditionally; resolution
     # is gated on something actually being unresolved.
     from .ror import coerce_person_affiliations, strip_extracted_affiliation_ids
+    # ROR, funder and ORCID lookups below share one retry budget per poster.
+    from .http_retry import start_poster
+    start_poster()
     for _persons_key in ("creators", "contributors"):
         if _persons_key in result:
             result[_persons_key] = coerce_person_affiliations(result[_persons_key])

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ORCID lookup also searches ROR's name for each affiliation,** next to the original strings (`RorClient.chosen_name`). The ROR names are search terms only; stored affiliations are not changed. On 12 hand-labeled posters (47 authors, 27 with an ORCID), ORCIDs found went from 1 to 16 with no wrong matches and the same number of ORCID calls. The ROR name is read from the response of the affiliation's own ROR lookup, so it does not add a second, identical ROR call.
 - Quotes and backslashes are dropped from ORCID search terms, so an odd affiliation string no longer breaks the query and turns ORCID off for the rest of the run. Multi-affiliation cache keys keep affiliation boundaries, and one failing resolver call no longer discards the others.
 
+### Fixed
+
+- **A failed lookup is no longer cached as "no match", and no longer turns lookups off for the rest of the process.** A failed ROR request used to be stored as having no match, and one failed ORCID or funder request stopped those lookups for every later poster in a long-running service such as the extraction API. Now a failure is never cached, and ORCID, ROR and funder lookups pause for 30 seconds and then resume. Their request timeout is 10 seconds (was 3 s for ORCID, 5 s for ROR and 1.5 s for funders). ORCID, ROR and funder requests share one retry rule (`poster2json/http_retry.py`): timeouts, connection errors, 408, 429 and 5xx are retried with 1 s and 2 s waits, while a bad request (another 4xx) is sent once and does not pause lookups. All lookups for one poster share at most 30 s of retrying.
+
 ## [0.10.5] - 2026-10-13
 
 Measured on the 21 hand-labeled posters against 0.10.4: author names 0.886 to 0.898, given/family split 0.917 to 1.000, affiliations 0.909 to 0.953, author-affiliation assignment 0.801 to 0.884. Title, content, captions and headings are unchanged.

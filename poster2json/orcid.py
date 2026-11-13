@@ -10,8 +10,8 @@ vars to use the authenticated Member API (24 req/s).  Without them, falls
 back to the public API (2 req/s).
 
 Always-on by default; opt out with ``POSTER2JSON_ORCID=0``.  Disk-cached
-at ``~/.cache/poster2json/orcid.json``;
-auto-disables after the first network failure of a run.
+at ``~/.cache/poster2json/orcid.json``.  After a network failure, lookups
+pause for ``PAUSE_SECONDS``; failures are never cached.
 """
 
 import json
@@ -25,11 +25,14 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+from .http_retry import RequestFailed, get_json
+
 
 ORCID_PUBLIC_API = "https://pub.orcid.org/v3.0/expanded-search/"
 ORCID_MEMBER_API = "https://pub.orcid.org/v3.0/expanded-search/"
 ORCID_TOKEN_URL = "https://orcid.org/oauth/token"
-TIMEOUT = 3.0
+TIMEOUT = 10.0
+PAUSE_SECONDS = 30.0
 RATE_LIMIT_PUBLIC = 0.5
 RATE_LIMIT_AUTHENTICATED = 0.042
 CACHE_PATH = Path.home() / ".cache" / "poster2json" / "orcid.json"
@@ -71,7 +74,7 @@ class OrcidClient:
         self.cache_path = cache_path
         self._cache: dict = {}
         self._last_call = 0.0
-        self._warned = False
+        self._paused_until = 0.0
         self._access_token: Optional[str] = None
         self._api_url = ORCID_PUBLIC_API
         self._rate_limit = RATE_LIMIT_PUBLIC
@@ -141,7 +144,7 @@ class OrcidClient:
         of which may match) as a disambiguator — name-only searches are too
         ambiguous and return ``None`` immediately.
         """
-        if not self.enabled:
+        if not self.enabled or time.monotonic() < self._paused_until:
             return None
         given = _normalize(given) if given else ""
         family = _normalize(family) if family else ""
@@ -177,16 +180,15 @@ class OrcidClient:
             headers["Authorization"] = f"Bearer {self._access_token}"
         req = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-                data = json.loads(r.read())
-        except Exception as e:  # noqa: BLE001
-            if not self._warned:
-                print(
-                    f"[orcid] lookup failed; disabling for this run: {e}",
-                    file=sys.stderr,
-                )
-                self._warned = True
-                self.enabled = False
+            data = get_json(req, TIMEOUT)
+        except RequestFailed as e:
+            # Unknown, not "no match": don't cache it. Unless the request itself
+            # was bad, pause briefly instead of turning ORCID off for good.
+            if e.bad_request:
+                return None
+            self._paused_until = time.monotonic() + PAUSE_SECONDS
+            print(f"[orcid] lookup failed; pausing for {PAUSE_SECONDS:.0f}s: {e}",
+                  file=sys.stderr)
             return None
 
         match = None

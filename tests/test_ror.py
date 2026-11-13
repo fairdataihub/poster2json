@@ -315,3 +315,49 @@ def test_chosen_name_reuses_lookup_response(tmp_path, monkeypatch):
     calls_after_lookup = len(calls)
     assert c.chosen_name(name) == "University of Pavia"
     assert len(calls) == calls_after_lookup
+
+
+def test_failed_lookup_is_not_cached_and_pauses_instead_of_disabling(tmp_path, monkeypatch):
+    import io
+
+    monkeypatch.setenv("POSTER2JSON_ROR", "1")
+    monkeypatch.setattr("poster2json.ror.time.sleep", lambda s: None)
+    calls = []
+
+    def failing_urlopen(url, timeout=None):
+        calls.append(url)
+        raise TimeoutError("slow")
+
+    monkeypatch.setattr("poster2json.ror.urllib.request.urlopen", failing_urlopen)
+    from poster2json.http_retry import start_poster
+    start_poster()  # full retry budget
+    c = RorClient(cache_path=tmp_path / "ror.json")
+    assert c.lookup("University of Example") is None
+    assert c._cache == {}  # a failure is not a "no match"
+    assert c.enabled is True
+    assert c.lookup("University of Example") is None
+    assert len(calls) == 3  # paused: the second lookup sent nothing
+
+    c._paused_until = 0.0  # pause over: lookups resume and results are cached
+    monkeypatch.setattr("poster2json.ror.urllib.request.urlopen",
+                        lambda url, timeout=None: io.BytesIO(b'{"items": []}'))
+    assert c.lookup("University of Example") is None
+    assert c._cache["university of example"] is None
+
+
+def test_bad_request_is_not_retried_and_does_not_pause(tmp_path, monkeypatch):
+    import urllib.error
+
+    monkeypatch.setenv("POSTER2JSON_ROR", "1")
+    calls = []
+
+    def bad_request(url, timeout=None):
+        calls.append(url)
+        raise urllib.error.HTTPError(url, 400, "Bad Request", {}, None)
+
+    monkeypatch.setattr("poster2json.ror.urllib.request.urlopen", bad_request)
+    c = RorClient(cache_path=tmp_path / "ror.json")
+    assert c.lookup("University of Example") is None
+    assert len(calls) == 1  # sent once, not retried
+    assert c._cache == {}
+    assert c._paused_until == 0.0  # other lookups carry on
