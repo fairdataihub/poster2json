@@ -41,6 +41,20 @@ def _normalize(s: str) -> str:
     return s
 
 
+_SOLR_SPECIAL_CHARS_RE = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/])')
+
+
+def _quote_term(s: str) -> str:
+    """Render *s* as a quoted ORCID (Solr/Lucene) phrase.
+
+    Poster-derived text is untrusted: an embedded quote would otherwise close
+    the phrase and let the rest be parsed as query syntax (``OR``, parens,
+    field prefixes). Backslash-escaping every query metacharacter keeps the
+    whole string a single literal phrase.
+    """
+    return '"' + _SOLR_SPECIAL_CHARS_RE.sub(r"\\\1", s) + '"'
+
+
 def _names_match(query: str, result: str) -> bool:
     """Case- and accent-insensitive name comparison."""
     if not query or not result:
@@ -148,14 +162,19 @@ class OrcidClient:
         if not affiliations:
             return None
 
-        key = f"{given.lower()}|{family.lower()}|{'|'.join(affiliations).lower()}"
+        # JSON-encode the parts so affiliation boundaries survive: ["a|b"] and
+        # ["a", "b"] must not share a cache entry.
+        key = json.dumps(
+            [given.lower(), family.lower(), [a.lower() for a in affiliations]],
+            ensure_ascii=False,
+        )
         if key in self._cache:
             return self._cache[key]
 
-        org_names = " OR ".join(f'"{a}"' for a in affiliations)
+        org_names = " OR ".join(_quote_term(a) for a in affiliations)
         parts = [
-            f'given-names:"{given}"',
-            f'family-name:"{family}"',
+            f"given-names:{_quote_term(given)}",
+            f"family-name:{_quote_term(family)}",
             f"affiliation-org-name:({org_names})",
         ]
         q = " AND ".join(parts)
@@ -255,11 +274,16 @@ def enrich_creators_orcid(creators: list, client: OrcidClient,
             continue
         # Search every affiliation, not just the first.
         affiliations = _creator_affiliation_names(creator)
-        if affiliations and affiliation_resolver is not None:
-            try:
-                affiliations = [affiliation_resolver(a) or a for a in affiliations]
-            except Exception:
-                pass
+        if affiliation_resolver is not None:
+            # Resolve each independently so one failing resolver call does not
+            # discard the canonical names the others produced.
+            resolved = []
+            for a in affiliations:
+                try:
+                    resolved.append(affiliation_resolver(a) or a)
+                except Exception:
+                    resolved.append(a)
+            affiliations = resolved
         orcid = client.lookup(given, family, affiliations)
         if not orcid:
             continue

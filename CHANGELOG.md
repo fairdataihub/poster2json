@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **ORCID lookup searches all of a creator's affiliations,** not just the first; a match on any of them counts (`affiliation-org-name:("A" OR "B")`). `OrcidClient.lookup` accepts a list of affiliations as well as a single string. Single-affiliation lookups, and their cache entries, are unchanged.
+- **ORCID lookup searches all of a creator's affiliations,** not just the first; a match on any of them counts (`affiliation-org-name:("A" OR "B")`). `OrcidClient.lookup` accepts a list of affiliations as well as a single string. The ORCID cache key format changed, so entries cached by earlier versions are looked up again once.
+
+### Fixed
+
+- **ORCID queries escape names and affiliations.** Quotes, parentheses and other query characters in text extracted from a poster can no longer change the ORCID search and attach an unrelated ORCID.
+- **ORCID affiliation resolution keeps each canonical name** when resolving another of the creator's affiliations fails.
 
 ## [0.10.5] - 2026-10-13
 

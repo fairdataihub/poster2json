@@ -3582,11 +3582,12 @@ def _postprocess_json(
 
         result = enrich_json_with_identifiers(result, raw_text, extract_identifiers)
 
-    # ORCID lookup -- skip if all creators already have ORCID. Queried with the
-    # creator's specific extracted affiliation (no ROR-canonical broadening): a
-    # match is attached only when name + that affiliation resolve to a single
-    # unambiguous ORCID, so sub-unit-affiliation authors that don't resolve get
-    # no identifier rather than a broadened guess.
+    # ORCID lookup -- skip if all creators already have ORCID. Queried with all
+    # of the creator's extracted affiliations (no ROR-canonical broadening),
+    # any one of which may match: an ORCID is attached only when name + one of
+    # those affiliations resolves to a single unambiguous record. A creator
+    # none of whose affiliations resolve gets no identifier rather than a
+    # broadened guess.
     if _needs_orcid_enrichment(result.get("creators")):
         from .orcid import enrich_creators_orcid
         from .orcid import get_default_client as get_orcid_client
