@@ -607,7 +607,7 @@ def test_orcid_enrichment_uses_affiliation_resolver():
 
         def lookup(self, given, family, affiliation):
             self.seen.append(affiliation)
-            return "0000-0001-2345-6789" if affiliation == "University of Example" else None
+            return "0000-0001-2345-6789" if "University of Example" in affiliation else None
 
     creators = [{
         "givenName": "Jane", "familyName": "Smith",
@@ -618,8 +618,9 @@ def test_orcid_enrichment_uses_affiliation_resolver():
     out = enrich_creators_orcid(
         creators, fc, affiliation_resolver=lambda n: "University of Example"
     )
-    # The resolved canonical name (not the long sub-unit string) was queried.
-    assert fc.seen == ["University of Example"]
+    # The resolved canonical name is searched first, next to the original string.
+    assert fc.seen == [["University of Example",
+                        "Dept of X, University of Example, City, Country"]]
     nids = out[0].get("nameIdentifiers", [])
     assert nids and "0000-0001-2345-6789" in nids[0]["nameIdentifier"]
 

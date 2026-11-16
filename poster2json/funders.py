@@ -28,9 +28,12 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+from .http_retry import RequestFailed, get_json
+
 
 ROR_API = "https://api.ror.org/organizations"
-TIMEOUT = 1.5
+TIMEOUT = 10.0
+PAUSE_SECONDS = 30.0
 RATE_LIMIT = 0.5
 CACHE_PATH = Path.home() / ".cache" / "poster2json" / "funders.json"
 
@@ -74,7 +77,7 @@ class FunderClient:
         self.cache_path = cache_path
         self._cache = {}
         self._last_call = 0.0
-        self._warned = False
+        self._paused_until = 0.0
         if self.enabled:
             self._load_cache()
 
@@ -113,20 +116,21 @@ class FunderClient:
             return None
         if key in self._cache:
             return self._cache[key]
+        if time.monotonic() < self._paused_until:
+            return None
 
         self._throttle()
         url = f"{ROR_API}?affiliation={urllib.parse.quote(key)}"
         try:
-            with urllib.request.urlopen(url, timeout=TIMEOUT) as r:
-                data = json.loads(r.read())
-        except Exception as e:  # noqa: BLE001
-            if not self._warned:
-                print(
-                    f"[funders] lookup failed; disabling for this run: {e}",
-                    file=sys.stderr,
-                )
-                self._warned = True
-                self.enabled = False
+            data = get_json(url, TIMEOUT)
+        except RequestFailed as e:
+            # Unknown, not "no match": don't cache it. Unless the request itself
+            # was bad, pause briefly instead of turning funder lookups off.
+            if e.bad_request:
+                return None
+            self._paused_until = time.monotonic() + PAUSE_SECONDS
+            print(f"[funders] lookup failed; pausing for {PAUSE_SECONDS:.0f}s: {e}",
+                  file=sys.stderr)
             return None
 
         match = None
