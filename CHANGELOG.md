@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-11-16
+
 ### Changed
 
 - **ORCID lookup searches all of a creator's affiliations,** not just the first; a match on any of them counts (`affiliation-org-name:("A" OR "B")`). `OrcidClient.lookup` accepts a list of affiliations as well as a single string. Single-affiliation lookups, and their cache entries, are unchanged.
